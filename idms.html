@@ -402,7 +402,7 @@
   <div class="screen" id="screen-equipment">
     <div class="subscreen-header">
       <button class="back-btn" onclick="showScreen('screen-home')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <h2>Select System</h2>
+      <h2>Select Equipment</h2>
       <div style="width:36px"></div>
     </div>
     <!-- Built dynamically by buildGroupPicker() -->
@@ -423,7 +423,7 @@
   <!-- ── CATEGORY ── -->
   <div class="screen" id="screen-category">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="pendingIncident=null; showScreen('screen-group')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="back-btn" onclick="pendingIncident=null; showScreen(categoryBackScreen)"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Failure Category</h2>
       <div style="width:36px"></div>
     </div>
@@ -989,8 +989,8 @@ function buildHomeButtons() {
 }
 
 // ── BUILD GROUP PICKER ───────────────────
-// The "OTHER" screen shows ALL groups as a scrollable list,
-// each group expandable to its items.
+// The "OTHER" screen shows ALL groups with all their
+// items expanded — the original flat equipment list.
 function buildGroupPicker() {
   var list = document.getElementById('equipment-list');
   if (!list) return;
@@ -1000,16 +1000,28 @@ function buildGroupPicker() {
 
   groups.forEach(function(group) {
     (function(g) {
-      // Group header button — tapping shows that group's items
-      var groupBtn = document.createElement('button');
-      groupBtn.className = 'equip-item';
-      groupBtn.style.cssText = 'font-weight:600;font-size:15px;text-transform:uppercase;letter-spacing:0.04em';
-      groupBtn.innerHTML =
-        '<span class="equip-name">' + g.group + '</span>' +
-        '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
-        '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-      groupBtn.onclick = function() { showGroup(g.group); };
-      list.appendChild(groupBtn);
+      var groupEl = document.createElement('div');
+      groupEl.className = 'equip-group';
+
+      var label = document.createElement('div');
+      label.className   = 'equip-group-label';
+      label.textContent = g.group;
+      groupEl.appendChild(label);
+
+      g.items.forEach(function(item) {
+        (function(it) {
+          var btn = document.createElement('button');
+          btn.className = 'equip-item';
+          btn.innerHTML =
+            '<span class="equip-name">' + it + '</span>' +
+            '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
+            '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+          btn.onclick = function() { categoryBackScreen = 'screen-equipment'; selectEquipment(it); };
+          groupEl.appendChild(btn);
+        })(item);
+      });
+
+      list.appendChild(groupEl);
     })(group);
   });
 }
@@ -1018,8 +1030,8 @@ function buildGroupPicker() {
 // Navigates to screen-group and populates it with
 // only the items belonging to the selected group.
 function showGroup(groupName) {
-  var groups  = (DEPT_CONFIG && DEPT_CONFIG.equipment) ? DEPT_CONFIG.equipment : [];
-  var group   = null;
+  var groups = (DEPT_CONFIG && DEPT_CONFIG.equipment) ? DEPT_CONFIG.equipment : [];
+  var group  = null;
   for (var i = 0; i < groups.length; i++) {
     if (groups[i].group === groupName) { group = groups[i]; break; }
   }
@@ -1038,7 +1050,7 @@ function showGroup(groupName) {
         '<span class="equip-name">' + it + '</span>' +
         '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
         '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-      btn.onclick = function() { selectEquipment(it); };
+      btn.onclick = function() { categoryBackScreen = 'screen-group'; selectEquipment(it); };
       list.appendChild(btn);
     })(item);
   });
@@ -1047,8 +1059,7 @@ function showGroup(groupName) {
 }
 
 // ── BUILD CATEGORY SCREEN ────────────────
-// Fixes the closure bug — uses an IIFE to capture
-// the correct value of cat for each button.
+// Uses an IIFE to capture the correct value of cat for each button.
 function buildCategoryScreen() {
   if (!DEPT_CONFIG || !DEPT_CONFIG.categories) return;
   var list = document.getElementById('category-list');
@@ -1065,6 +1076,7 @@ function buildCategoryScreen() {
     })(cat);
   });
 }
+
 
 // ── LOAD USER PRESETS ────────────────────
 // Keyed per user+department so each combination
@@ -1242,16 +1254,15 @@ function startPreset(index) {
 }
 
 // ── START TIMER — OTHER PATH ─────────────
+var categoryBackScreen = 'screen-group'; // set by selectEquipment
+
 function selectEquipment(name) {
-  console.log('selectEquipment called with:', name);
   pendingIncident = { equipment: name, category: null };
-  console.log('pendingIncident set:', pendingIncident);
   document.getElementById('category-equip-label').textContent = name;
   showScreen('screen-category');
 }
 
 function selectCategory(category) {
-  console.log('selectCategory called with:', category, '| pendingIncident:', pendingIncident);
   if (!pendingIncident) return;
   pendingIncident.category = category;
   if (activeIncidents.length > 0) {
@@ -1262,6 +1273,21 @@ function selectCategory(category) {
   }
   startTimer(pendingIncident.equipment, pendingIncident.category);
   pendingIncident = null;
+}
+
+// ── UTILITIES ───────────────────────────
+function formatTime(date) {
+  return padTwo(date.getHours()) + ':' + padTwo(date.getMinutes());
+}
+function formatElapsed(seconds) {
+  var h = Math.floor(seconds / 3600);
+  var m = Math.floor((seconds % 3600) / 60);
+  var s = seconds % 60;
+  return padTwo(h) + ':' + padTwo(m) + ':' + padTwo(s);
+}
+function padTwo(n) { return n < 10 ? '0' + n : '' + n; }
+function findIncident(id) {
+  return activeIncidents.find(function(i) { return i.id === id; });
 }
 
 // ── START TIMER — CORE ───────────────────
