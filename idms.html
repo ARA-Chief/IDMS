@@ -568,7 +568,26 @@
     </div>
   </div>
 
-  <!-- ── 30-MIN WARNING MODAL ── -->
+  <!-- ── EVENT DETAIL (read-only view of resolved incident) ── -->
+  <div class="screen" id="screen-event-detail">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-review')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <h2>Event Detail</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="resolve-card">
+      <div class="resolve-summary" style="margin-bottom:16px">
+        <div class="resolve-row"><span class="resolve-label">Equipment</span><span class="resolve-value" id="detail-equip">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Category</span><span class="resolve-value" id="detail-cat">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Started</span><span class="resolve-value" id="detail-start">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Closed</span><span class="resolve-value" id="detail-end">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Duration</span><span class="resolve-value" id="detail-duration">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Logged by</span><span class="resolve-value" id="detail-user">—</span></div>
+      </div>
+      <div class="section-label" style="margin-bottom:8px">Notes</div>
+      <div id="detail-notes" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;font-size:14px;color:var(--text-secondary);min-height:80px;line-height:1.6;white-space:pre-wrap"></div>
+    </div>
+  </div>
   <div class="modal-overlay" id="modal-warning" style="display:none">
     <div class="modal-card">
       <div class="modal-icon warning-icon">!</div>
@@ -1576,6 +1595,7 @@ function renderEventLog() {
     div.className = 'log-entry';
     // Only Admins and 1st Engineers can delete entries
     var canDelete = (currentUser.role === 'Admin' || currentUser.role === '1st Engineer');
+    var viewBtn  = '<button class="log-action-btn" onclick="openEventDetail(' + i.id + ')">View</button>';
     var deleteBtn = canDelete
       ? '<button class="log-action-btn danger" onclick="deleteEvent(' + i.id + ')">Delete</button>'
       : '';
@@ -1583,7 +1603,7 @@ function renderEventLog() {
       '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge resolved-badge">Resolved</span></div>' +
       '<div class="log-entry-detail">' + i.category + ' · ' + i.durationLabel + '</div>' +
       '<div class="log-entry-meta">'   + i.startLabel + ' – ' + i.endLabel + ' · ' + i.user + '</div>' +
-      '<div class="log-entry-actions">' + deleteBtn + '</div>';
+      '<div class="log-entry-actions">' + viewBtn + deleteBtn + '</div>';
     list.appendChild(div);
   });
 }
@@ -1591,8 +1611,23 @@ function renderEventLog() {
 function deleteEvent(id) {
   if (!confirm('Delete this event?')) return;
   resolvedIncidents = resolvedIncidents.filter(function(i) { return i.id !== id; });
-  saveState();            // persist to localStorage
+  saveState();
   renderEventLog();
+}
+
+function openEventDetail(id) {
+  var incident = resolvedIncidents.find(function(i) { return i.id === id; });
+  if (!incident) return;
+  document.getElementById('detail-equip').textContent    = incident.equipment;
+  document.getElementById('detail-cat').textContent      = incident.category;
+  document.getElementById('detail-start').textContent    = incident.startLabel;
+  document.getElementById('detail-end').textContent      = incident.endLabel;
+  document.getElementById('detail-duration').textContent = incident.durationLabel;
+  document.getElementById('detail-user').textContent     = incident.user;
+  document.getElementById('detail-notes').textContent    = incident.notes
+    ? incident.notes
+    : 'No notes recorded.';
+  showScreen('screen-event-detail');
 }
 
 // ── PRESET BUTTON HIGHLIGHT ─────────────
