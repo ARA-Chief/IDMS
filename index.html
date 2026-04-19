@@ -133,11 +133,11 @@
     .active-timers-stack { flex-shrink: 0; display: flex; flex-direction: column; }
     .active-timer-bar {
       display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-      background: rgba(0,194,255,0.08); border-bottom: 1px solid var(--border-accent); cursor: pointer;
+      background: rgba(255,77,77,0.08); border-bottom: 1px solid rgba(255,77,77,0.3); cursor: pointer;
     }
     .active-timer-bar:active { background: rgba(0,194,255,0.15); }
     .timer-bar-dot {
-      width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
+      width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex-shrink: 0;
       animation: pulse 1.5s infinite;
     }
     .timer-bar-dot.warning { background: var(--warning); animation: pulse-warn 0.8s infinite; }
@@ -146,7 +146,7 @@
     .timer-bar-info { flex: 1; min-width: 0; }
     .timer-bar-name { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .timer-bar-cat { font-size: 11px; color: var(--text-secondary); }
-    .timer-bar-clock { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--accent); min-width: 64px; text-align: right; flex-shrink: 0; }
+    .timer-bar-clock { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--danger); min-width: 64px; text-align: right; flex-shrink: 0; }
     .timer-bar-clock.warning { color: var(--warning); }
 
     /* ── BIG BUTTON GRID ── */
@@ -159,10 +159,10 @@
     .big-btn:active { transform: scale(0.97); opacity: 0.85; }
     .preset-btn { background: var(--bg-3); border-color: var(--border); color: var(--text-primary); }
     .preset-btn:active { border-color: var(--accent); background: var(--bg-2); }
-    .preset-btn.has-active { border-color: var(--accent); background: var(--bg-2); }
+    .preset-btn.has-active { border-color: var(--danger); background: var(--bg-2); }
     .preset-btn.has-active::after {
       content: ''; position: absolute; top: 10px; right: 10px;
-      width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+      width: 10px; height: 10px; border-radius: 50%; background: var(--danger);
       animation: pulse 1.5s infinite;
     }
     .other-btn { background: var(--bg-1); border-color: var(--text-muted); border-style: dashed; color: var(--text-secondary); font-size: 18px; }
@@ -193,10 +193,10 @@
     .category-item:active { border-color: var(--accent); background: var(--accent-glow); }
 
     /* ── TIMER SCREEN ── */
-    .timer-card { margin: 16px; background: var(--bg-card); border: 1px solid var(--border-accent); border-radius: var(--radius-lg); padding: 24px 20px; text-align: center; }
+    .timer-card { margin: 16px; background: var(--bg-card); border: 1px solid rgba(255,77,77,0.3); border-radius: var(--radius-lg); padding: 24px 20px; text-align: center; }
     .timer-equipment { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
     .timer-category { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; }
-    .timer-clock { font-family: var(--font-mono); font-size: 52px; font-weight: 600; color: var(--accent); letter-spacing: 0.05em; line-height: 1; margin-bottom: 12px; }
+    .timer-clock { font-family: var(--font-mono); font-size: 52px; font-weight: 600; color: var(--danger); letter-spacing: 0.05em; line-height: 1; margin-bottom: 12px; }
     .timer-clock.warning { color: var(--warning); }
     .timer-started { font-size: 12px; color: var(--text-muted); }
     .timer-notes-wrap { padding: 0 16px 16px; }
@@ -225,12 +225,12 @@
     .log-date-nav { background: transparent; border: none; color: var(--text-secondary); font-size: 16px; cursor: pointer; padding: 4px 8px; }
     .log-list { padding: 12px 16px; overflow-y: auto; }
     .log-entry { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 8px; }
-    .log-entry.active-entry { border-color: var(--accent); border-left: 3px solid var(--accent); }
+    .log-entry.active-entry { border-color: var(--danger); border-left: 3px solid var(--danger); }
     .log-entry-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .log-equip { font-size: 14px; font-weight: 600; }
     .log-badge { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 10px; }
     .resolved-badge { background: rgba(0,212,138,0.1); color: var(--success); border: 1px solid rgba(0,212,138,0.25); }
-    .active-badge { background: rgba(0,194,255,0.1); color: var(--accent); border: 1px solid var(--border-accent); }
+    .active-badge { background: rgba(255,77,77,0.1); color: var(--danger); border: 1px solid rgba(255,77,77,0.3); }
     .log-entry-detail { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
     .log-entry-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
     .log-entry-actions { display: flex; gap: 8px; }
@@ -381,7 +381,7 @@
           <span class="sync-dot"></span>
           <span class="sync-label">Synced</span>
         </div>
-        <button class="icon-btn" onclick="showScreen('screen-review')" aria-label="Event log">
+        <button class="icon-btn" onclick="renderEventLog(); showScreen('screen-review')" aria-label="Event log">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path d="M3 5h14M3 10h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
@@ -402,7 +402,7 @@
   <div class="screen" id="screen-equipment">
     <div class="subscreen-header">
       <button class="back-btn" onclick="showScreen('screen-home')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <h2>Select System</h2>
+      <h2>Select Equipment</h2>
       <div style="width:36px"></div>
     </div>
     <!-- Built dynamically by buildGroupPicker() -->
@@ -423,7 +423,7 @@
   <!-- ── CATEGORY ── -->
   <div class="screen" id="screen-category">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="pendingIncident=null; showScreen('screen-group')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="back-btn" onclick="pendingIncident=null; showScreen(categoryBackScreen)"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Failure Category</h2>
       <div style="width:36px"></div>
     </div>
@@ -459,7 +459,7 @@
     </div>
     <div class="timer-notes-wrap">
       <label class="notes-label">Notes (optional)</label>
-      <textarea class="notes-input" id="timer-notes" placeholder="Describe the issue or actions taken…" rows="3"></textarea>
+      <textarea class="notes-input" id="timer-notes" placeholder="Describe the issue or actions taken…" rows="3" oninput="saveNotes()"></textarea>
     </div>
   </div>
 
@@ -474,17 +474,29 @@
       <div class="resolve-summary">
         <div class="resolve-row"><span class="resolve-label">Equipment</span><span class="resolve-value" id="resolve-equip">—</span></div>
         <div class="resolve-row"><span class="resolve-label">Category</span><span class="resolve-value" id="resolve-cat">—</span></div>
-        <div class="resolve-row"><span class="resolve-label">Started</span><span class="resolve-value" id="resolve-start">—</span></div>
         <div class="resolve-row"><span class="resolve-label">Duration</span><span class="resolve-value" id="resolve-duration">—</span></div>
       </div>
-      <div>
+
+      <!-- START TIME -->
+      <div style="margin-bottom:20px">
+        <div class="section-label" style="margin-bottom:12px">Start time</div>
+        <div class="time-options">
+          <button class="time-opt active" id="start-opt-recorded" onclick="selectStartTime('recorded')">As recorded<br><span class="time-opt-sub" id="resolve-start-recorded">—</span></button>
+          <button class="time-opt" id="start-opt-custom" onclick="selectStartTime('custom')">Enter custom time<br><span class="time-opt-sub">Manual entry</span></button>
+        </div>
+        <input type="time" class="custom-time-input" id="custom-start-input" oninput="updateResolveDuration()">
+      </div>
+
+      <!-- CLOSE-OUT TIME -->
+      <div style="margin-bottom:20px">
         <div class="section-label" style="margin-bottom:12px">Close-out time</div>
         <div class="time-options">
           <button class="time-opt active" id="time-opt-now" onclick="selectCloseTime('now')">Use current time<br><span class="time-opt-sub" id="resolve-now-time">—</span></button>
           <button class="time-opt" id="time-opt-custom" onclick="selectCloseTime('custom')">Enter custom time<br><span class="time-opt-sub">Manual entry</span></button>
         </div>
-        <input type="time" class="custom-time-input" id="custom-time-input">
+        <input type="time" class="custom-time-input" id="custom-time-input" oninput="updateResolveDuration()">
       </div>
+
       <button class="btn-primary btn-confirm" onclick="confirmResolve()">Confirm &amp; Save</button>
     </div>
   </div>
@@ -556,7 +568,26 @@
     </div>
   </div>
 
-  <!-- ── 30-MIN WARNING MODAL ── -->
+  <!-- ── EVENT DETAIL (read-only view of resolved incident) ── -->
+  <div class="screen" id="screen-event-detail">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-review')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <h2>Event Detail</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="resolve-card">
+      <div class="resolve-summary" style="margin-bottom:16px">
+        <div class="resolve-row"><span class="resolve-label">Equipment</span><span class="resolve-value" id="detail-equip">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Category</span><span class="resolve-value" id="detail-cat">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Started</span><span class="resolve-value" id="detail-start">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Closed</span><span class="resolve-value" id="detail-end">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Duration</span><span class="resolve-value" id="detail-duration">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Logged by</span><span class="resolve-value" id="detail-user">—</span></div>
+      </div>
+      <div class="section-label" style="margin-bottom:8px">Notes</div>
+      <div id="detail-notes" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;font-size:14px;color:var(--text-secondary);min-height:80px;line-height:1.6;white-space:pre-wrap"></div>
+    </div>
+  </div>
   <div class="modal-overlay" id="modal-warning" style="display:none">
     <div class="modal-card">
       <div class="modal-icon warning-icon">!</div>
@@ -792,11 +823,26 @@ function submitLogin() {
 
     if (!match) { showLoginError('Incorrect username or password.'); return; }
 
-    var displayName = match.username.charAt(0).toUpperCase() + match.username.slice(1);
+    // Build display name from username.
+    // If the config has a displayname field, use it directly.
+    // Otherwise split on dots or underscores and capitalise each part.
+    // e.g. "w.ostara" → "W. Ostara", "wostara" → "Wostara"
+    var displayName;
+    var parts = match.username.split(/[._]/);
+    if (match.displayname) {
+      displayName = match.displayname;
+    } else {
+      displayName = parts.map(function(p) {
+        if (!p) return '';
+        var cap = p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+        return p.length === 1 ? cap + '.' : cap;
+      }).join(' ').trim();
+    }
+    var initials = parts.filter(Boolean).map(function(p) { return p[0].toUpperCase(); }).join('').slice(0, 2);
     currentUser = {
       username:    match.username,
       name:        displayName,
-      initials:    displayName.slice(0, 2).toUpperCase(),
+      initials:    initials,
       role:        match.role,
       departments: match.departments || []
     };
@@ -989,8 +1035,8 @@ function buildHomeButtons() {
 }
 
 // ── BUILD GROUP PICKER ───────────────────
-// The "OTHER" screen shows ALL groups as a scrollable list,
-// each group expandable to its items.
+// The "OTHER" screen shows ALL groups with all their
+// items expanded — the original flat equipment list.
 function buildGroupPicker() {
   var list = document.getElementById('equipment-list');
   if (!list) return;
@@ -1000,16 +1046,28 @@ function buildGroupPicker() {
 
   groups.forEach(function(group) {
     (function(g) {
-      // Group header button — tapping shows that group's items
-      var groupBtn = document.createElement('button');
-      groupBtn.className = 'equip-item';
-      groupBtn.style.cssText = 'font-weight:600;font-size:15px;text-transform:uppercase;letter-spacing:0.04em';
-      groupBtn.innerHTML =
-        '<span class="equip-name">' + g.group + '</span>' +
-        '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
-        '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-      groupBtn.onclick = function() { showGroup(g.group); };
-      list.appendChild(groupBtn);
+      var groupEl = document.createElement('div');
+      groupEl.className = 'equip-group';
+
+      var label = document.createElement('div');
+      label.className   = 'equip-group-label';
+      label.textContent = g.group;
+      groupEl.appendChild(label);
+
+      g.items.forEach(function(item) {
+        (function(it) {
+          var btn = document.createElement('button');
+          btn.className = 'equip-item';
+          btn.innerHTML =
+            '<span class="equip-name">' + it + '</span>' +
+            '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
+            '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+          btn.onclick = function() { categoryBackScreen = 'screen-equipment'; selectEquipment(it); };
+          groupEl.appendChild(btn);
+        })(item);
+      });
+
+      list.appendChild(groupEl);
     })(group);
   });
 }
@@ -1018,8 +1076,8 @@ function buildGroupPicker() {
 // Navigates to screen-group and populates it with
 // only the items belonging to the selected group.
 function showGroup(groupName) {
-  var groups  = (DEPT_CONFIG && DEPT_CONFIG.equipment) ? DEPT_CONFIG.equipment : [];
-  var group   = null;
+  var groups = (DEPT_CONFIG && DEPT_CONFIG.equipment) ? DEPT_CONFIG.equipment : [];
+  var group  = null;
   for (var i = 0; i < groups.length; i++) {
     if (groups[i].group === groupName) { group = groups[i]; break; }
   }
@@ -1038,7 +1096,7 @@ function showGroup(groupName) {
         '<span class="equip-name">' + it + '</span>' +
         '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
         '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-      btn.onclick = function() { selectEquipment(it); };
+      btn.onclick = function() { categoryBackScreen = 'screen-group'; selectEquipment(it); };
       list.appendChild(btn);
     })(item);
   });
@@ -1047,8 +1105,7 @@ function showGroup(groupName) {
 }
 
 // ── BUILD CATEGORY SCREEN ────────────────
-// Fixes the closure bug — uses an IIFE to capture
-// the correct value of cat for each button.
+// Uses an IIFE to capture the correct value of cat for each button.
 function buildCategoryScreen() {
   if (!DEPT_CONFIG || !DEPT_CONFIG.categories) return;
   var list = document.getElementById('category-list');
@@ -1065,6 +1122,7 @@ function buildCategoryScreen() {
     })(cat);
   });
 }
+
 
 // ── LOAD USER PRESETS ────────────────────
 // Keyed per user+department so each combination
@@ -1242,16 +1300,15 @@ function startPreset(index) {
 }
 
 // ── START TIMER — OTHER PATH ─────────────
+var categoryBackScreen = 'screen-group'; // set by selectEquipment
+
 function selectEquipment(name) {
-  console.log('selectEquipment called with:', name);
   pendingIncident = { equipment: name, category: null };
-  console.log('pendingIncident set:', pendingIncident);
   document.getElementById('category-equip-label').textContent = name;
   showScreen('screen-category');
 }
 
 function selectCategory(category) {
-  console.log('selectCategory called with:', category, '| pendingIncident:', pendingIncident);
   if (!pendingIncident) return;
   pendingIncident.category = category;
   if (activeIncidents.length > 0) {
@@ -1262,6 +1319,21 @@ function selectCategory(category) {
   }
   startTimer(pendingIncident.equipment, pendingIncident.category);
   pendingIncident = null;
+}
+
+// ── UTILITIES ───────────────────────────
+function formatTime(date) {
+  return padTwo(date.getHours()) + ':' + padTwo(date.getMinutes());
+}
+function formatElapsed(seconds) {
+  var h = Math.floor(seconds / 3600);
+  var m = Math.floor((seconds % 3600) / 60);
+  var s = seconds % 60;
+  return padTwo(h) + ':' + padTwo(m) + ':' + padTwo(s);
+}
+function padTwo(n) { return n < 10 ? '0' + n : '' + n; }
+function findIncident(id) {
+  return activeIncidents.find(function(i) { return i.id === id; });
 }
 
 // ── START TIMER — CORE ───────────────────
@@ -1367,26 +1439,61 @@ function renderTimerBars() {
 }
 
 // ── RESOLVE ─────────────────────────────
+// ── NOTES PERSISTENCE ───────────────────
+// Called on every keystroke in the notes textarea.
+// Saves notes back to the incident object and to
+// localStorage so they survive navigation.
+function saveNotes() {
+  var incident = findIncident(viewingIncidentId);
+  if (!incident) return;
+  incident.notes = document.getElementById('timer-notes').value;
+  saveState();
+}
+
+// ── RESOLVE ─────────────────────────────
 function openResolve() {
   var incident = findIncident(viewingIncidentId);
-  if (incident) incident.notes = document.getElementById('timer-notes').value;
+  if (!incident) return;
+  // Save any notes currently in the textarea
+  incident.notes = document.getElementById('timer-notes').value;
+
   var now = new Date();
-  var elapsed = Math.floor((now - incident.startTime) / 1000);
-  document.getElementById('resolve-equip').textContent    = incident.equipment;
-  document.getElementById('resolve-cat').textContent      = incident.category;
-  document.getElementById('resolve-start').textContent    = incident.startLabel;
-  document.getElementById('resolve-duration').textContent = formatElapsed(elapsed);
-  document.getElementById('resolve-now-time').textContent = formatTime(now);
+  document.getElementById('resolve-equip').textContent = incident.equipment;
+  document.getElementById('resolve-cat').textContent   = incident.category;
+  document.getElementById('resolve-start-recorded').textContent = incident.startLabel;
+  document.getElementById('resolve-now-time').textContent       = formatTime(now);
+
+  selectStartTime('recorded');
   selectCloseTime('now');
+  updateResolveDuration();
   showScreen('screen-resolve');
 }
 
+function selectStartTime(mode) {
+  var optRec  = document.getElementById('start-opt-recorded');
+  var optCust = document.getElementById('start-opt-custom');
+  var custIn  = document.getElementById('custom-start-input');
+  if (mode === 'recorded') {
+    optRec.classList.add('active');   optCust.classList.remove('active');
+    custIn.style.display = 'none';
+  } else {
+    optRec.classList.remove('active'); optCust.classList.add('active');
+    custIn.style.display = 'block';
+    // Pre-fill with the recorded start time as a sensible default
+    var incident = findIncident(viewingIncidentId);
+    if (incident) {
+      custIn.value = padTwo(incident.startTime.getHours()) + ':' + padTwo(incident.startTime.getMinutes());
+    }
+  }
+  updateResolveDuration();
+}
+
 function selectCloseTime(mode) {
-  var optNow   = document.getElementById('time-opt-now');
-  var optCust  = document.getElementById('time-opt-custom');
-  var custIn   = document.getElementById('custom-time-input');
+  var optNow  = document.getElementById('time-opt-now');
+  var optCust = document.getElementById('time-opt-custom');
+  var custIn  = document.getElementById('custom-time-input');
   if (mode === 'now') {
-    optNow.classList.add('active');    optCust.classList.remove('active');
+    optNow.classList.add('active');   optCust.classList.remove('active');
     custIn.style.display = 'none';
   } else {
     optNow.classList.remove('active'); optCust.classList.add('active');
@@ -1394,26 +1501,65 @@ function selectCloseTime(mode) {
     var now = new Date();
     custIn.value = padTwo(now.getHours()) + ':' + padTwo(now.getMinutes());
   }
+  updateResolveDuration();
+}
+
+// Recalculates and displays duration live as times change.
+function updateResolveDuration() {
+  var incident = findIncident(viewingIncidentId);
+  if (!incident) return;
+
+  var startTime = resolveGetStartTime(incident);
+  var closeTime = resolveGetCloseTime();
+  if (!startTime || !closeTime) return;
+
+  var elapsed = Math.floor((closeTime - startTime) / 1000);
+  if (elapsed < 0) elapsed = 0;
+  document.getElementById('resolve-duration').textContent = formatElapsed(elapsed);
+}
+
+// Helper — reads the chosen start time from the resolve screen.
+function resolveGetStartTime(incident) {
+  if (document.getElementById('start-opt-recorded').classList.contains('active')) {
+    return incident.startTime;
+  }
+  var parts = document.getElementById('custom-start-input').value.split(':');
+  if (parts.length < 2) return incident.startTime;
+  var t = new Date(incident.startTime);
+  t.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
+  return t;
+}
+
+// Helper — reads the chosen close time from the resolve screen.
+function resolveGetCloseTime() {
+  if (document.getElementById('time-opt-now').classList.contains('active')) {
+    return new Date();
+  }
+  var parts = document.getElementById('custom-time-input').value.split(':');
+  if (parts.length < 2) return new Date();
+  var t = new Date();
+  t.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
+  return t;
 }
 
 function confirmResolve() {
   var incident = findIncident(viewingIncidentId);
   if (!incident) return;
-  var closeTime;
-  if (document.getElementById('time-opt-now').classList.contains('active')) {
-    closeTime = new Date();
-  } else {
-    var parts = document.getElementById('custom-time-input').value.split(':');
-    closeTime = new Date();
-    closeTime.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
+
+  var startTime = resolveGetStartTime(incident);
+  var closeTime = resolveGetCloseTime();
+  var elapsed   = Math.floor((closeTime - startTime) / 1000);
+  if (elapsed < 0) {
+    alert('Close time cannot be before start time.');
+    return;
   }
-  var elapsed  = Math.floor((closeTime - incident.startTime) / 1000);
+
   var resolved = {
     id:            incident.id,
     equipment:     incident.equipment,
     category:      incident.category,
-    startTime:     incident.startTime,
-    startLabel:    incident.startLabel,
+    startTime:     startTime,
+    startLabel:    formatTime(startTime),
     endTime:       closeTime,
     endLabel:      formatTime(closeTime),
     duration:      elapsed,
@@ -1421,10 +1567,11 @@ function confirmResolve() {
     notes:         incident.notes,
     user:          currentUser.name
   };
+
   resolvedIncidents.push(resolved);
   activeIncidents   = activeIncidents.filter(function(i) { return i.id !== incident.id; });
   viewingIncidentId = null;
-  saveState();            // persist to localStorage
+  saveState();
   renderTimerBars();
   updatePresetButtons();
   renderEventLog();
@@ -1463,6 +1610,7 @@ function renderEventLog() {
     div.className = 'log-entry';
     // Only Admins and 1st Engineers can delete entries
     var canDelete = (currentUser.role === 'Admin' || currentUser.role === '1st Engineer');
+    var viewBtn  = '<button class="log-action-btn" onclick="openEventDetail(' + i.id + ')">View</button>';
     var deleteBtn = canDelete
       ? '<button class="log-action-btn danger" onclick="deleteEvent(' + i.id + ')">Delete</button>'
       : '';
@@ -1470,7 +1618,7 @@ function renderEventLog() {
       '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge resolved-badge">Resolved</span></div>' +
       '<div class="log-entry-detail">' + i.category + ' · ' + i.durationLabel + '</div>' +
       '<div class="log-entry-meta">'   + i.startLabel + ' – ' + i.endLabel + ' · ' + i.user + '</div>' +
-      '<div class="log-entry-actions">' + deleteBtn + '</div>';
+      '<div class="log-entry-actions">' + viewBtn + deleteBtn + '</div>';
     list.appendChild(div);
   });
 }
@@ -1478,8 +1626,23 @@ function renderEventLog() {
 function deleteEvent(id) {
   if (!confirm('Delete this event?')) return;
   resolvedIncidents = resolvedIncidents.filter(function(i) { return i.id !== id; });
-  saveState();            // persist to localStorage
+  saveState();
   renderEventLog();
+}
+
+function openEventDetail(id) {
+  var incident = resolvedIncidents.find(function(i) { return i.id === id; });
+  if (!incident) return;
+  document.getElementById('detail-equip').textContent    = incident.equipment;
+  document.getElementById('detail-cat').textContent      = incident.category;
+  document.getElementById('detail-start').textContent    = incident.startLabel;
+  document.getElementById('detail-end').textContent      = incident.endLabel;
+  document.getElementById('detail-duration').textContent = incident.durationLabel;
+  document.getElementById('detail-user').textContent     = incident.user;
+  document.getElementById('detail-notes').textContent    = incident.notes
+    ? incident.notes
+    : 'No notes recorded.';
+  showScreen('screen-event-detail');
 }
 
 // ── PRESET BUTTON HIGHLIGHT ─────────────
