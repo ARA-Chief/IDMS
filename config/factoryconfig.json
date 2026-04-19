@@ -1,0 +1,64 @@
+{
+  "department": "Factory",
+  "version": "1.0",
+  "note": "OPERATOR CONFIG — edit this file to customise equipment and categories for your vessel. Do not edit factoryshell.json unless directed by a developer.",
+
+  "presets_default": [
+    { "equipment": "Plate Freezer #1", "category": "Mechanical jam",         "label": "PLATE FREEZER JAM" },
+    { "equipment": "Pan Ejector 1",    "category": "Mechanical jam",         "label": "PAN EJECTOR JAM"   },
+    { "equipment": "Label Applicator", "category": "Mislabel / wrong label", "label": "MISLABEL"          }
+  ],
+
+  "equipment": [
+    {
+      "group": "Freezing",
+      "items": [
+        "Plate Freezer #1",
+        "Plate Freezer #2",
+        "Plate Freezer #3",
+        "Plate Freezer #4",
+        "Plate Freezer #5"
+      ]
+    },
+    {
+      "group": "Breaking & Case Up",
+      "items": [
+        "Pan Ejector 1",
+        "Pan Ejector 2",
+        "Bag Applicator",
+        "Welding Machine",
+        "Check Weight Scale",
+        "Label Applicator"
+      ]
+    },
+    {
+      "group": "Back Line & Packing",
+      "items": [
+        "Back Line",
+        "Header #1",
+        "Header #2",
+        "Packing Station"
+      ]
+    },
+    {
+      "group": "General",
+      "items": [
+        "Conveyor Belt",
+        "Air Compressor",
+        "Forklift"
+      ]
+    }
+  ],
+
+  "categories": [
+    "Mechanical jam",
+    "Hydraulic fitting leak",
+    "Electrical fault",
+    "Sensor / calibration",
+    "Refrigerant issue",
+    "Scheduled maintenance",
+    "Operator error",
+    "Mislabel / wrong label",
+    "Unknown / investigating"
+  ]
+}
