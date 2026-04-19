@@ -133,11 +133,11 @@
     .active-timers-stack { flex-shrink: 0; display: flex; flex-direction: column; }
     .active-timer-bar {
       display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-      background: rgba(0,194,255,0.08); border-bottom: 1px solid var(--border-accent); cursor: pointer;
+      background: rgba(255,77,77,0.08); border-bottom: 1px solid rgba(255,77,77,0.3); cursor: pointer;
     }
     .active-timer-bar:active { background: rgba(0,194,255,0.15); }
     .timer-bar-dot {
-      width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
+      width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex-shrink: 0;
       animation: pulse 1.5s infinite;
     }
     .timer-bar-dot.warning { background: var(--warning); animation: pulse-warn 0.8s infinite; }
@@ -146,7 +146,7 @@
     .timer-bar-info { flex: 1; min-width: 0; }
     .timer-bar-name { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .timer-bar-cat { font-size: 11px; color: var(--text-secondary); }
-    .timer-bar-clock { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--accent); min-width: 64px; text-align: right; flex-shrink: 0; }
+    .timer-bar-clock { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--danger); min-width: 64px; text-align: right; flex-shrink: 0; }
     .timer-bar-clock.warning { color: var(--warning); }
 
     /* ── BIG BUTTON GRID ── */
@@ -159,10 +159,10 @@
     .big-btn:active { transform: scale(0.97); opacity: 0.85; }
     .preset-btn { background: var(--bg-3); border-color: var(--border); color: var(--text-primary); }
     .preset-btn:active { border-color: var(--accent); background: var(--bg-2); }
-    .preset-btn.has-active { border-color: var(--accent); background: var(--bg-2); }
+    .preset-btn.has-active { border-color: var(--danger); background: var(--bg-2); }
     .preset-btn.has-active::after {
       content: ''; position: absolute; top: 10px; right: 10px;
-      width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+      width: 10px; height: 10px; border-radius: 50%; background: var(--danger);
       animation: pulse 1.5s infinite;
     }
     .other-btn { background: var(--bg-1); border-color: var(--text-muted); border-style: dashed; color: var(--text-secondary); font-size: 18px; }
@@ -193,10 +193,10 @@
     .category-item:active { border-color: var(--accent); background: var(--accent-glow); }
 
     /* ── TIMER SCREEN ── */
-    .timer-card { margin: 16px; background: var(--bg-card); border: 1px solid var(--border-accent); border-radius: var(--radius-lg); padding: 24px 20px; text-align: center; }
+    .timer-card { margin: 16px; background: var(--bg-card); border: 1px solid rgba(255,77,77,0.3); border-radius: var(--radius-lg); padding: 24px 20px; text-align: center; }
     .timer-equipment { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
     .timer-category { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; }
-    .timer-clock { font-family: var(--font-mono); font-size: 52px; font-weight: 600; color: var(--accent); letter-spacing: 0.05em; line-height: 1; margin-bottom: 12px; }
+    .timer-clock { font-family: var(--font-mono); font-size: 52px; font-weight: 600; color: var(--danger); letter-spacing: 0.05em; line-height: 1; margin-bottom: 12px; }
     .timer-clock.warning { color: var(--warning); }
     .timer-started { font-size: 12px; color: var(--text-muted); }
     .timer-notes-wrap { padding: 0 16px 16px; }
@@ -225,12 +225,12 @@
     .log-date-nav { background: transparent; border: none; color: var(--text-secondary); font-size: 16px; cursor: pointer; padding: 4px 8px; }
     .log-list { padding: 12px 16px; overflow-y: auto; }
     .log-entry { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 8px; }
-    .log-entry.active-entry { border-color: var(--accent); border-left: 3px solid var(--accent); }
+    .log-entry.active-entry { border-color: var(--danger); border-left: 3px solid var(--danger); }
     .log-entry-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .log-equip { font-size: 14px; font-weight: 600; }
     .log-badge { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 10px; }
     .resolved-badge { background: rgba(0,212,138,0.1); color: var(--success); border: 1px solid rgba(0,212,138,0.25); }
-    .active-badge { background: rgba(0,194,255,0.1); color: var(--accent); border: 1px solid var(--border-accent); }
+    .active-badge { background: rgba(255,77,77,0.1); color: var(--danger); border: 1px solid rgba(255,77,77,0.3); }
     .log-entry-detail { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
     .log-entry-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
     .log-entry-actions { display: flex; gap: 8px; }
@@ -381,7 +381,7 @@
           <span class="sync-dot"></span>
           <span class="sync-label">Synced</span>
         </div>
-        <button class="icon-btn" onclick="showScreen('screen-review')" aria-label="Event log">
+        <button class="icon-btn" onclick="renderEventLog(); showScreen('screen-review')" aria-label="Event log">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path d="M3 5h14M3 10h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
@@ -823,11 +823,26 @@ function submitLogin() {
 
     if (!match) { showLoginError('Incorrect username or password.'); return; }
 
-    var displayName = match.username.charAt(0).toUpperCase() + match.username.slice(1);
+    // Build display name from username.
+    // If the config has a displayname field, use it directly.
+    // Otherwise split on dots or underscores and capitalise each part.
+    // e.g. "w.ostara" → "W. Ostara", "wostara" → "Wostara"
+    var displayName;
+    var parts = match.username.split(/[._]/);
+    if (match.displayname) {
+      displayName = match.displayname;
+    } else {
+      displayName = parts.map(function(p) {
+        if (!p) return '';
+        var cap = p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+        return p.length === 1 ? cap + '.' : cap;
+      }).join(' ').trim();
+    }
+    var initials = parts.filter(Boolean).map(function(p) { return p[0].toUpperCase(); }).join('').slice(0, 2);
     currentUser = {
       username:    match.username,
       name:        displayName,
-      initials:    displayName.slice(0, 2).toUpperCase(),
+      initials:    initials,
       role:        match.role,
       departments: match.departments || []
     };
