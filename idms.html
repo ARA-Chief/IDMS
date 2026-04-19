@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0a1628">
-  <title>Factory Watch</title>
+  <title>IDMS</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -292,7 +292,7 @@
     <div class="login-wrap">
       <div>
         <div class="logo-mark">FW</div>
-        <h1 class="login-title">Factory Watch</h1>
+        <h1 class="login-title">IDMS</h1>
         <p class="login-vessel" id="login-vessel-label">F/V Araho</p>
       </div>
       <div class="login-card">
@@ -316,7 +316,7 @@
 
         <button class="btn-primary" id="login-btn" onclick="submitLogin()">Sign In</button>
       </div>
-      <p class="login-footer">Factory Watch v0.5 · F/V Araho</p>
+      <p class="login-footer">IDMS v0.6 · F/V Araho</p>
     </div>
   </div>
 
@@ -377,7 +377,7 @@
         </div>
       </div>
       <div class="topbar-right">
-        <div class="sync-indicator synced">
+        <div class="sync-indicator synced" id="sync-indicator">
           <span class="sync-dot"></span>
           <span class="sync-label">Synced</span>
         </div>
@@ -406,7 +406,7 @@
       <h2>Select Equipment</h2>
       <div style="width:36px"></div>
     </div>
-    <div class="equipment-list">
+    <div class="equipment-list" id="equipment-list">
       <div class="equip-group">
         <div class="equip-group-label">Freezing</div>
         <button class="equip-item" onclick="selectEquipment('Plate Freezer #1')"><span class="equip-name">Plate Freezer #1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
@@ -445,7 +445,7 @@
       <span class="equip-context-label">Equipment:</span>
       <span class="equip-context-value" id="category-equip-label">—</span>
     </div>
-    <div class="category-list">
+    <div class="category-list" id="category-list">
       <button class="category-item" onclick="selectCategory('Mechanical jam')">Mechanical jam</button>
       <button class="category-item" onclick="selectCategory('Hydraulic fitting leak')">Hydraulic fitting leak</button>
       <button class="category-item" onclick="selectCategory('Electrical fault')">Electrical fault</button>
@@ -666,9 +666,19 @@
 // ════════════════════════════════════════
 
 // ── CONFIG ───────────────────────────────
-// Edit users directly here. To use a remote config later,
-// set CONFIG = null and fill in CONFIG_URL.
-var CONFIG_URL = null;
+// CONFIG_URL points to the raw config.json in the IDMS GitHub repo.
+// The app fetches this on every login so user changes take effect
+// immediately without redeploying the HTML file.
+//
+// FALLBACK: If the fetch fails (no internet, GitHub down), the
+// bundled CONFIG object below is used instead. Keep it reasonably
+// up to date so the app still works offline.
+var CONFIG_URL = 'https://raw.githubusercontent.com/ARA-Chief/IDMS/main/config/userconfig.json';
+
+// Builds the raw GitHub URL for a given config file path
+function configURL(path) {
+  return 'https://raw.githubusercontent.com/ARA-Chief/IDMS/main/' + path;
+}
 var CONFIG = {
   "vessel": "F/V Araho",
   "version": "1.0",
@@ -686,6 +696,10 @@ var CONFIG = {
 
 // Departments with a working module. All others → inactive screen.
 var ACTIVE_MODULES = ["Factory"];
+
+// Loaded when a department is entered
+var DEPT_CONFIG  = null;  // factoryconfig.json etc.
+var SHELL_CONFIG = null;  // factoryshell.json etc.
 
 // ── DEFAULT PRESETS ──────────────────────
 var DEFAULT_PRESETS = [
@@ -718,14 +732,43 @@ function showScreen(id) {
 // ════════════════════════════════════════
 
 // ── LOAD CONFIG ──────────────────────────
-// Returns a Promise resolving to the config object.
-// Uses bundled CONFIG unless CONFIG_URL is set.
+// Fetches from CONFIG_URL if set. On failure, falls back
+// to the bundled CONFIG object and shows a warning.
+// Caches the result for 5 minutes so repeated logins
+// don't hammer GitHub.
+var _configCache     = null;
+var _configCacheTime = 0;
+var CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 function loadConfig() {
+  // Return cached config if still fresh
+  if (_configCache && (Date.now() - _configCacheTime) < CONFIG_CACHE_TTL) {
+    return Promise.resolve(_configCache);
+  }
+
   if (CONFIG_URL) {
     return fetch(CONFIG_URL)
-      .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function(data) { CONFIG = data; return data; });
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        _configCache     = data;
+        _configCacheTime = Date.now();
+        CONFIG           = data; // keep bundled copy current
+        updateSyncIndicator('synced');
+        return data;
+      })
+      .catch(function(err) {
+        console.warn('Remote config fetch failed, using bundled fallback:', err);
+        updateSyncIndicator('offline');
+        _configCache     = CONFIG;
+        _configCacheTime = Date.now();
+        return CONFIG;
+      });
   }
+  _configCache     = CONFIG;
+  _configCacheTime = Date.now();
   return Promise.resolve(CONFIG);
 }
 
@@ -747,6 +790,7 @@ function submitLogin() {
 
   btn.textContent = 'Signing in\u2026';
   btn.disabled    = true;
+  updateSyncIndicator('syncing');
 
   loadConfig().then(function(config) {
     var match = null;
@@ -846,34 +890,148 @@ function showDeptPicker() {
   showScreen('screen-dept');
 }
 
+// ── LOAD DEPARTMENT CONFIG ───────────────
+// Fetches both the operator config and shell config for a department.
+// Maps department name to filename prefix:
+//   Factory    → factoryconfig.json / factoryshell.json
+//   Engine Room → engineconfig.json / engineshell.json
+//   Deck       → deckconfig.json   / deckshell.json
+function deptKey(dept) {
+  return dept.toLowerCase().replace(/\s+/g, '');  // "Engine Room" → "engineroom"
+             // special case: engineroom → engine
+}
+
+var DEPT_FILE_MAP = {
+  'Factory':     'factory',
+  'Engine Room': 'engine',
+  'Deck':        'deck'
+};
+
+function loadDeptConfig(dept) {
+  var key      = DEPT_FILE_MAP[dept] || dept.toLowerCase().replace(/\s+/g, '');
+  var dataURL  = configURL('config/' + key + 'config.json');
+  var shellURL = configURL('config/shells/' + key + 'shell.json');
+
+  return Promise.all([
+    fetch(dataURL).then(function(r)  { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+    fetch(shellURL).then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
+  ]).then(function(results) {
+    DEPT_CONFIG  = results[0];
+    SHELL_CONFIG = results[1];
+    return { deptConfig: DEPT_CONFIG, shellConfig: SHELL_CONFIG };
+  });
+}
+
 // ── ENTER DEPARTMENT ─────────────────────
 function enterDepartment(dept) {
   currentDepartment = dept;
-  loadUserPresets();
-  applyRolePermissions();
-  updateUserDisplay();
 
-  if (ACTIVE_MODULES.indexOf(dept) !== -1) {
+  if (ACTIVE_MODULES.indexOf(dept) === -1) {
+    document.getElementById('inactive-dept').textContent  = dept;
+    document.getElementById('inactive-title').textContent = dept + ' — Inactive';
+    showScreen('screen-inactive');
+    return;
+  }
+
+  // Show a brief loading state while fetching dept config
+  updateSyncIndicator('syncing');
+
+  loadDeptConfig(dept).then(function() {
+    loadUserPresets();
+    applyRolePermissions();
+    updateUserDisplay();
+    buildEquipmentScreen();   // populate from config
+    buildCategoryScreen();    // populate from config
     loadIncidentState();
     renderTimerBars();
     updatePresetButtons();
     renderEventLog();
+    updateSyncIndicator('synced');
     showScreen('screen-home');
-  } else {
-    document.getElementById('inactive-dept').textContent  = dept;
-    document.getElementById('inactive-title').textContent = dept + ' — Inactive';
-    showScreen('screen-inactive');
-  }
+  }).catch(function(err) {
+    console.warn('Dept config load failed:', err);
+    // Fall through with whatever loaded — hardcoded fallback still in HTML
+    loadUserPresets();
+    applyRolePermissions();
+    updateUserDisplay();
+    loadIncidentState();
+    renderTimerBars();
+    updatePresetButtons();
+    renderEventLog();
+    updateSyncIndicator('offline');
+    showScreen('screen-home');
+  });
 }
 
-// ── LOAD / SAVE USER PRESETS ─────────────
+// ── BUILD EQUIPMENT SCREEN ───────────────
+// Replaces the hardcoded equipment list with data
+// from the department's config file. Falls back
+// gracefully to whatever is already in the HTML
+// if the config didn't load.
+function buildEquipmentScreen() {
+  if (!DEPT_CONFIG || !DEPT_CONFIG.equipment) return;
+
+  var list = document.getElementById('equipment-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  DEPT_CONFIG.equipment.forEach(function(group) {
+    var groupEl = document.createElement('div');
+    groupEl.className = 'equip-group';
+
+    var label = document.createElement('div');
+    label.className   = 'equip-group-label';
+    label.textContent = group.group;
+    groupEl.appendChild(label);
+
+    group.items.forEach(function(item) {
+      var btn = document.createElement('button');
+      btn.className = 'equip-item';
+      btn.innerHTML =
+        '<span class="equip-name">' + item + '</span>' +
+        '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
+        '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+      btn.onclick = function() { selectEquipment(item); };
+      groupEl.appendChild(btn);
+    });
+
+    list.appendChild(groupEl);
+  });
+}
+
+// ── BUILD CATEGORY SCREEN ────────────────
+// Same pattern — replaces hardcoded category buttons.
+function buildCategoryScreen() {
+  if (!DEPT_CONFIG || !DEPT_CONFIG.categories) return;
+
+  var list = document.getElementById('category-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  DEPT_CONFIG.categories.forEach(function(cat) {
+    var btn = document.createElement('button');
+    btn.className   = 'category-item';
+    btn.textContent = cat;
+    btn.onclick     = function() { selectCategory(cat); };
+    list.appendChild(btn);
+  });
+}
+
+// ── LOAD USER PRESETS ────────────────────
 // Keyed per user+department so each combination
 // has independent presets.
 function loadUserPresets() {
   var key = 'fw_presets_' + currentUser.username + '_' + currentDepartment;
   try {
     var saved = localStorage.getItem(key);
-    PRESETS = saved ? JSON.parse(saved) : DEFAULT_PRESETS.slice();
+    if (saved) {
+      PRESETS = JSON.parse(saved);
+    } else if (DEPT_CONFIG && DEPT_CONFIG.presets_default) {
+      // Use the department's default presets from config
+      PRESETS = DEPT_CONFIG.presets_default.slice();
+    } else {
+      PRESETS = DEFAULT_PRESETS.slice();
+    }
   } catch(e) { PRESETS = DEFAULT_PRESETS.slice(); }
   applyPresetsToUI();
 }
@@ -895,6 +1053,32 @@ function applyPresetsToUI() {
 // ── ROLE PERMISSIONS ─────────────────────
 // Delete button gating is handled in renderEventLog().
 function applyRolePermissions() {}
+
+// ── SYNC INDICATOR ───────────────────────
+// Updates the "Synced / Offline" pill in the home topbar.
+// 'synced'  — config loaded from GitHub successfully
+// 'offline' — using bundled fallback
+// 'syncing' — fetch in progress
+function updateSyncIndicator(state) {
+  var el = document.getElementById('sync-indicator');
+  if (!el) return;
+  var label = el.querySelector('.sync-label');
+  el.className = 'sync-indicator';
+  if (state === 'synced') {
+    el.classList.add('synced');
+    if (label) label.textContent = 'Synced';
+  } else if (state === 'offline') {
+    el.style.background     = 'rgba(255,170,0,0.1)';
+    el.style.borderColor    = 'rgba(255,170,0,0.25)';
+    el.style.color          = 'var(--warning)';
+    if (label) label.textContent = 'Offline';
+  } else {
+    el.style.background  = '';
+    el.style.borderColor = '';
+    el.style.color       = 'var(--text-muted)';
+    if (label) label.textContent = 'Syncing\u2026';
+  }
+}
 
 // ── UPDATE USER DISPLAY ──────────────────
 function updateUserDisplay() {

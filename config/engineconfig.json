@@ -1,0 +1,70 @@
+{
+  "department": "Engine Room",
+  "version": "1.0",
+  "note": "OPERATOR CONFIG — edit this file to customise equipment and categories for your vessel.",
+
+  "presets_default": [
+    { "equipment": "Main Engine",     "category": "Mechanical fault",    "label": "MAIN ENGINE"    },
+    { "equipment": "Generator #1",    "category": "Electrical fault",    "label": "GENERATOR"      },
+    { "equipment": "Fuel System",     "category": "Fuel / fluid leak",   "label": "FUEL SYSTEM"    }
+  ],
+
+  "equipment": [
+    {
+      "group": "Propulsion",
+      "items": [
+        "Main Engine",
+        "Gearbox",
+        "Shaft & Propeller",
+        "Bow Thruster"
+      ]
+    },
+    {
+      "group": "Power Generation",
+      "items": [
+        "Generator #1",
+        "Generator #2",
+        "Switchboard",
+        "UPS / Battery Bank"
+      ]
+    },
+    {
+      "group": "Fuel & Fluids",
+      "items": [
+        "Fuel System",
+        "Lube Oil System",
+        "Cooling Water System",
+        "Bilge System"
+      ]
+    },
+    {
+      "group": "Refrigeration Plant",
+      "items": [
+        "RSW Compressor #1",
+        "RSW Compressor #2",
+        "Brine System",
+        "Condenser"
+      ]
+    },
+    {
+      "group": "Deck Machinery",
+      "items": [
+        "Hydraulic Power Unit",
+        "Winch #1",
+        "Winch #2",
+        "Crane"
+      ]
+    }
+  ],
+
+  "categories": [
+    "Mechanical fault",
+    "Electrical fault",
+    "Fuel / fluid leak",
+    "Overheating",
+    "Sensor / alarm",
+    "Scheduled maintenance",
+    "Operator error",
+    "Unknown / investigating"
+  ]
+}

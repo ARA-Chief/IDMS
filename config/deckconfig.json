@@ -1,0 +1,53 @@
+{
+  "department": "Deck",
+  "version": "1.0",
+  "note": "OPERATOR CONFIG — edit this file to customise equipment and categories for your vessel.",
+
+  "presets_default": [
+    { "equipment": "Trawl Winch #1",  "category": "Mechanical fault",  "label": "TRAWL WINCH"    },
+    { "equipment": "Net Drum",        "category": "Mechanical fault",  "label": "NET DRUM"        },
+    { "equipment": "Deck Crane",      "category": "Hydraulic fault",   "label": "DECK CRANE"      }
+  ],
+
+  "equipment": [
+    {
+      "group": "Fishing Gear",
+      "items": [
+        "Trawl Winch #1",
+        "Trawl Winch #2",
+        "Net Drum",
+        "Sweep Winch",
+        "Trawl Door"
+      ]
+    },
+    {
+      "group": "Deck Machinery",
+      "items": [
+        "Deck Crane",
+        "Anchor Windlass",
+        "Mooring Winch",
+        "Capstan"
+      ]
+    },
+    {
+      "group": "Safety & Navigation",
+      "items": [
+        "Life Raft",
+        "EPIRB",
+        "Radar",
+        "GPS / Chartplotter"
+      ]
+    }
+  ],
+
+  "categories": [
+    "Mechanical fault",
+    "Hydraulic fault",
+    "Electrical fault",
+    "Wire / rope damage",
+    "Structural damage",
+    "Scheduled maintenance",
+    "Operator error",
+    "Unknown / investigating"
+  ]
+}

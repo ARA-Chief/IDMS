@@ -1,0 +1,34 @@
+{
+  "department": "Factory",
+  "version": "1.0",
+  "note": "DEVELOPER CONFIG — controls module behaviour. Edit factoryconfig.json for equipment and categories.",
+
+  "timers": {
+    "warning_threshold_seconds": 1800,
+    "warning_repeat_seconds": 1800,
+    "max_concurrent_timers": 5
+  },
+
+  "session": {
+    "autosave_interval_seconds": 300,
+    "report_output_path": "data/factory/logs/",
+    "aggregate_report_path": "data/factory/reports/",
+    "aggregate_period_hours": 24,
+    "aggregate_reset_time": "06:00"
+  },
+
+  "export": {
+    "format": "json",
+    "filename_pattern": "report-{username}-{date}.json",
+    "aggregate_filename_pattern": "report-factory-{date}.json",
+    "date_format": "YYYY-MM-DD",
+    "include_fields": ["id", "equipment", "category", "startTime", "endTime", "duration", "notes", "user", "department", "vessel"]
+  },
+
+  "permissions": {
+    "can_delete_events": ["Admin", "Chief Engineer", "1st Engineer"],
+    "can_edit_events":   ["Admin", "Chief Engineer", "1st Engineer"],
+    "can_view_all_logs": ["Admin", "Chief Engineer", "1st Engineer", "Factory Manager", "Factory Engineer"],
+    "can_export_report": ["Admin", "Chief Engineer", "1st Engineer", "Factory Manager", "Factory Engineer"]
+  }
+}
