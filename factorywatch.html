@@ -47,7 +47,6 @@
       justify-content: center;
     }
 
-    /* Phone frame */
     .phone-frame {
       width: 390px;
       height: 844px;
@@ -61,7 +60,6 @@
       flex-direction: column;
     }
 
-    /* Screen system */
     .screen {
       display: none;
       flex-direction: column;
@@ -74,36 +72,19 @@
     .screen.active { display: flex; }
 
     /* ── LOGIN ── */
-    #screen-login {
-      justify-content: center;
-      align-items: center;
-    }
+    #screen-login { justify-content: center; align-items: center; }
     .login-wrap {
-      width: 100%;
-      padding: 2rem 2rem;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2rem;
+      width: 100%; padding: 2rem;
+      display: flex; flex-direction: column; align-items: center; gap: 2rem;
     }
     .logo-mark {
-      width: 64px; height: 64px;
-      background: var(--accent);
-      color: var(--bg-0);
-      font-size: 22px; font-weight: 700;
-      border-radius: var(--radius-lg);
-      display: flex; align-items: center; justify-content: center;
-      margin: 0 auto 1rem;
+      width: 64px; height: 64px; background: var(--accent); color: var(--bg-0);
+      font-size: 22px; font-weight: 700; border-radius: var(--radius-lg);
+      display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem;
     }
     .login-title { font-size: 26px; font-weight: 600; text-align: center; }
     .login-vessel { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; text-align: center; margin-top: 4px; }
-    .login-card {
-      width: 100%;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 1.5rem;
-    }
+    .login-card { width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.5rem; }
     .login-prompt { font-size: 14px; color: var(--text-secondary); text-align: center; margin-bottom: 1.25rem; }
     .login-footer { font-size: 12px; color: var(--text-muted); }
 
@@ -112,21 +93,17 @@
       width: 100%; padding: 14px 20px;
       background: var(--accent); color: var(--bg-0);
       border: none; border-radius: var(--radius-md);
-      font-size: 15px; font-weight: 600;
-      cursor: pointer;
+      font-size: 15px; font-weight: 600; cursor: pointer;
       display: flex; align-items: center; justify-content: center; gap: 10px;
     }
     .btn-ms { background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.15); }
     .btn-resolve {
-      width: 100%; padding: 16px;
-      background: var(--success); color: #001a0f;
-      border: none; border-radius: var(--radius-md);
-      font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 1.5rem;
+      width: 100%; padding: 16px; background: var(--success); color: #001a0f;
+      border: none; border-radius: var(--radius-md); font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 1.5rem;
     }
     .btn-confirm { margin-top: 1.5rem; }
     .icon-btn {
-      width: 36px; height: 36px;
-      background: transparent; border: 1px solid var(--border);
+      width: 36px; height: 36px; background: transparent; border: 1px solid var(--border);
       border-radius: var(--radius-sm); color: var(--text-secondary);
       cursor: pointer; display: flex; align-items: center; justify-content: center;
     }
@@ -134,17 +111,13 @@
     /* ── TOPBAR ── */
     .topbar {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 16px;
-      background: var(--bg-1); border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
+      padding: 12px 16px; background: var(--bg-1); border-bottom: 1px solid var(--border); flex-shrink: 0;
     }
     .topbar-left { display: flex; align-items: center; gap: 10px; }
     .topbar-right { display: flex; align-items: center; gap: 10px; }
     .user-avatar {
-      width: 34px; height: 34px;
-      background: var(--accent-glow); border: 1px solid var(--border-accent);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px; background: var(--accent-glow); border: 1px solid var(--border-accent);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
       font-size: 12px; font-weight: 600; color: var(--accent);
     }
     .user-name { font-size: 14px; font-weight: 500; display: block; line-height: 1.2; }
@@ -153,158 +126,101 @@
       display: flex; align-items: center; gap: 5px;
       padding: 4px 9px; border-radius: 20px; border: 1px solid transparent; font-size: 11px;
     }
-    .sync-indicator.synced {
-      background: rgba(0,212,138,0.1); border-color: rgba(0,212,138,0.25); color: var(--success);
-    }
+    .sync-indicator.synced { background: rgba(0,212,138,0.1); border-color: rgba(0,212,138,0.25); color: var(--success); }
     .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
-    /* ── ACTIVE BANNER ── */
-    .active-banner {
-      background: rgba(0,194,255,0.08);
-      border-bottom: 1px solid var(--border-accent);
-      flex-shrink: 0;
-    }
-    .active-banner-inner {
+    /* ── ACTIVE TIMERS STACK ── */
+    .active-timers-stack { flex-shrink: 0; display: flex; flex-direction: column; }
+    .active-timer-bar {
       display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+      background: rgba(0,194,255,0.08); border-bottom: 1px solid var(--border-accent); cursor: pointer;
     }
-    .active-banner-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--accent); flex-shrink: 0;
+    .active-timer-bar:active { background: rgba(0,194,255,0.15); }
+    .timer-bar-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
       animation: pulse 1.5s infinite;
     }
+    .timer-bar-dot.warning { background: var(--warning); animation: pulse-warn 0.8s infinite; }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-    .active-banner-text {
-      flex: 1; font-size: 13px; font-weight: 500;
-      color: var(--accent); font-family: var(--font-mono);
-    }
-    .active-banner-btn {
-      background: var(--accent-glow); border: 1px solid var(--border-accent);
-      border-radius: var(--radius-sm); color: var(--accent);
-      font-size: 12px; font-weight: 600; padding: 5px 12px; cursor: pointer;
-    }
+    @keyframes pulse-warn { 0%,100% { opacity:1; } 50% { opacity:0.2; } }
+    .timer-bar-info { flex: 1; min-width: 0; }
+    .timer-bar-name { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .timer-bar-cat { font-size: 11px; color: var(--text-secondary); }
+    .timer-bar-clock { font-family: var(--font-mono); font-size: 16px; font-weight: 600; color: var(--accent); min-width: 64px; text-align: right; flex-shrink: 0; }
+    .timer-bar-clock.warning { color: var(--warning); }
 
     /* ── BIG BUTTON GRID ── */
-    .big-btn-grid {
-      flex: 1; display: flex; flex-direction: column;
-      padding: 12px; gap: 10px;
-    }
+    .big-btn-grid { flex: 1; display: flex; flex-direction: column; padding: 12px; gap: 10px; }
     .big-btn {
-      flex: 1; width: 100%;
-      border-radius: var(--radius-lg); border: 2px solid transparent;
-      cursor: pointer; font-size: 20px; font-weight: 700;
-      letter-spacing: 0.06em; text-transform: uppercase;
-      transition: transform 0.08s, opacity 0.1s;
+      flex: 1; width: 100%; border-radius: var(--radius-lg); border: 2px solid transparent;
+      cursor: pointer; font-size: 20px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; transition: transform 0.08s, opacity 0.1s; position: relative;
     }
     .big-btn:active { transform: scale(0.97); opacity: 0.85; }
-    .preset-btn {
-      background: var(--bg-3); border-color: var(--border); color: var(--text-primary);
-    }
+    .preset-btn { background: var(--bg-3); border-color: var(--border); color: var(--text-primary); }
     .preset-btn:active { border-color: var(--accent); background: var(--bg-2); }
-    .other-btn {
-      background: var(--bg-1); border-color: var(--text-muted);
-      border-style: dashed; color: var(--text-secondary); font-size: 18px;
+    .preset-btn.has-active { border-color: var(--accent); background: var(--bg-2); }
+    .preset-btn.has-active::after {
+      content: ''; position: absolute; top: 10px; right: 10px;
+      width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+      animation: pulse 1.5s infinite;
     }
+    .other-btn { background: var(--bg-1); border-color: var(--text-muted); border-style: dashed; color: var(--text-secondary); font-size: 18px; }
     .other-btn:active { border-color: var(--accent); border-style: solid; color: var(--accent); }
 
     /* ── SUBSCREEN HEADER ── */
     .subscreen-header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 16px;
-      background: var(--bg-1); border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
+      padding: 12px 16px; background: var(--bg-1); border-bottom: 1px solid var(--border); flex-shrink: 0;
     }
     .subscreen-header h2 { font-size: 16px; font-weight: 600; }
-    .back-btn {
-      width: 36px; height: 36px; background: transparent; border: none;
-      color: var(--accent); cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-    }
+    .back-btn { width: 36px; height: 36px; background: transparent; border: none; color: var(--accent); cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
     /* ── EQUIPMENT LIST ── */
     .equipment-list { padding: 12px 16px; overflow-y: auto; }
     .equip-group { margin-bottom: 20px; }
-    .equip-group-label {
-      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--text-secondary);
-      margin-bottom: 8px; padding-left: 4px;
-    }
-    .equip-item {
-      width: 100%; background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 6px;
-      display: flex; align-items: center; justify-content: space-between;
-      cursor: pointer;
-    }
+    .equip-group-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; padding-left: 4px; }
+    .equip-item { width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
     .equip-item:active { border-color: var(--accent); background: var(--accent-glow); }
     .equip-name { font-size: 15px; color: var(--text-primary); }
 
     /* ── CATEGORY ── */
-    .equip-context-bar {
-      padding: 10px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border);
-      display: flex; gap: 8px; font-size: 13px; flex-shrink: 0;
-    }
+    .equip-context-bar { padding: 10px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border); display: flex; gap: 8px; font-size: 13px; flex-shrink: 0; }
     .equip-context-label { color: var(--text-secondary); }
     .equip-context-value { color: var(--accent); font-weight: 500; }
     .category-list { padding: 12px 16px; overflow-y: auto; }
-    .category-item {
-      width: 100%; background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: var(--radius-md); padding: 15px 16px; margin-bottom: 6px;
-      text-align: left; font-size: 15px; color: var(--text-primary); cursor: pointer;
-    }
+    .category-item { width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 15px 16px; margin-bottom: 6px; text-align: left; font-size: 15px; color: var(--text-primary); cursor: pointer; }
     .category-item:active { border-color: var(--accent); background: var(--accent-glow); }
 
     /* ── TIMER SCREEN ── */
-    .timer-card {
-      margin: 16px; background: var(--bg-card);
-      border: 1px solid var(--border-accent); border-radius: var(--radius-lg);
-      padding: 24px 20px; text-align: center;
-    }
+    .timer-card { margin: 16px; background: var(--bg-card); border: 1px solid var(--border-accent); border-radius: var(--radius-lg); padding: 24px 20px; text-align: center; }
     .timer-equipment { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
     .timer-category { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; }
-    .timer-clock {
-      font-family: var(--font-mono); font-size: 52px; font-weight: 600;
-      color: var(--accent); letter-spacing: 0.05em; line-height: 1; margin-bottom: 12px;
-    }
+    .timer-clock { font-family: var(--font-mono); font-size: 52px; font-weight: 600; color: var(--accent); letter-spacing: 0.05em; line-height: 1; margin-bottom: 12px; }
+    .timer-clock.warning { color: var(--warning); }
     .timer-started { font-size: 12px; color: var(--text-muted); }
     .timer-notes-wrap { padding: 0 16px 16px; }
-    .notes-label {
-      font-size: 12px; color: var(--text-secondary); display: block;
-      margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em;
-    }
-    .notes-input {
-      width: 100%; background: var(--bg-input); border: 1px solid var(--border);
-      border-radius: var(--radius-md); padding: 12px; color: var(--text-primary);
-      font-family: var(--font); font-size: 14px; resize: none; outline: none;
-    }
+    .notes-label { font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .notes-input { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; color: var(--text-primary); font-family: var(--font); font-size: 14px; resize: none; outline: none; }
     .notes-input:focus { border-color: var(--accent); }
     .notes-input::placeholder { color: var(--text-muted); }
 
     /* ── RESOLVE ── */
-    .resolve-card {
-      margin: 16px; background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); padding: 20px;
-    }
+    .resolve-card { margin: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; }
     .resolve-summary { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
     .resolve-row { display: flex; justify-content: space-between; padding: 8px 0; }
     .resolve-label { font-size: 13px; color: var(--text-secondary); }
     .resolve-value { font-size: 14px; font-weight: 500; }
-    .section-label {
-      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--text-secondary); margin-bottom: 10px;
-    }
+    .section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 10px; }
     .time-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-    .time-opt {
-      background: var(--bg-input); border: 1px solid var(--border);
-      border-radius: var(--radius-md); padding: 12px 10px;
-      cursor: pointer; font-size: 13px; color: var(--text-primary); text-align: center; line-height: 1.4;
-    }
+    .time-opt { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 10px; cursor: pointer; font-size: 13px; color: var(--text-primary); text-align: center; line-height: 1.4; }
     .time-opt.active { border-color: var(--accent); background: var(--accent-glow); color: var(--accent); }
     .time-opt-sub { display: block; font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+    .time-opt.active .time-opt-sub { color: var(--accent-dim); }
+    .custom-time-input { width: 100%; background: var(--bg-input); border: 1px solid var(--border-accent); border-radius: var(--radius-md); padding: 12px; color: var(--text-primary); font-size: 16px; outline: none; margin-top: 4px; display: none; }
 
     /* ── EVENT LOG ── */
-    .log-date-bar {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border); flex-shrink: 0;
-    }
+    .log-date-bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
     .log-date-label { font-size: 13px; font-weight: 500; }
     .log-date-nav { background: transparent; border: none; color: var(--text-secondary); font-size: 16px; cursor: pointer; padding: 4px 8px; }
     .log-list { padding: 12px 16px; overflow-y: auto; }
@@ -318,54 +234,27 @@
     .log-entry-detail { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
     .log-entry-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
     .log-entry-actions { display: flex; gap: 8px; }
-    .log-action-btn {
-      background: var(--bg-2); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 6px 14px; font-size: 12px;
-      color: var(--text-secondary); cursor: pointer;
-    }
+    .log-action-btn { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 14px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
     .log-action-btn.danger { color: var(--danger); border-color: rgba(255,77,77,0.25); }
 
     /* ── SETTINGS ── */
     .settings-list { padding: 16px; overflow-y: auto; }
     .settings-group { margin-bottom: 24px; }
     .settings-group-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; }
-    .settings-item {
-      background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 6px;
-      display: flex; align-items: center; justify-content: space-between; font-size: 14px;
-    }
+    .settings-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
     .settings-value { font-size: 13px; color: var(--text-secondary); }
-    .settings-edit-btn {
-      width: 100%; background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: var(--radius-md); padding: 13px 16px; margin-top: 6px;
-      font-size: 14px; color: var(--accent); cursor: pointer; text-align: center;
-    }
+    .settings-edit-btn { width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 13px 16px; margin-top: 6px; font-size: 14px; color: var(--accent); cursor: pointer; text-align: center; }
     .danger-btn { color: var(--danger) !important; border-color: rgba(255,77,77,0.25) !important; }
 
     /* ── PLACEHOLDER ── */
-    .placeholder-screen {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 16px; padding: 2rem; color: var(--text-muted);
-    }
+    .placeholder-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 2rem; color: var(--text-muted); }
     .placeholder-icon { opacity: 0.3; }
     .placeholder-text { font-size: 14px; text-align: center; }
 
     /* ── MODAL ── */
-    .modal-overlay {
-      position: absolute; inset: 0;
-      background: rgba(0,0,0,0.7); z-index: 100;
-      display: flex; align-items: flex-end;
-    }
-    .modal-card {
-      background: var(--bg-1); border: 1px solid var(--border);
-      border-top-left-radius: var(--radius-xl); border-top-right-radius: var(--radius-xl);
-      width: 100%; padding: 28px 24px 36px; text-align: center;
-    }
-    .modal-icon {
-      width: 48px; height: 48px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 22px; font-weight: 700; margin: 0 auto 16px;
-    }
+    .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; display: flex; align-items: flex-end; }
+    .modal-card { background: var(--bg-1); border: 1px solid var(--border); border-top-left-radius: var(--radius-xl); border-top-right-radius: var(--radius-xl); width: 100%; padding: 28px 24px 36px; text-align: center; }
+    .modal-icon { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; margin: 0 auto 16px; }
     .warning-icon { background: rgba(255,170,0,0.15); color: var(--warning); border: 1px solid rgba(255,170,0,0.35); }
     .modal-title { font-size: 18px; font-weight: 600; margin-bottom: 10px; }
     .modal-body { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6; }
@@ -376,7 +265,6 @@
   </style>
 </head>
 <body>
-
 <div class="phone-frame">
 
   <!-- ── LOGIN ── -->
@@ -389,7 +277,7 @@
       </div>
       <div class="login-card">
         <p class="login-prompt">Sign in with your work account to continue.</p>
-        <button class="btn-primary btn-ms" onclick="showScreen('screen-home')">
+        <button class="btn-primary btn-ms" onclick="login()">
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
             <rect x="1" y="1" width="7.5" height="7.5" fill="#F25022"/>
             <rect x="9.5" y="1" width="7.5" height="7.5" fill="#7FBA00"/>
@@ -399,17 +287,17 @@
           Sign in with Microsoft
         </button>
       </div>
-      <p class="login-footer">Factory Watch v0.1 · Demo Build</p>
+      <p class="login-footer">Factory Watch v0.2 · Phase 2 Build</p>
     </div>
   </div>
 
-  <!-- ── HOME: FOUR BUTTONS ── -->
+  <!-- ── HOME ── -->
   <div class="screen" id="screen-home">
     <header class="topbar">
       <div class="topbar-left">
-        <div class="user-avatar">RG</div>
+        <div class="user-avatar" id="home-avatar">RG</div>
         <div class="user-info">
-          <span class="user-name">R. Garcia</span>
+          <span class="user-name" id="home-username">R. Garcia</span>
           <span class="user-role">Factory Engineer · F/V Araho</span>
         </div>
       </div>
@@ -426,56 +314,47 @@
       </div>
     </header>
 
-    <!-- Only shown when a timer is active — hidden by default -->
-    <div class="active-banner" id="active-banner" style="display:none">
-      <div class="active-banner-inner">
-        <span class="active-banner-dot"></span>
-        <span class="active-banner-text" id="active-banner-text">Plate Freezer Jam · 00:12:34</span>
-        <button class="active-banner-btn" onclick="showScreen('screen-timer')">View</button>
-      </div>
-    </div>
+    <div class="active-timers-stack" id="active-timers-stack"></div>
 
     <div class="big-btn-grid">
-      <button class="big-btn preset-btn" onclick="showScreen('screen-timer')">PLATE FREEZER JAM</button>
-      <button class="big-btn preset-btn" onclick="showScreen('screen-timer')">PAN EJECTOR JAM</button>
-      <button class="big-btn preset-btn" onclick="showScreen('screen-timer')">MISLABEL</button>
-      <button class="big-btn other-btn"  onclick="showScreen('screen-equipment')">OTHER</button>
+      <button class="big-btn preset-btn" id="btn-preset-0" onclick="startPreset(0)">PLATE FREEZER JAM</button>
+      <button class="big-btn preset-btn" id="btn-preset-1" onclick="startPreset(1)">PAN EJECTOR JAM</button>
+      <button class="big-btn preset-btn" id="btn-preset-2" onclick="startPreset(2)">MISLABEL</button>
+      <button class="big-btn other-btn" onclick="showScreen('screen-equipment')">OTHER</button>
     </div>
   </div>
 
-  <!-- ── EQUIPMENT SELECTION ── -->
+  <!-- ── EQUIPMENT ── -->
   <div class="screen" id="screen-equipment">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-home')">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <button class="back-btn" onclick="showScreen('screen-home')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Select Equipment</h2>
       <div style="width:36px"></div>
     </div>
     <div class="equipment-list">
       <div class="equip-group">
         <div class="equip-group-label">Freezing</div>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #3</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #4</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #5</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Plate Freezer #1')"><span class="equip-name">Plate Freezer #1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Plate Freezer #2')"><span class="equip-name">Plate Freezer #2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Plate Freezer #3')"><span class="equip-name">Plate Freezer #3</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Plate Freezer #4')"><span class="equip-name">Plate Freezer #4</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Plate Freezer #5')"><span class="equip-name">Plate Freezer #5</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       </div>
       <div class="equip-group">
         <div class="equip-group-label">Breaking &amp; Case Up</div>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Pan Ejector 1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Pan Ejector 2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Bag Applicator</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Welding Machine</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Check Weight Scale</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Label Applicator</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Pan Ejector 1')"><span class="equip-name">Pan Ejector 1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Pan Ejector 2')"><span class="equip-name">Pan Ejector 2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Bag Applicator')"><span class="equip-name">Bag Applicator</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Welding Machine')"><span class="equip-name">Welding Machine</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Check Weight Scale')"><span class="equip-name">Check Weight Scale</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Label Applicator')"><span class="equip-name">Label Applicator</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       </div>
       <div class="equip-group">
         <div class="equip-group-label">Back Line &amp; Packing</div>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Back Line</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Header #1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Header #2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Packing Station</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Back Line')"><span class="equip-name">Back Line</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Header #1')"><span class="equip-name">Header #1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Header #2')"><span class="equip-name">Header #2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="selectEquipment('Packing Station')"><span class="equip-name">Packing Station</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       </div>
     </div>
   </div>
@@ -483,125 +362,100 @@
   <!-- ── CATEGORY ── -->
   <div class="screen" id="screen-category">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-equipment')">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <button class="back-btn" onclick="showScreen('screen-equipment')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Failure Category</h2>
       <div style="width:36px"></div>
     </div>
     <div class="equip-context-bar">
       <span class="equip-context-label">Equipment:</span>
-      <span class="equip-context-value">Plate Freezer #2</span>
+      <span class="equip-context-value" id="category-equip-label">—</span>
     </div>
     <div class="category-list">
-      <button class="category-item" onclick="showScreen('screen-timer')">Mechanical jam</button>
-      <button class="category-item" onclick="showScreen('screen-timer')">Hydraulic fitting leak</button>
-      <button class="category-item" onclick="showScreen('screen-timer')">Electrical fault</button>
-      <button class="category-item" onclick="showScreen('screen-timer')">Sensor / calibration</button>
-      <button class="category-item" onclick="showScreen('screen-timer')">Refrigerant issue</button>
-      <button class="category-item" onclick="showScreen('screen-timer')">Scheduled maintenance</button>
-      <button class="category-item" onclick="showScreen('screen-timer')">Operator error</button>
-      <button class="category-item" onclick="showScreen('screen-timer')">Unknown / investigating</button>
+      <button class="category-item" onclick="selectCategory('Mechanical jam')">Mechanical jam</button>
+      <button class="category-item" onclick="selectCategory('Hydraulic fitting leak')">Hydraulic fitting leak</button>
+      <button class="category-item" onclick="selectCategory('Electrical fault')">Electrical fault</button>
+      <button class="category-item" onclick="selectCategory('Sensor / calibration')">Sensor / calibration</button>
+      <button class="category-item" onclick="selectCategory('Refrigerant issue')">Refrigerant issue</button>
+      <button class="category-item" onclick="selectCategory('Scheduled maintenance')">Scheduled maintenance</button>
+      <button class="category-item" onclick="selectCategory('Operator error')">Operator error</button>
+      <button class="category-item" onclick="selectCategory('Unknown / investigating')">Unknown / investigating</button>
     </div>
   </div>
 
-  <!-- ── TIMER ── -->
+  <!-- ── TIMER SCREEN ── -->
   <div class="screen" id="screen-timer">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-home')">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <button class="back-btn" onclick="showScreen('screen-home')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Active Incident</h2>
       <div style="width:36px"></div>
     </div>
     <div class="timer-card">
-      <div class="timer-equipment">Plate Freezer #2</div>
-      <div class="timer-category">Mechanical jam</div>
-      <div class="timer-clock" id="timer-display">00:00:00</div>
-      <div class="timer-started">Started 14:32 · Day Shift · R. Garcia</div>
-      <button class="btn-resolve" onclick="showScreen('screen-resolve')">Resolve Incident</button>
+      <div class="timer-equipment" id="timer-equip-label">—</div>
+      <div class="timer-category"  id="timer-cat-label">—</div>
+      <div class="timer-clock"     id="timer-display">00:00:00</div>
+      <div class="timer-started"   id="timer-started-label">—</div>
+      <button class="btn-resolve" onclick="openResolve()">Resolve Incident</button>
     </div>
     <div class="timer-notes-wrap">
       <label class="notes-label">Notes (optional)</label>
-      <textarea class="notes-input" placeholder="Describe the issue or actions taken…" rows="3"></textarea>
+      <textarea class="notes-input" id="timer-notes" placeholder="Describe the issue or actions taken…" rows="3"></textarea>
     </div>
   </div>
 
   <!-- ── RESOLVE ── -->
   <div class="screen" id="screen-resolve">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-timer')">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <button class="back-btn" onclick="showScreen('screen-timer')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Close Incident</h2>
       <div style="width:36px"></div>
     </div>
     <div class="resolve-card">
       <div class="resolve-summary">
-        <div class="resolve-row"><span class="resolve-label">Equipment</span><span class="resolve-value">Plate Freezer #2</span></div>
-        <div class="resolve-row"><span class="resolve-label">Category</span><span class="resolve-value">Mechanical jam</span></div>
-        <div class="resolve-row"><span class="resolve-label">Duration</span><span class="resolve-value">00:47:12</span></div>
+        <div class="resolve-row"><span class="resolve-label">Equipment</span><span class="resolve-value" id="resolve-equip">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Category</span><span class="resolve-value" id="resolve-cat">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Started</span><span class="resolve-value" id="resolve-start">—</span></div>
+        <div class="resolve-row"><span class="resolve-label">Duration</span><span class="resolve-value" id="resolve-duration">—</span></div>
       </div>
       <div>
         <div class="section-label" style="margin-bottom:12px">Close-out time</div>
         <div class="time-options">
-          <button class="time-opt active">Use current time<br><span class="time-opt-sub">14:32</span></button>
-          <button class="time-opt">Enter custom time<br><span class="time-opt-sub">Manual entry</span></button>
+          <button class="time-opt active" id="time-opt-now" onclick="selectCloseTime('now')">Use current time<br><span class="time-opt-sub" id="resolve-now-time">—</span></button>
+          <button class="time-opt" id="time-opt-custom" onclick="selectCloseTime('custom')">Enter custom time<br><span class="time-opt-sub">Manual entry</span></button>
         </div>
+        <input type="time" class="custom-time-input" id="custom-time-input">
       </div>
-      <button class="btn-primary btn-confirm" onclick="showScreen('screen-home')">Confirm &amp; Save</button>
+      <button class="btn-primary btn-confirm" onclick="confirmResolve()">Confirm &amp; Save</button>
     </div>
   </div>
 
   <!-- ── EVENT LOG ── -->
   <div class="screen" id="screen-review">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-home')">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <button class="back-btn" onclick="showScreen('screen-home')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Event Log</h2>
       <div style="width:36px"></div>
     </div>
     <div class="log-date-bar">
       <button class="log-date-nav">&lt;</button>
-      <span class="log-date-label">Today — 18 Apr 2026</span>
+      <span class="log-date-label" id="log-date-label">Today</span>
       <button class="log-date-nav">&gt;</button>
     </div>
-    <div class="log-list">
-      <div class="log-entry">
-        <div class="log-entry-header"><span class="log-equip">Plate Freezer #2</span><span class="log-badge resolved-badge">Resolved</span></div>
-        <div class="log-entry-detail">Mechanical jam · 47 min</div>
-        <div class="log-entry-meta">09:14 – 10:01 · R. Garcia</div>
-        <div class="log-entry-actions"><button class="log-action-btn">Edit</button><button class="log-action-btn danger">Delete</button></div>
-      </div>
-      <div class="log-entry">
-        <div class="log-entry-header"><span class="log-equip">Label Applicator</span><span class="log-badge resolved-badge">Resolved</span></div>
-        <div class="log-entry-detail">Sensor / calibration · 22 min</div>
-        <div class="log-entry-meta">11:30 – 11:52 · R. Garcia</div>
-        <div class="log-entry-actions"><button class="log-action-btn">Edit</button><button class="log-action-btn danger">Delete</button></div>
-      </div>
-      <div class="log-entry active-entry">
-        <div class="log-entry-header"><span class="log-equip">Pan Ejector 1</span><span class="log-badge active-badge">Active</span></div>
-        <div class="log-entry-detail">Mechanical jam · ongoing</div>
-        <div class="log-entry-meta">14:32 – now · R. Garcia</div>
-        <div class="log-entry-actions"><button class="log-action-btn">View</button></div>
-      </div>
+    <div class="log-list" id="log-list">
+      <p style="color:var(--text-muted);font-size:14px;text-align:center;padding:2rem">No events logged yet.</p>
     </div>
   </div>
 
   <!-- ── SETTINGS ── -->
   <div class="screen" id="screen-settings">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-home')">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <button class="back-btn" onclick="showScreen('screen-home')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Settings</h2>
       <div style="width:36px"></div>
     </div>
     <div class="settings-list">
       <div class="settings-group">
         <div class="settings-group-label">Account</div>
-        <div class="settings-item"><span>R. Garcia</span><span class="settings-value">Factory Engineer</span></div>
+        <div class="settings-item"><span id="settings-name">—</span><span class="settings-value">Factory Engineer</span></div>
         <div class="settings-item"><span>Vessel</span><span class="settings-value">F/V Araho</span></div>
       </div>
       <div class="settings-group">
@@ -609,7 +463,6 @@
         <div class="settings-item"><span>Preset 1</span><span class="settings-value">Plate Freezer Jam</span></div>
         <div class="settings-item"><span>Preset 2</span><span class="settings-value">Pan Ejector Jam</span></div>
         <div class="settings-item"><span>Preset 3</span><span class="settings-value">Mislabel</span></div>
-        <button class="settings-edit-btn">Edit Presets</button>
       </div>
       <div class="settings-group">
         <div class="settings-group-label">Sync</div>
@@ -625,44 +478,381 @@
   <!-- ── REPORT PLACEHOLDER ── -->
   <div class="screen" id="screen-report">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-home')">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
+      <button class="back-btn" onclick="showScreen('screen-home')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Daily Report</h2>
       <div style="width:36px"></div>
     </div>
     <div class="placeholder-screen">
-      <div class="placeholder-icon">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><path d="M8 36l10-12 10 7 10-16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><rect x="4" y="4" width="40" height="40" rx="4" stroke="currentColor" stroke-width="2"/></svg>
-      </div>
+      <div class="placeholder-icon"><svg width="48" height="48" viewBox="0 0 48 48" fill="none"><path d="M8 36l10-12 10 7 10-16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><rect x="4" y="4" width="40" height="40" rx="4" stroke="currentColor" stroke-width="2"/></svg></div>
       <p class="placeholder-text">Report generation — Phase 8</p>
     </div>
   </div>
 
   <!-- ── 30-MIN WARNING MODAL ── -->
-  <div class="modal-overlay" id="timer-warning" style="display:none">
+  <div class="modal-overlay" id="modal-warning" style="display:none">
     <div class="modal-card">
       <div class="modal-icon warning-icon">!</div>
       <h3 class="modal-title">Timer Still Running</h3>
-      <p class="modal-body">Plate Freezer #2 – Mechanical jam has been running for 30 minutes. Is this still ongoing?</p>
+      <p class="modal-body" id="modal-warning-text">An incident has been running for 30 minutes.</p>
       <div class="modal-actions">
-        <button class="modal-btn modal-btn-secondary">Still Ongoing</button>
-        <button class="modal-btn modal-btn-primary" onclick="document.getElementById('timer-warning').style.display='none'; showScreen('screen-resolve')">Resolve Now</button>
+        <button class="modal-btn modal-btn-secondary" onclick="dismissWarning()">Still Ongoing</button>
+        <button class="modal-btn modal-btn-primary" onclick="resolveFromWarning()">Resolve Now</button>
       </div>
     </div>
   </div>
 
-</div><!-- /phone-frame -->
+  <!-- ── CONCURRENT TIMER MODAL ── -->
+  <div class="modal-overlay" id="modal-concurrent" style="display:none">
+    <div class="modal-card">
+      <div class="modal-icon warning-icon">!</div>
+      <h3 class="modal-title">Timer Already Running</h3>
+      <p class="modal-body" id="modal-concurrent-text">You have an active timer running. Starting a new one will run both concurrently.</p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary" onclick="dismissConcurrent()">Cancel</button>
+        <button class="modal-btn modal-btn-primary" onclick="confirmConcurrent()">Start Anyway</button>
+      </div>
+    </div>
+  </div>
+
+</div>
 
 <script>
-  function showScreen(id) {
-    document.querySelectorAll('.screen').forEach(function(s) {
-      s.classList.remove('active');
-    });
-    var t = document.getElementById(id);
-    if (t) { t.classList.add('active'); t.scrollTop = 0; }
-  }
-</script>
+// ════════════════════════════════════════
+// FACTORY WATCH — Phase 2: Timer Logic
+// ════════════════════════════════════════
 
+// ── PRESETS ─────────────────────────────
+// Maps each big button to equipment + category.
+// Phase 4 will make these user-configurable.
+var PRESETS = [
+  { equipment: 'Plate Freezer',    category: 'Mechanical jam' },
+  { equipment: 'Pan Ejector',      category: 'Mechanical jam' },
+  { equipment: 'Label Applicator', category: 'Mislabel / wrong label' }
+];
+
+// ── STATE ────────────────────────────────
+// All the data the app tracks at runtime.
+var activeIncidents   = [];   // timers currently running
+var resolvedIncidents = [];   // completed events
+var currentUser       = { name: '', initials: '' };
+var pendingIncident   = null; // being built via Other flow
+var viewingIncidentId = null; // which incident the timer screen shows
+var warningIncidentId = null; // which incident triggered the 30-min warning
+var pendingConcurrent = null; // incident waiting for concurrent confirmation
+
+// ── SCREEN NAVIGATION ───────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(function(s) { s.classList.remove('active'); });
+  var t = document.getElementById(id);
+  if (t) { t.classList.add('active'); t.scrollTop = 0; }
+}
+
+// ── LOGIN ────────────────────────────────
+// Temporary prompt — replaced by Microsoft
+// OAuth in Phase 5.
+function login() {
+  var name = prompt('Enter your name (e.g. R. Garcia):');
+  if (!name || !name.trim()) return;
+  name = name.trim();
+  var parts    = name.split(' ');
+  var initials = parts.map(function(p) { return p[0]; }).join('').toUpperCase().slice(0, 2);
+  currentUser  = { name: name, initials: initials };
+  document.getElementById('home-avatar').textContent   = initials;
+  document.getElementById('home-username').textContent = name;
+  document.getElementById('settings-name').textContent = name;
+  showScreen('screen-home');
+}
+
+// ── START TIMER — PRESET PATH ────────────
+function startPreset(index) {
+  var preset = PRESETS[index];
+  if (activeIncidents.length > 0) {
+    pendingConcurrent = { equipment: preset.equipment, category: preset.category };
+    showConcurrentModal();
+    return;
+  }
+  startTimer(preset.equipment, preset.category);
+}
+
+// ── START TIMER — OTHER PATH ─────────────
+function selectEquipment(name) {
+  pendingIncident = { equipment: name, category: null };
+  document.getElementById('category-equip-label').textContent = name;
+  showScreen('screen-category');
+}
+
+function selectCategory(category) {
+  if (!pendingIncident) return;
+  pendingIncident.category = category;
+  if (activeIncidents.length > 0) {
+    pendingConcurrent = { equipment: pendingIncident.equipment, category: pendingIncident.category };
+    pendingIncident   = null;
+    showConcurrentModal();
+    return;
+  }
+  startTimer(pendingIncident.equipment, pendingIncident.category);
+  pendingIncident = null;
+}
+
+// ── START TIMER — CORE ───────────────────
+// Both paths above lead here.
+// Creates an incident object and adds it
+// to the activeIncidents array.
+function startTimer(equipment, category) {
+  var now      = new Date();
+  var incident = {
+    id:           Date.now(),      // unique number based on current timestamp
+    equipment:    equipment,
+    category:     category,
+    startTime:    now,             // Date object — used for elapsed calculations
+    startLabel:   formatTime(now), // "14:32" — used for display
+    warningShown: false,
+    notes:        ''
+  };
+  activeIncidents.push(incident);
+  openTimerScreen(incident.id);
+  renderTimerBars();
+  updatePresetButtons();
+}
+
+// ── CLOCK TICK ───────────────────────────
+// setInterval runs this every second.
+// It updates every visible clock element.
+setInterval(function() {
+  var now = new Date();
+  activeIncidents.forEach(function(incident) {
+    var elapsed   = Math.floor((now - incident.startTime) / 1000);
+    var isWarning = elapsed >= 1800;
+
+    // Update the slim timer bar on the home screen
+    var barClock = document.getElementById('bar-clock-' + incident.id);
+    if (barClock) {
+      barClock.textContent = formatElapsed(elapsed);
+      if (isWarning) barClock.classList.add('warning');
+    }
+
+    // Update the large clock if this incident is currently on the timer screen
+    if (viewingIncidentId === incident.id) {
+      var display = document.getElementById('timer-display');
+      if (display) {
+        display.textContent = formatElapsed(elapsed);
+        if (isWarning) display.classList.add('warning');
+      }
+    }
+
+    // Fire 30-minute warning exactly once per incident
+    if (isWarning && !incident.warningShown) {
+      incident.warningShown = true;
+      showWarningModal(incident);
+    }
+  });
+}, 1000);
+
+// ── OPEN TIMER SCREEN ───────────────────
+// Fills the timer screen with one incident's
+// data, then navigates to it.
+function openTimerScreen(incidentId) {
+  var incident = findIncident(incidentId);
+  if (!incident) return;
+  viewingIncidentId = incidentId;
+  document.getElementById('timer-equip-label').textContent   = incident.equipment;
+  document.getElementById('timer-cat-label').textContent     = incident.category;
+  document.getElementById('timer-started-label').textContent = 'Started ' + incident.startLabel + ' · ' + currentUser.name;
+  document.getElementById('timer-notes').value               = incident.notes || '';
+  var elapsed = Math.floor((new Date() - incident.startTime) / 1000);
+  var display = document.getElementById('timer-display');
+  display.textContent = formatElapsed(elapsed);
+  display.className   = 'timer-clock' + (elapsed >= 1800 ? ' warning' : '');
+  showScreen('screen-timer');
+}
+
+// ── RENDER TIMER BARS ───────────────────
+// Rebuilds the active timer strip on the
+// home screen from scratch.
+function renderTimerBars() {
+  var stack = document.getElementById('active-timers-stack');
+  stack.innerHTML = '';
+  activeIncidents.forEach(function(incident) {
+    var elapsed   = Math.floor((new Date() - incident.startTime) / 1000);
+    var isWarning = elapsed >= 1800;
+    var bar       = document.createElement('div');
+    bar.className = 'active-timer-bar';
+    bar.onclick   = function() { openTimerScreen(incident.id); };
+    bar.innerHTML =
+      '<span class="timer-bar-dot' + (isWarning ? ' warning' : '') + '"></span>' +
+      '<div class="timer-bar-info">' +
+        '<div class="timer-bar-name">' + incident.equipment + '</div>' +
+        '<div class="timer-bar-cat">'  + incident.category  + '</div>' +
+      '</div>' +
+      '<div class="timer-bar-clock' + (isWarning ? ' warning' : '') + '" id="bar-clock-' + incident.id + '">' +
+        formatElapsed(elapsed) +
+      '</div>';
+    stack.appendChild(bar);
+  });
+}
+
+// ── RESOLVE ─────────────────────────────
+function openResolve() {
+  var incident = findIncident(viewingIncidentId);
+  if (incident) incident.notes = document.getElementById('timer-notes').value;
+  var now = new Date();
+  var elapsed = Math.floor((now - incident.startTime) / 1000);
+  document.getElementById('resolve-equip').textContent    = incident.equipment;
+  document.getElementById('resolve-cat').textContent      = incident.category;
+  document.getElementById('resolve-start').textContent    = incident.startLabel;
+  document.getElementById('resolve-duration').textContent = formatElapsed(elapsed);
+  document.getElementById('resolve-now-time').textContent = formatTime(now);
+  selectCloseTime('now');
+  showScreen('screen-resolve');
+}
+
+function selectCloseTime(mode) {
+  var optNow   = document.getElementById('time-opt-now');
+  var optCust  = document.getElementById('time-opt-custom');
+  var custIn   = document.getElementById('custom-time-input');
+  if (mode === 'now') {
+    optNow.classList.add('active');    optCust.classList.remove('active');
+    custIn.style.display = 'none';
+  } else {
+    optNow.classList.remove('active'); optCust.classList.add('active');
+    custIn.style.display = 'block';
+    var now = new Date();
+    custIn.value = padTwo(now.getHours()) + ':' + padTwo(now.getMinutes());
+  }
+}
+
+function confirmResolve() {
+  var incident = findIncident(viewingIncidentId);
+  if (!incident) return;
+  var closeTime;
+  if (document.getElementById('time-opt-now').classList.contains('active')) {
+    closeTime = new Date();
+  } else {
+    var parts = document.getElementById('custom-time-input').value.split(':');
+    closeTime = new Date();
+    closeTime.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
+  }
+  var elapsed  = Math.floor((closeTime - incident.startTime) / 1000);
+  var resolved = {
+    id:            incident.id,
+    equipment:     incident.equipment,
+    category:      incident.category,
+    startTime:     incident.startTime,
+    startLabel:    incident.startLabel,
+    endTime:       closeTime,
+    endLabel:      formatTime(closeTime),
+    duration:      elapsed,
+    durationLabel: formatElapsed(elapsed),
+    notes:         incident.notes,
+    user:          currentUser.name
+  };
+  resolvedIncidents.push(resolved);
+  activeIncidents   = activeIncidents.filter(function(i) { return i.id !== incident.id; });
+  viewingIncidentId = null;
+  renderTimerBars();
+  updatePresetButtons();
+  renderEventLog();
+  showScreen('screen-home');
+}
+
+// ── EVENT LOG ───────────────────────────
+function renderEventLog() {
+  var list  = document.getElementById('log-list');
+  var today = new Date();
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  document.getElementById('log-date-label').textContent =
+    'Today — ' + today.getDate() + ' ' + months[today.getMonth()] + ' ' + today.getFullYear();
+
+  if (!activeIncidents.length && !resolvedIncidents.length) {
+    list.innerHTML = '<p style="color:var(--text-muted);font-size:14px;text-align:center;padding:2rem">No events logged yet.</p>';
+    return;
+  }
+  list.innerHTML = '';
+
+  // Active first
+  activeIncidents.forEach(function(i) {
+    var div = document.createElement('div');
+    div.className = 'log-entry active-entry';
+    div.innerHTML =
+      '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge active-badge">Active</span></div>' +
+      '<div class="log-entry-detail">' + i.category + ' · ongoing</div>' +
+      '<div class="log-entry-meta">'   + i.startLabel + ' – now · ' + currentUser.name + '</div>' +
+      '<div class="log-entry-actions"><button class="log-action-btn" onclick="openTimerScreen(' + i.id + ')">View</button></div>';
+    list.appendChild(div);
+  });
+
+  // Resolved, newest first
+  resolvedIncidents.slice().reverse().forEach(function(i) {
+    var div = document.createElement('div');
+    div.className = 'log-entry';
+    div.innerHTML =
+      '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge resolved-badge">Resolved</span></div>' +
+      '<div class="log-entry-detail">' + i.category + ' · ' + i.durationLabel + '</div>' +
+      '<div class="log-entry-meta">'   + i.startLabel + ' – ' + i.endLabel + ' · ' + i.user + '</div>' +
+      '<div class="log-entry-actions"><button class="log-action-btn danger" onclick="deleteEvent(' + i.id + ')">Delete</button></div>';
+    list.appendChild(div);
+  });
+}
+
+function deleteEvent(id) {
+  if (!confirm('Delete this event?')) return;
+  resolvedIncidents = resolvedIncidents.filter(function(i) { return i.id !== id; });
+  renderEventLog();
+}
+
+// ── PRESET BUTTON HIGHLIGHT ─────────────
+function updatePresetButtons() {
+  PRESETS.forEach(function(preset, index) {
+    var btn      = document.getElementById('btn-preset-' + index);
+    if (!btn) return;
+    var isActive = activeIncidents.some(function(i) { return i.equipment === preset.equipment; });
+    btn.classList.toggle('has-active', isActive);
+  });
+}
+
+// ── MODALS ──────────────────────────────
+function showWarningModal(incident) {
+  warningIncidentId = incident.id;
+  document.getElementById('modal-warning-text').textContent =
+    incident.equipment + ' – ' + incident.category + ' has been running for 30 minutes. Is this still ongoing?';
+  document.getElementById('modal-warning').style.display = 'flex';
+}
+function dismissWarning() {
+  document.getElementById('modal-warning').style.display = 'none';
+  warningIncidentId = null;
+}
+function resolveFromWarning() {
+  document.getElementById('modal-warning').style.display = 'none';
+  if (warningIncidentId) { viewingIncidentId = warningIncidentId; warningIncidentId = null; openResolve(); }
+}
+function showConcurrentModal() {
+  document.getElementById('modal-concurrent-text').textContent =
+    'You have ' + activeIncidents.length + ' active timer' + (activeIncidents.length > 1 ? 's' : '') + ' running. Starting another will run both concurrently.';
+  document.getElementById('modal-concurrent').style.display = 'flex';
+}
+function dismissConcurrent() {
+  document.getElementById('modal-concurrent').style.display = 'none';
+  pendingConcurrent = null;
+}
+function confirmConcurrent() {
+  document.getElementById('modal-concurrent').style.display = 'none';
+  if (pendingConcurrent) { startTimer(pendingConcurrent.equipment, pendingConcurrent.category); pendingConcurrent = null; }
+}
+
+// ── UTILITIES ───────────────────────────
+function findIncident(id) {
+  return activeIncidents.find(function(i) { return i.id === id; });
+}
+function formatTime(date) {
+  return padTwo(date.getHours()) + ':' + padTwo(date.getMinutes());
+}
+function formatElapsed(seconds) {
+  var h = Math.floor(seconds / 3600);
+  var m = Math.floor((seconds % 3600) / 60);
+  var s = seconds % 60;
+  return padTwo(h) + ':' + padTwo(m) + ':' + padTwo(s);
+}
+function padTwo(n) { return n < 10 ? '0' + n : '' + n; }
+</script>
 </body>
 </html>
