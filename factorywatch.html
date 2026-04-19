@@ -560,6 +560,7 @@ function login() {
   document.getElementById('home-avatar').textContent   = initials;
   document.getElementById('home-username').textContent = name;
   document.getElementById('settings-name').textContent = name;
+  saveState();            // persist user to localStorage
   showScreen('screen-home');
 }
 
@@ -610,6 +611,7 @@ function startTimer(equipment, category) {
     notes:        ''
   };
   activeIncidents.push(incident);
+  saveState();            // persist to localStorage
   openTimerScreen(incident.id);
   renderTimerBars();
   updatePresetButtons();
@@ -749,6 +751,7 @@ function confirmResolve() {
   resolvedIncidents.push(resolved);
   activeIncidents   = activeIncidents.filter(function(i) { return i.id !== incident.id; });
   viewingIncidentId = null;
+  saveState();            // persist to localStorage
   renderTimerBars();
   updatePresetButtons();
   renderEventLog();
@@ -797,6 +800,7 @@ function renderEventLog() {
 function deleteEvent(id) {
   if (!confirm('Delete this event?')) return;
   resolvedIncidents = resolvedIncidents.filter(function(i) { return i.id !== id; });
+  saveState();            // persist to localStorage
   renderEventLog();
 }
 
@@ -841,6 +845,79 @@ function confirmConcurrent() {
   if (pendingConcurrent) { startTimer(pendingConcurrent.equipment, pendingConcurrent.category); pendingConcurrent = null; }
 }
 
+// ── LOCAL STORAGE ───────────────────────
+// saveState() serialises all app data to
+// localStorage as JSON strings.
+// loadState() deserialises it back on startup.
+//
+// One important detail: JSON.stringify turns
+// Date objects into strings like
+// "2025-04-18T14:32:00.000Z". When we parse
+// them back with JSON.parse, they come back
+// as plain strings, NOT Date objects. So
+// loadState() manually reconstructs the Date
+// objects using 'new Date(string)'.
+
+function saveState() {
+  try {
+    localStorage.setItem('fw_active',   JSON.stringify(activeIncidents));
+    localStorage.setItem('fw_resolved', JSON.stringify(resolvedIncidents));
+    localStorage.setItem('fw_user',     JSON.stringify(currentUser));
+  } catch(e) {
+    // Storage may be full or unavailable — fail silently
+    console.warn('Storage save failed:', e);
+  }
+}
+
+function loadState() {
+  try {
+    // Load user
+    var savedUser = localStorage.getItem('fw_user');
+    if (savedUser) {
+      currentUser = JSON.parse(savedUser);
+      document.getElementById('home-avatar').textContent   = currentUser.initials;
+      document.getElementById('home-username').textContent = currentUser.name;
+      document.getElementById('settings-name').textContent = currentUser.name;
+    }
+
+    // Load active incidents
+    var savedActive = localStorage.getItem('fw_active');
+    if (savedActive) {
+      activeIncidents = JSON.parse(savedActive);
+      // Restore Date objects — JSON gives us strings, we need real Dates
+      // so that elapsed time calculations work correctly
+      activeIncidents = activeIncidents.map(function(i) {
+        i.startTime = new Date(i.startTime);
+        return i;
+      });
+    }
+
+    // Load resolved incidents
+    var savedResolved = localStorage.getItem('fw_resolved');
+    if (savedResolved) {
+      resolvedIncidents = JSON.parse(savedResolved);
+      // Restore Date objects on resolved incidents too
+      resolvedIncidents = resolvedIncidents.map(function(i) {
+        i.startTime = new Date(i.startTime);
+        i.endTime   = new Date(i.endTime);
+        return i;
+      });
+    }
+
+    // If a user is already logged in, go straight to home
+    // and restore the UI state
+    if (currentUser.name) {
+      renderTimerBars();
+      updatePresetButtons();
+      renderEventLog();
+      showScreen('screen-home');
+    }
+
+  } catch(e) {
+    console.warn('Storage load failed:', e);
+  }
+}
+
 // ── UTILITIES ───────────────────────────
 function findIncident(id) {
   return activeIncidents.find(function(i) { return i.id === id; });
@@ -855,6 +932,11 @@ function formatElapsed(seconds) {
   return padTwo(h) + ':' + padTwo(m) + ':' + padTwo(s);
 }
 function padTwo(n) { return n < 10 ? '0' + n : '' + n; }
+
+// ── STARTUP ──────────────────────────────
+// Runs once when the page loads.
+// Restores any previously saved state.
+loadState();
 </script>
 </body>
 </html>
