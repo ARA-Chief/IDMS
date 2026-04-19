@@ -768,24 +768,9 @@ function msalSignIn() {
   var btn = document.getElementById('msauth-btn');
   btn.textContent = 'Signing in\u2026';
   btn.disabled    = true;
-  var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  if (isMobile) {
-    msalInstance.loginRedirect({ scopes: MSAL_SCOPES });
-  } else {
-    msalInstance.loginPopup({ scopes: MSAL_SCOPES })
-      .then(function(response) {
-        msalAccount = response.account;
-        graphToken  = response.accessToken;
-        onMsalSuccess();
-      })
-      .catch(function(err) {
-        console.warn('MSAL login error:', err);
-        document.getElementById('msauth-error').textContent = 'Sign in failed. Please try again.';
-        document.getElementById('msauth-error').style.display = 'block';
-        btn.textContent = 'Sign in with Microsoft';
-        btn.disabled    = false;
-      });
-  }
+  // Use redirect flow on all devices — more reliable than popup
+  // when the browser already has an active Microsoft session
+  msalInstance.loginRedirect({ scopes: MSAL_SCOPES });
 }
 
 function onMsalSuccess() {
