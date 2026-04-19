@@ -246,6 +246,20 @@
     .settings-edit-btn { width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 13px 16px; margin-top: 6px; font-size: 14px; color: var(--accent); cursor: pointer; text-align: center; }
     .danger-btn { color: var(--danger) !important; border-color: rgba(255,77,77,0.25) !important; }
 
+    /* ── ROLE SELECTOR (login modal) ── */
+    .role-opt {
+      background: var(--bg-2); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 12px 8px;
+      font-size: 13px; font-weight: 500; color: var(--text-secondary);
+      cursor: pointer; text-align: center; transition: border-color 0.1s, color 0.1s;
+    }
+    .role-opt.active {
+      border-color: var(--accent); color: var(--accent);
+      background: var(--accent-glow);
+    }
+    /* Style native selects to fit the dark theme */
+    select option { background: #1a2a44; }
+
     /* ── PLACEHOLDER ── */
     .placeholder-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 2rem; color: var(--text-muted); }
     .placeholder-icon { opacity: 0.3; }
@@ -287,18 +301,25 @@
           Sign in with Microsoft
         </button>
       </div>
-      <p class="login-footer">Factory Watch v0.2 · Phase 2 Build</p>
+      <p class="login-footer">Factory Watch v0.4 · Phase 4 Build</p>
     </div>
   </div>
 
   <!-- ── HOME ── -->
   <div class="screen" id="screen-home">
     <header class="topbar">
-      <div class="topbar-left">
-        <div class="user-avatar" id="home-avatar">RG</div>
+      <div class="topbar-left" style="position:relative">
+        <div class="user-avatar" id="home-avatar" onclick="toggleUserMenu()" style="cursor:pointer" title="Switch user">RG</div>
         <div class="user-info">
           <span class="user-name" id="home-username">R. Garcia</span>
-          <span class="user-role">Factory Engineer · F/V Araho</span>
+          <span class="user-role" id="home-role">Factory Engineer · F/V Araho</span>
+        </div>
+        <!-- User popover menu -->
+        <div id="user-menu" style="display:none;position:absolute;top:44px;left:0;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-md);min-width:180px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted)">Signed in as</div>
+          <div id="user-menu-name" style="padding:10px 14px;font-size:14px;font-weight:500;border-bottom:1px solid var(--border)">—</div>
+          <button onclick="switchUser()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">Switch User</button>
+          <button onclick="signOut()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--danger);cursor:pointer;border-top:1px solid var(--border)">Sign Out</button>
         </div>
       </div>
       <div class="topbar-right">
@@ -455,14 +476,21 @@
     <div class="settings-list">
       <div class="settings-group">
         <div class="settings-group-label">Account</div>
-        <div class="settings-item"><span id="settings-name">—</span><span class="settings-value">Factory Engineer</span></div>
+        <div class="settings-item"><span id="settings-name">—</span><span class="settings-value" id="settings-role">—</span></div>
         <div class="settings-item"><span>Vessel</span><span class="settings-value">F/V Araho</span></div>
       </div>
       <div class="settings-group">
         <div class="settings-group-label">Quick Log Presets</div>
-        <div class="settings-item"><span>Preset 1</span><span class="settings-value">Plate Freezer Jam</span></div>
-        <div class="settings-item"><span>Preset 2</span><span class="settings-value">Pan Ejector Jam</span></div>
-        <div class="settings-item"><span>Preset 3</span><span class="settings-value">Mislabel</span></div>
+        <div class="settings-item" id="settings-preset-0" style="cursor:pointer" onclick="openPresetEditor(0)">
+          <span>Preset 1</span><span class="settings-value" id="settings-preset-label-0">—</span>
+        </div>
+        <div class="settings-item" id="settings-preset-1" style="cursor:pointer" onclick="openPresetEditor(1)">
+          <span>Preset 2</span><span class="settings-value" id="settings-preset-label-1">—</span>
+        </div>
+        <div class="settings-item" id="settings-preset-2" style="cursor:pointer" onclick="openPresetEditor(2)">
+          <span>Preset 3</span><span class="settings-value" id="settings-preset-label-2">—</span>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);padding:6px 4px 0">Tap a preset to change it. Each user's presets are saved separately.</p>
       </div>
       <div class="settings-group">
         <div class="settings-group-label">Sync</div>
@@ -470,7 +498,7 @@
         <button class="settings-edit-btn">Sync Now</button>
       </div>
       <div class="settings-group">
-        <button class="settings-edit-btn danger-btn" onclick="showScreen('screen-login')">Sign Out</button>
+        <button class="settings-edit-btn danger-btn" onclick="signOut()">Sign Out</button>
       </div>
     </div>
   </div>
@@ -514,31 +542,119 @@
     </div>
   </div>
 
+  <!-- ── LOGIN / ROLE MODAL ── -->
+  <!-- Phase 4 replaces the raw prompt() with this modal.
+       Phase 5 will swap this out entirely for Microsoft OAuth. -->
+  <div class="modal-overlay" id="modal-login" style="display:flex">
+    <div class="modal-card" style="text-align:left">
+      <h3 class="modal-title" style="text-align:center;margin-bottom:4px">Sign In</h3>
+      <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px">Temporary — Microsoft login in Phase 5</p>
+
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em">Display Name</label>
+      <input id="login-name-input" type="text" placeholder="e.g. R. Garcia"
+        style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;color:var(--text-primary);font-size:15px;outline:none;margin-bottom:16px"
+        onkeydown="if(event.key==='Enter')submitLogin()">
+
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Role</label>
+      <div id="role-options" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px">
+        <button class="role-opt active" data-role="Factory Engineer" onclick="selectRole(this)">Factory Engineer</button>
+        <button class="role-opt" data-role="1st Engineer" onclick="selectRole(this)">1st Engineer</button>
+        <button class="role-opt" data-role="Freezer Tech" onclick="selectRole(this)">Freezer Tech</button>
+        <button class="role-opt" data-role="Admin" onclick="selectRole(this)">Admin</button>
+      </div>
+
+      <button class="btn-primary" onclick="submitLogin()">Continue</button>
+    </div>
+  </div>
+
+  <!-- ── PRESET EDITOR MODAL ── -->
+  <div class="modal-overlay" id="modal-preset-editor" style="display:none">
+    <div class="modal-card" style="text-align:left">
+      <h3 class="modal-title" style="text-align:center;margin-bottom:4px" id="preset-editor-title">Edit Preset</h3>
+      <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px">Choose equipment and failure category</p>
+
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Equipment</label>
+      <select id="preset-equip-select"
+        style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;color:var(--text-primary);font-size:14px;outline:none;margin-bottom:16px;appearance:none">
+        <optgroup label="Freezing">
+          <option>Plate Freezer #1</option>
+          <option>Plate Freezer #2</option>
+          <option>Plate Freezer #3</option>
+          <option>Plate Freezer #4</option>
+          <option>Plate Freezer #5</option>
+        </optgroup>
+        <optgroup label="Breaking &amp; Case Up">
+          <option>Pan Ejector 1</option>
+          <option>Pan Ejector 2</option>
+          <option>Bag Applicator</option>
+          <option>Welding Machine</option>
+          <option>Check Weight Scale</option>
+          <option>Label Applicator</option>
+        </optgroup>
+        <optgroup label="Back Line &amp; Packing">
+          <option>Back Line</option>
+          <option>Header #1</option>
+          <option>Header #2</option>
+          <option>Packing Station</option>
+        </optgroup>
+      </select>
+
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Failure Category</label>
+      <select id="preset-cat-select"
+        style="width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;color:var(--text-primary);font-size:14px;outline:none;margin-bottom:24px;appearance:none">
+        <option>Mechanical jam</option>
+        <option>Hydraulic fitting leak</option>
+        <option>Electrical fault</option>
+        <option>Sensor / calibration</option>
+        <option>Refrigerant issue</option>
+        <option>Scheduled maintenance</option>
+        <option>Operator error</option>
+        <option>Mislabel / wrong label</option>
+        <option>Unknown / investigating</option>
+      </select>
+
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary" onclick="closePresetEditor()">Cancel</button>
+        <button class="modal-btn modal-btn-primary" onclick="savePreset()">Save Preset</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
 // ════════════════════════════════════════
-// FACTORY WATCH — Phase 2: Timer Logic
+// FACTORY WATCH — Phase 4: User Profiles & Presets
+//
+// New in Phase 4:
+//   - Login modal replaces prompt() — collects name + role
+//   - PRESETS are now per-user, stored as fw_presets_<name>
+//   - Settings screen shows live preset labels, tap to edit
+//   - openPresetEditor() / savePreset() manage the editor modal
+//   - applyRolePermissions() adjusts UI based on role
+//   - signOut() clears session but keeps that user's presets
+//     so they load again on next login with the same name
 // ════════════════════════════════════════
 
-// ── PRESETS ─────────────────────────────
-// Maps each big button to equipment + category.
-// Phase 4 will make these user-configurable.
-var PRESETS = [
-  { equipment: 'Plate Freezer',    category: 'Mechanical jam' },
-  { equipment: 'Pan Ejector',      category: 'Mechanical jam' },
-  { equipment: 'Label Applicator', category: 'Mislabel / wrong label' }
+// ── DEFAULT PRESETS ──────────────────────
+// Used when a user logs in for the first time.
+// Stored per-user after first save.
+var DEFAULT_PRESETS = [
+  { equipment: 'Plate Freezer #1', category: 'Mechanical jam',        label: 'PLATE FREEZER JAM' },
+  { equipment: 'Pan Ejector 1',    category: 'Mechanical jam',        label: 'PAN EJECTOR JAM'   },
+  { equipment: 'Label Applicator', category: 'Mislabel / wrong label', label: 'MISLABEL'          }
 ];
 
 // ── STATE ────────────────────────────────
-// All the data the app tracks at runtime.
-var activeIncidents   = [];   // timers currently running
-var resolvedIncidents = [];   // completed events
-var currentUser       = { name: '', initials: '' };
-var pendingIncident   = null; // being built via Other flow
-var viewingIncidentId = null; // which incident the timer screen shows
-var warningIncidentId = null; // which incident triggered the 30-min warning
-var pendingConcurrent = null; // incident waiting for concurrent confirmation
+var PRESETS           = DEFAULT_PRESETS.slice(); // active preset list (mutable)
+var activeIncidents   = [];
+var resolvedIncidents = [];
+var currentUser       = { name: '', initials: '', role: '' };
+var pendingIncident   = null;
+var viewingIncidentId = null;
+var warningIncidentId = null;
+var pendingConcurrent = null;
+var editingPresetIndex = null; // which preset slot is open in the editor
 
 // ── SCREEN NAVIGATION ───────────────────
 function showScreen(id) {
@@ -547,21 +663,223 @@ function showScreen(id) {
   if (t) { t.classList.add('active'); t.scrollTop = 0; }
 }
 
-// ── LOGIN ────────────────────────────────
-// Temporary prompt — replaced by Microsoft
-// OAuth in Phase 5.
+// ════════════════════════════════════════
+// PHASE 4 — USER PROFILES & PRESETS
+// ════════════════════════════════════════
+
+// ── LOGIN MODAL ──────────────────────────
+// Called by the Sign In button on the login screen.
+// Opens a modal that collects name + role instead
+// of using the browser's prompt() dialog.
 function login() {
-  var name = prompt('Enter your name (e.g. R. Garcia):');
-  if (!name || !name.trim()) return;
-  name = name.trim();
+  document.getElementById('modal-login').style.display = 'flex';
+  setTimeout(function() {
+    document.getElementById('login-name-input').focus();
+  }, 100);
+}
+
+// Called when a role button is tapped in the login modal.
+function selectRole(btn) {
+  document.querySelectorAll('.role-opt').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+
+// Called by the Continue button in the login modal.
+function submitLogin() {
+  var nameInput = document.getElementById('login-name-input');
+  var name = nameInput.value.trim();
+  if (!name) { nameInput.style.borderColor = 'var(--danger)'; return; }
+
+  // Determine selected role
+  var activeRoleBtn = document.querySelector('.role-opt.active');
+  var role = activeRoleBtn ? activeRoleBtn.dataset.role : 'Factory Engineer';
+
+  // Build initials from name
   var parts    = name.split(' ');
-  var initials = parts.map(function(p) { return p[0]; }).join('').toUpperCase().slice(0, 2);
-  currentUser  = { name: name, initials: initials };
-  document.getElementById('home-avatar').textContent   = initials;
-  document.getElementById('home-username').textContent = name;
-  document.getElementById('settings-name').textContent = name;
-  saveState();            // persist user to localStorage
+  var initials = parts.map(function(p) { return p[0] || ''; }).join('').toUpperCase().slice(0, 2);
+
+  currentUser = { name: name, initials: initials, role: role };
+
+  // Load this user's saved presets (or fall back to defaults)
+  loadUserPresets();
+
+  // Apply any role-based UI rules
+  applyRolePermissions();
+
+  // Update the UI with user info
+  updateUserDisplay();
+
+  // Persist session
+  saveState();
+
+  // Close modal and go home
+  document.getElementById('modal-login').style.display = 'none';
   showScreen('screen-home');
+}
+
+// ── LOAD / SAVE USER PRESETS ─────────────
+// Presets are stored per-user using the key
+// fw_presets_<username>.  This means each person
+// who logs in on the same device gets their own
+// set of three preset buttons.
+function loadUserPresets() {
+  var key   = 'fw_presets_' + currentUser.name;
+  var saved = localStorage.getItem(key);
+  if (saved) {
+    try { PRESETS = JSON.parse(saved); } catch(e) { PRESETS = DEFAULT_PRESETS.slice(); }
+  } else {
+    PRESETS = DEFAULT_PRESETS.slice();
+  }
+  applyPresetsToUI();
+}
+
+function saveUserPresets() {
+  var key = 'fw_presets_' + currentUser.name;
+  localStorage.setItem(key, JSON.stringify(PRESETS));
+}
+
+// Writes preset labels into the three home-screen
+// big buttons and into the settings screen rows.
+function applyPresetsToUI() {
+  PRESETS.forEach(function(preset, i) {
+    var btn = document.getElementById('btn-preset-' + i);
+    if (btn) btn.textContent = preset.label;
+    var settingsLabel = document.getElementById('settings-preset-label-' + i);
+    if (settingsLabel) settingsLabel.textContent = preset.equipment + ' — ' + preset.category;
+  });
+}
+
+// ── ROLE PERMISSIONS ─────────────────────
+// Controls what each role can see/do.
+// Currently: Admins and 1st Engineers see a
+// Delete button in the log; others do not.
+// (More restrictions added in Phase 9 admin panel.)
+function applyRolePermissions() {
+  var role = currentUser.role;
+  // For now, store role for use in renderEventLog()
+  // The delete button visibility is handled there.
+}
+
+// ── UPDATE USER DISPLAY ──────────────────
+function updateUserDisplay() {
+  document.getElementById('home-avatar').textContent   = currentUser.initials;
+  document.getElementById('home-username').textContent = currentUser.name;
+  document.getElementById('settings-name').textContent = currentUser.name;
+  var roleEl = document.getElementById('settings-role');
+  if (roleEl) roleEl.textContent = currentUser.role || 'Factory Engineer';
+  var homeRole = document.getElementById('home-role');
+  if (homeRole) homeRole.textContent = (currentUser.role || 'Factory Engineer') + ' · F/V Araho';
+  var menuName = document.getElementById('user-menu-name');
+  if (menuName) menuName.textContent = currentUser.name + ' — ' + (currentUser.role || 'Factory Engineer');
+}
+
+// ── PRESET EDITOR ────────────────────────
+// Opens the preset editor modal for a given slot.
+function openPresetEditor(index) {
+  editingPresetIndex = index;
+  document.getElementById('preset-editor-title').textContent = 'Edit Preset ' + (index + 1);
+
+  // Pre-select current values in the dropdowns
+  var equipSelect = document.getElementById('preset-equip-select');
+  var catSelect   = document.getElementById('preset-cat-select');
+  var preset      = PRESETS[index];
+  equipSelect.value = preset.equipment;
+  catSelect.value   = preset.category;
+
+  document.getElementById('modal-preset-editor').style.display = 'flex';
+}
+
+function closePresetEditor() {
+  document.getElementById('modal-preset-editor').style.display = 'none';
+  editingPresetIndex = null;
+}
+
+// Reads the two dropdowns, writes back to PRESETS,
+// saves, and refreshes the UI.
+function savePreset() {
+  if (editingPresetIndex === null) return;
+  var equipment = document.getElementById('preset-equip-select').value;
+  var category  = document.getElementById('preset-cat-select').value;
+
+  // Build a short display label from the equipment name
+  // (strip trailing numbers for the big button, keep it compact)
+  var label = equipment.replace(/ #\d+$/, '').toUpperCase();
+
+  PRESETS[editingPresetIndex] = { equipment: equipment, category: category, label: label };
+  saveUserPresets();
+  applyPresetsToUI();
+  updatePresetButtons();   // refresh active-timer highlight state
+  closePresetEditor();
+}
+
+// ── USER MENU (avatar tap) ───────────────
+function toggleUserMenu() {
+  var menu = document.getElementById('user-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+function closeUserMenu() {
+  var menu = document.getElementById('user-menu');
+  if (menu) menu.style.display = 'none';
+}
+// Switch User: keeps resolved history, clears session, reopens login
+function switchUser() {
+  closeUserMenu();
+  if (activeIncidents.length > 0) {
+    if (!confirm('You have active timers. Switch user anyway?')) return;
+  }
+  activeIncidents   = [];
+  currentUser       = { name: '', initials: '', role: '' };
+  viewingIncidentId = null;
+  warningIncidentId = null;
+  localStorage.removeItem('fw_active');
+  localStorage.removeItem('fw_user');
+
+  // Clear timer bar DOM — otherwise frozen bars linger
+  var stack = document.getElementById('active-timers-stack');
+  if (stack) stack.innerHTML = '';
+
+  document.getElementById('login-name-input').value = '';
+  document.querySelectorAll('.role-opt').forEach(function(b, i) { b.classList.toggle('active', i === 0); });
+  document.getElementById('modal-login').style.display = 'flex';
+  showScreen('screen-login');
+}
+// Close popover if user taps anywhere else
+document.addEventListener('click', function(e) {
+  var menu   = document.getElementById('user-menu');
+  var avatar = document.getElementById('home-avatar');
+  if (menu && !menu.contains(e.target) && e.target !== avatar) {
+    menu.style.display = 'none';
+  }
+});
+// Clears the session (active incidents, user info)
+// but deliberately leaves fw_presets_<name> and
+// fw_resolved intact so history isn't lost.
+function signOut() {
+  closeUserMenu();
+  if (activeIncidents.length > 0) {
+    if (!confirm('You have active timers running. Sign out anyway?')) return;
+  }
+  activeIncidents   = [];
+  resolvedIncidents = [];
+  currentUser       = { name: '', initials: '', role: '' };
+  viewingIncidentId = null;
+  warningIncidentId = null;
+
+  localStorage.removeItem('fw_active');
+  localStorage.removeItem('fw_user');
+  // NOTE: fw_resolved and fw_presets_<name> are intentionally kept
+
+  // Clear the timer bar DOM so nothing frozen lingers on screen
+  var stack = document.getElementById('active-timers-stack');
+  if (stack) stack.innerHTML = '';
+
+  document.getElementById('login-name-input').value = '';
+  document.querySelectorAll('.role-opt').forEach(function(b, i) {
+    b.classList.toggle('active', i === 0);
+  });
+
+  document.getElementById('modal-login').style.display = 'flex';
+  showScreen('screen-login');
 }
 
 // ── START TIMER — PRESET PATH ────────────
@@ -655,7 +973,11 @@ setInterval(function() {
 // data, then navigates to it.
 function openTimerScreen(incidentId) {
   var incident = findIncident(incidentId);
-  if (!incident) return;
+  if (!incident) {
+    // Incident no longer exists (e.g. stale bar after sign-out) — rebuild bars and bail
+    renderTimerBars();
+    return;
+  }
   viewingIncidentId = incidentId;
   document.getElementById('timer-equip-label').textContent   = incident.equipment;
   document.getElementById('timer-cat-label').textContent     = incident.category;
@@ -788,11 +1110,16 @@ function renderEventLog() {
   resolvedIncidents.slice().reverse().forEach(function(i) {
     var div = document.createElement('div');
     div.className = 'log-entry';
+    // Only Admins and 1st Engineers can delete entries
+    var canDelete = (currentUser.role === 'Admin' || currentUser.role === '1st Engineer');
+    var deleteBtn = canDelete
+      ? '<button class="log-action-btn danger" onclick="deleteEvent(' + i.id + ')">Delete</button>'
+      : '';
     div.innerHTML =
       '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge resolved-badge">Resolved</span></div>' +
       '<div class="log-entry-detail">' + i.category + ' · ' + i.durationLabel + '</div>' +
       '<div class="log-entry-meta">'   + i.startLabel + ' – ' + i.endLabel + ' · ' + i.user + '</div>' +
-      '<div class="log-entry-actions"><button class="log-action-btn danger" onclick="deleteEvent(' + i.id + ')">Delete</button></div>';
+      '<div class="log-entry-actions">' + deleteBtn + '</div>';
     list.appendChild(div);
   });
 }
@@ -869,23 +1196,25 @@ function saveState() {
   }
 }
 
+// (loadState defined below in startup section)
+
 function loadState() {
   try {
     // Load user
     var savedUser = localStorage.getItem('fw_user');
     if (savedUser) {
       currentUser = JSON.parse(savedUser);
-      document.getElementById('home-avatar').textContent   = currentUser.initials;
-      document.getElementById('home-username').textContent = currentUser.name;
-      document.getElementById('settings-name').textContent = currentUser.name;
+      // Phase 4: ensure role exists on older saved sessions
+      if (!currentUser.role) currentUser.role = 'Factory Engineer';
+      updateUserDisplay();
+      loadUserPresets();   // Phase 4: restore this user's preset config
+      applyRolePermissions();
     }
 
     // Load active incidents
     var savedActive = localStorage.getItem('fw_active');
     if (savedActive) {
       activeIncidents = JSON.parse(savedActive);
-      // Restore Date objects — JSON gives us strings, we need real Dates
-      // so that elapsed time calculations work correctly
       activeIncidents = activeIncidents.map(function(i) {
         i.startTime = new Date(i.startTime);
         return i;
@@ -896,7 +1225,6 @@ function loadState() {
     var savedResolved = localStorage.getItem('fw_resolved');
     if (savedResolved) {
       resolvedIncidents = JSON.parse(savedResolved);
-      // Restore Date objects on resolved incidents too
       resolvedIncidents = resolvedIncidents.map(function(i) {
         i.startTime = new Date(i.startTime);
         i.endTime   = new Date(i.endTime);
@@ -905,11 +1233,11 @@ function loadState() {
     }
 
     // If a user is already logged in, go straight to home
-    // and restore the UI state
     if (currentUser.name) {
       renderTimerBars();
       updatePresetButtons();
       renderEventLog();
+      document.getElementById('modal-login').style.display = 'none';
       showScreen('screen-home');
     }
 
@@ -934,8 +1262,9 @@ function formatElapsed(seconds) {
 function padTwo(n) { return n < 10 ? '0' + n : '' + n; }
 
 // ── STARTUP ──────────────────────────────
-// Runs once when the page loads.
-// Restores any previously saved state.
+// Restores any previously saved session.
+// If no session exists, the login modal
+// stays open on top of the login screen.
 loadState();
 </script>
 </body>
