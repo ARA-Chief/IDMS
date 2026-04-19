@@ -1,0 +1,15 @@
+{
+  "vessel": "F/V Araho",
+  "version": "1.0",
+  "departments": ["Factory", "Engine Room", "Deck"],
+  "users": [
+    { "username": "admin",     "password": "araho24", "role": "Admin",           "departments": ["Factory", "Engine Room", "Deck"] },
+    { "username": "tploch", "password": "araho24", "role": "Chief Engineer",  "departments": ["Factory", "Engine Room"] },
+    { "username": "wostara",   "password": "araho24", "role": "Chief Engineer","departments": ["Factory", "Engine Room"] },
+    { "username": "spotchik", "password": "araho24", "role": "1st Engineer",  "departments": ["Factory", "Engine Room"] },
+    { "username": "psimes", "password": "araho24", "role": "1st Engineer",  "departments": ["Factory", "Engine Room"] },
+    { "username": "rgarcia",   "password": "araho24", "role": "Factory Engineer","departments": ["Factory", "Engine Room"] },
+    { "username": "sluce",   "password": "araho24", "role": "Factory Engineer","departments": ["Factory", "Engine Room"] },
+    { "username": "mila",      "password": "araho24", "role": "Freezer Tech",    "departments": ["Factory"] }
+  ]
+}
