@@ -1111,6 +1111,7 @@ function enterDepartment(dept) {
     updatePresetButtons();
     renderEventLog();
     updateSyncIndicator('synced');
+    startSyncTimer();   // begin 5-minute autosync
     showScreen('screen-home');
   }).catch(function(err) {
     console.warn('Dept config load failed:', err);
@@ -1402,6 +1403,7 @@ function signOut() {
   if (activeIncidents.length > 0) {
     if (!confirm('You have active timers running. Sign out anyway?')) return;
   }
+  if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
   activeIncidents   = [];
   resolvedIncidents = [];
   currentUser       = { username: '', name: '', initials: '', role: '', departments: [] };
@@ -1703,6 +1705,7 @@ function confirmResolve() {
   activeIncidents   = activeIncidents.filter(function(i) { return i.id !== incident.id; });
   viewingIncidentId = null;
   saveState();
+  syncToOneDrive();  // push to OneDrive immediately on resolve
   renderTimerBars();
   updatePresetButtons();
   renderEventLog();
@@ -1834,6 +1837,92 @@ function saveState() {
   } catch(e) {
     console.warn('Storage save failed:', e);
   }
+}
+
+// ── ONEDRIVE SYNC ────────────────────────
+// Writes the current user's log file to OneDrive via
+// the Microsoft Graph API. Called every 5 minutes and
+// on every incident resolve.
+//
+// File path in OneDrive:
+//   Documents/IDMS/data/<dept>/logs/report-<username>-<date>.json
+//
+// If the token is expired, silently refreshes before writing.
+// Updates the sync indicator on success or failure.
+
+var ONEDRIVE_BASE = 'Documents/IDMS';
+var _syncTimer    = null;
+
+function startSyncTimer() {
+  if (_syncTimer) clearInterval(_syncTimer);
+  _syncTimer = setInterval(function() {
+    syncToOneDrive();
+  }, 5 * 60 * 1000); // every 5 minutes
+}
+
+function syncToOneDrive() {
+  if (!currentUser.username || !currentDepartment) return;
+  if (!msalInstance || !msalAccount) return;
+
+  // Refresh token silently before writing
+  msalInstance.acquireTokenSilent({
+    scopes:  MSAL_SCOPES,
+    account: msalAccount
+  }).then(function(result) {
+    graphToken = result.accessToken;
+    writeLogFile();
+  }).catch(function(err) {
+    console.warn('Token refresh failed:', err);
+    updateSyncIndicator('offline');
+  });
+}
+
+function writeLogFile() {
+  if (!graphToken) { updateSyncIndicator('offline'); return; }
+
+  var today    = new Date();
+  var dateStr  = today.getFullYear() + '-' +
+                 padTwo(today.getMonth() + 1) + '-' +
+                 padTwo(today.getDate());
+  var deptKey  = (DEPT_FILE_MAP[currentDepartment] || currentDepartment.toLowerCase().replace(/\s+/g, ''));
+  var filename = 'report-' + currentUser.username + '-' + dateStr + '.json';
+  var path     = ONEDRIVE_BASE + '/data/' + deptKey + '/logs/' + filename;
+
+  var payload = {
+    vessel:     CONFIG ? CONFIG.vessel : 'F/V Araho',
+    department: currentDepartment,
+    user:       currentUser.username,
+    displayName: currentUser.name,
+    role:       currentUser.role,
+    date:       dateStr,
+    generated:  new Date().toISOString(),
+    active:     activeIncidents,
+    resolved:   resolvedIncidents
+  };
+
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+            encodeURIComponent(path).replace(/%2F/g, '/') +
+            ':/content';
+
+  updateSyncIndicator('syncing');
+
+  fetch(url, {
+    method:  'PUT',
+    headers: {
+      'Authorization': 'Bearer ' + graphToken,
+      'Content-Type':  'application/json'
+    },
+    body: JSON.stringify(payload, null, 2)
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('Graph API error: ' + r.status);
+    updateSyncIndicator('synced');
+    console.log('Synced to OneDrive:', filename);
+  })
+  .catch(function(err) {
+    console.warn('OneDrive write failed:', err);
+    updateSyncIndicator('offline');
+  });
 }
 
 // ── LOAD INCIDENT STATE ───────────────────
