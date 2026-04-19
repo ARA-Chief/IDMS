@@ -391,53 +391,39 @@
 
     <div class="active-timers-stack" id="active-timers-stack"></div>
 
-    <div class="big-btn-grid">
-      <button class="big-btn preset-btn" id="btn-preset-0" onclick="startPreset(0)">PLATE FREEZER JAM</button>
-      <button class="big-btn preset-btn" id="btn-preset-1" onclick="startPreset(1)">PAN EJECTOR JAM</button>
-      <button class="big-btn preset-btn" id="btn-preset-2" onclick="startPreset(2)">MISLABEL</button>
-      <button class="big-btn other-btn" onclick="showScreen('screen-equipment')">OTHER</button>
-    </div>
+    <!-- Built dynamically by buildHomeButtons() from dept config groups -->
+    <div class="big-btn-grid" id="home-btn-grid"></div>
   </div>
 
   <!-- ── EQUIPMENT ── -->
+  <!-- ── GROUP PICKER (replaces home preset buttons) ── -->
+  <!-- The three big buttons now show group names from config.    -->
+  <!-- Tapping one shows only that group's equipment items.       -->
   <div class="screen" id="screen-equipment">
     <div class="subscreen-header">
       <button class="back-btn" onclick="showScreen('screen-home')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <h2>Select Equipment</h2>
+      <h2>Select System</h2>
       <div style="width:36px"></div>
     </div>
-    <div class="equipment-list" id="equipment-list">
-      <div class="equip-group">
-        <div class="equip-group-label">Freezing</div>
-        <button class="equip-item" onclick="selectEquipment('Plate Freezer #1')"><span class="equip-name">Plate Freezer #1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Plate Freezer #2')"><span class="equip-name">Plate Freezer #2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Plate Freezer #3')"><span class="equip-name">Plate Freezer #3</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Plate Freezer #4')"><span class="equip-name">Plate Freezer #4</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Plate Freezer #5')"><span class="equip-name">Plate Freezer #5</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-      </div>
-      <div class="equip-group">
-        <div class="equip-group-label">Breaking &amp; Case Up</div>
-        <button class="equip-item" onclick="selectEquipment('Pan Ejector 1')"><span class="equip-name">Pan Ejector 1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Pan Ejector 2')"><span class="equip-name">Pan Ejector 2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Bag Applicator')"><span class="equip-name">Bag Applicator</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Welding Machine')"><span class="equip-name">Welding Machine</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Check Weight Scale')"><span class="equip-name">Check Weight Scale</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Label Applicator')"><span class="equip-name">Label Applicator</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-      </div>
-      <div class="equip-group">
-        <div class="equip-group-label">Back Line &amp; Packing</div>
-        <button class="equip-item" onclick="selectEquipment('Back Line')"><span class="equip-name">Back Line</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Header #1')"><span class="equip-name">Header #1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Header #2')"><span class="equip-name">Header #2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-        <button class="equip-item" onclick="selectEquipment('Packing Station')"><span class="equip-name">Packing Station</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-      </div>
+    <!-- Built dynamically by buildGroupPicker() -->
+    <div class="equipment-list" id="equipment-list"></div>
+  </div>
+
+  <!-- ── EQUIPMENT ITEMS (filtered by group) ── -->
+  <div class="screen" id="screen-group">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-equipment')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <h2 id="group-screen-title">Equipment</h2>
+      <div style="width:36px"></div>
     </div>
+    <!-- Built dynamically by showGroup() -->
+    <div class="equipment-list" id="group-item-list"></div>
   </div>
 
   <!-- ── CATEGORY ── -->
   <div class="screen" id="screen-category">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="pendingIncident=null; showScreen('screen-equipment')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="back-btn" onclick="pendingIncident=null; showScreen('screen-group')"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <h2>Failure Category</h2>
       <div style="width:36px"></div>
     </div>
@@ -940,8 +926,9 @@ function enterDepartment(dept) {
     loadUserPresets();
     applyRolePermissions();
     updateUserDisplay();
-    buildEquipmentScreen();   // populate from config
-    buildCategoryScreen();    // populate from config
+    buildHomeButtons();     // group buttons on home screen
+    buildGroupPicker();     // OTHER screen full group list
+    buildCategoryScreen();  // category screen from config
     loadIncidentState();
     renderTimerBars();
     updatePresetButtons();
@@ -963,57 +950,119 @@ function enterDepartment(dept) {
   });
 }
 
-// ── BUILD EQUIPMENT SCREEN ───────────────
-// Replaces the hardcoded equipment list with data
-// from the department's config file. Falls back
-// gracefully to whatever is already in the HTML
-// if the config didn't load.
-function buildEquipmentScreen() {
-  if (!DEPT_CONFIG || !DEPT_CONFIG.equipment) return;
+// ── BUILD HOME BUTTONS ───────────────────
+// The home screen now shows one big button per equipment GROUP
+// from the dept config (e.g. FREEZING, BREAKING & CASE UP).
+// Tapping a group goes to a filtered equipment list for that group.
+// A final OTHER button shows the full group picker for anything
+// not covered by the main groups.
+//
+// The first N groups become the big buttons (N = groups in config).
+// If there are more than 4 groups, only the first 3 appear as big
+// buttons and the rest are accessible via OTHER.
+function buildHomeButtons() {
+  var grid = document.getElementById('home-btn-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
 
+  var groups = (DEPT_CONFIG && DEPT_CONFIG.equipment) ? DEPT_CONFIG.equipment : [];
+  var maxBig  = 3; // maximum big buttons before we overflow to OTHER
+  var shown   = groups.slice(0, maxBig);
+
+  shown.forEach(function(group, index) {
+    (function(g) {
+      var btn = document.createElement('button');
+      btn.className = 'big-btn preset-btn';
+      btn.id        = 'btn-group-' + index;
+      btn.textContent = g.group.toUpperCase();
+      btn.onclick   = function() { showGroup(g.group); };
+      grid.appendChild(btn);
+    })(group);
+  });
+
+  // OTHER button — always present, goes to full group list
+  var otherBtn = document.createElement('button');
+  otherBtn.className   = 'big-btn other-btn';
+  otherBtn.textContent = 'OTHER';
+  otherBtn.onclick     = function() { showScreen('screen-equipment'); };
+  grid.appendChild(otherBtn);
+}
+
+// ── BUILD GROUP PICKER ───────────────────
+// The "OTHER" screen shows ALL groups as a scrollable list,
+// each group expandable to its items.
+function buildGroupPicker() {
   var list = document.getElementById('equipment-list');
   if (!list) return;
   list.innerHTML = '';
 
-  DEPT_CONFIG.equipment.forEach(function(group) {
-    var groupEl = document.createElement('div');
-    groupEl.className = 'equip-group';
+  var groups = (DEPT_CONFIG && DEPT_CONFIG.equipment) ? DEPT_CONFIG.equipment : [];
 
-    var label = document.createElement('div');
-    label.className   = 'equip-group-label';
-    label.textContent = group.group;
-    groupEl.appendChild(label);
-
-    group.items.forEach(function(item) {
-      var btn = document.createElement('button');
-      btn.className = 'equip-item';
-      btn.innerHTML =
-        '<span class="equip-name">' + item + '</span>' +
+  groups.forEach(function(group) {
+    (function(g) {
+      // Group header button — tapping shows that group's items
+      var groupBtn = document.createElement('button');
+      groupBtn.className = 'equip-item';
+      groupBtn.style.cssText = 'font-weight:600;font-size:15px;text-transform:uppercase;letter-spacing:0.04em';
+      groupBtn.innerHTML =
+        '<span class="equip-name">' + g.group + '</span>' +
         '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
         '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-      btn.onclick = function() { selectEquipment(item); };
-      groupEl.appendChild(btn);
-    });
-
-    list.appendChild(groupEl);
+      groupBtn.onclick = function() { showGroup(g.group); };
+      list.appendChild(groupBtn);
+    })(group);
   });
 }
 
+// ── SHOW GROUP ───────────────────────────
+// Navigates to screen-group and populates it with
+// only the items belonging to the selected group.
+function showGroup(groupName) {
+  var groups  = (DEPT_CONFIG && DEPT_CONFIG.equipment) ? DEPT_CONFIG.equipment : [];
+  var group   = null;
+  for (var i = 0; i < groups.length; i++) {
+    if (groups[i].group === groupName) { group = groups[i]; break; }
+  }
+  if (!group) return;
+
+  document.getElementById('group-screen-title').textContent = groupName;
+
+  var list = document.getElementById('group-item-list');
+  list.innerHTML = '';
+
+  group.items.forEach(function(item) {
+    (function(it) {
+      var btn = document.createElement('button');
+      btn.className = 'equip-item';
+      btn.innerHTML =
+        '<span class="equip-name">' + it + '</span>' +
+        '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
+        '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+      btn.onclick = function() { selectEquipment(it); };
+      list.appendChild(btn);
+    })(item);
+  });
+
+  showScreen('screen-group');
+}
+
 // ── BUILD CATEGORY SCREEN ────────────────
-// Same pattern — replaces hardcoded category buttons.
+// Fixes the closure bug — uses an IIFE to capture
+// the correct value of cat for each button.
 function buildCategoryScreen() {
   if (!DEPT_CONFIG || !DEPT_CONFIG.categories) return;
-
   var list = document.getElementById('category-list');
   if (!list) return;
   list.innerHTML = '';
 
   DEPT_CONFIG.categories.forEach(function(cat) {
-    var btn = document.createElement('button');
-    btn.className   = 'category-item';
-    btn.textContent = cat;
-    btn.onclick     = function() { selectCategory(cat); };
-    list.appendChild(btn);
+    (function(c) {
+      var btn = document.createElement('button');
+      btn.className   = 'category-item';
+      btn.textContent = c;
+      btn.onclick     = function() { selectCategory(c); };
+      list.appendChild(btn);
+    })(cat);
   });
 }
 
@@ -1194,12 +1243,15 @@ function startPreset(index) {
 
 // ── START TIMER — OTHER PATH ─────────────
 function selectEquipment(name) {
+  console.log('selectEquipment called with:', name);
   pendingIncident = { equipment: name, category: null };
+  console.log('pendingIncident set:', pendingIncident);
   document.getElementById('category-equip-label').textContent = name;
   showScreen('screen-category');
 }
 
 function selectCategory(category) {
+  console.log('selectCategory called with:', category, '| pendingIncident:', pendingIncident);
   if (!pendingIncident) return;
   pendingIncident.category = category;
   if (activeIncidents.length > 0) {
@@ -1431,11 +1483,16 @@ function deleteEvent(id) {
 }
 
 // ── PRESET BUTTON HIGHLIGHT ─────────────
+// Highlights group buttons on home screen when an active
+// incident belongs to equipment within that group.
 function updatePresetButtons() {
-  PRESETS.forEach(function(preset, index) {
-    var btn      = document.getElementById('btn-preset-' + index);
+  if (!DEPT_CONFIG || !DEPT_CONFIG.equipment) return;
+  DEPT_CONFIG.equipment.forEach(function(group, index) {
+    var btn = document.getElementById('btn-group-' + index);
     if (!btn) return;
-    var isActive = activeIncidents.some(function(i) { return i.equipment === preset.equipment; });
+    var isActive = activeIncidents.some(function(incident) {
+      return group.items.indexOf(incident.equipment) !== -1;
+    });
     btn.classList.toggle('has-active', isActive);
   });
 }
