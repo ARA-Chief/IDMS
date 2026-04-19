@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0a1628">
+  <title>Factory Watch</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-0: #0a1628;
+      --bg-1: #0f1e38;
+      --bg-2: #162440;
+      --bg-3: #1e2f4d;
+      --bg-card: #162440;
+      --bg-input: #0f1e38;
+      --accent: #00c2ff;
+      --accent-dim: #0090c0;
+      --accent-glow: rgba(0, 194, 255, 0.15);
+      --danger: #ff4d4d;
+      --warning: #ffaa00;
+      --success: #00d48a;
+      --text-primary: #e8f0fe;
+      --text-secondary: #7a90b0;
+      --text-muted: #4a5c78;
+      --border: rgba(255,255,255,0.08);
+      --border-accent: rgba(0, 194, 255, 0.3);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --radius-xl: 22px;
+      --font: 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+      --font-mono: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: #111;
+      color: var(--text-primary);
+      font-family: var(--font);
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Phone frame */
+    .phone-frame {
+      width: 390px;
+      height: 844px;
+      background: var(--bg-0);
+      border-radius: 44px;
+      border: 8px solid #222;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 40px 80px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Screen system */
+    .screen {
+      display: none;
+      flex-direction: column;
+      position: absolute;
+      inset: 0;
+      background: var(--bg-0);
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    .screen.active { display: flex; }
+
+    /* ── LOGIN ── */
+    #screen-login {
+      justify-content: center;
+      align-items: center;
+    }
+    .login-wrap {
+      width: 100%;
+      padding: 2rem 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+    }
+    .logo-mark {
+      width: 64px; height: 64px;
+      background: var(--accent);
+      color: var(--bg-0);
+      font-size: 22px; font-weight: 700;
+      border-radius: var(--radius-lg);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1rem;
+    }
+    .login-title { font-size: 26px; font-weight: 600; text-align: center; }
+    .login-vessel { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; text-align: center; margin-top: 4px; }
+    .login-card {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+    }
+    .login-prompt { font-size: 14px; color: var(--text-secondary); text-align: center; margin-bottom: 1.25rem; }
+    .login-footer { font-size: 12px; color: var(--text-muted); }
+
+    /* ── BUTTONS ── */
+    .btn-primary {
+      width: 100%; padding: 14px 20px;
+      background: var(--accent); color: var(--bg-0);
+      border: none; border-radius: var(--radius-md);
+      font-size: 15px; font-weight: 600;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    .btn-ms { background: #2a2a2a; color: #fff; border: 1px solid rgba(255,255,255,0.15); }
+    .btn-resolve {
+      width: 100%; padding: 16px;
+      background: var(--success); color: #001a0f;
+      border: none; border-radius: var(--radius-md);
+      font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 1.5rem;
+    }
+    .btn-confirm { margin-top: 1.5rem; }
+    .icon-btn {
+      width: 36px; height: 36px;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); color: var(--text-secondary);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg-1); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .user-avatar {
+      width: 34px; height: 34px;
+      background: var(--accent-glow); border: 1px solid var(--border-accent);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 600; color: var(--accent);
+    }
+    .user-name { font-size: 14px; font-weight: 500; display: block; line-height: 1.2; }
+    .user-role { font-size: 11px; color: var(--text-secondary); display: block; line-height: 1.2; }
+    .sync-indicator {
+      display: flex; align-items: center; gap: 5px;
+      padding: 4px 9px; border-radius: 20px; border: 1px solid transparent; font-size: 11px;
+    }
+    .sync-indicator.synced {
+      background: rgba(0,212,138,0.1); border-color: rgba(0,212,138,0.25); color: var(--success);
+    }
+    .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    /* ── ACTIVE BANNER ── */
+    .active-banner {
+      background: rgba(0,194,255,0.08);
+      border-bottom: 1px solid var(--border-accent);
+      flex-shrink: 0;
+    }
+    .active-banner-inner {
+      display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+    }
+    .active-banner-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent); flex-shrink: 0;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+    .active-banner-text {
+      flex: 1; font-size: 13px; font-weight: 500;
+      color: var(--accent); font-family: var(--font-mono);
+    }
+    .active-banner-btn {
+      background: var(--accent-glow); border: 1px solid var(--border-accent);
+      border-radius: var(--radius-sm); color: var(--accent);
+      font-size: 12px; font-weight: 600; padding: 5px 12px; cursor: pointer;
+    }
+
+    /* ── BIG BUTTON GRID ── */
+    .big-btn-grid {
+      flex: 1; display: flex; flex-direction: column;
+      padding: 12px; gap: 10px;
+    }
+    .big-btn {
+      flex: 1; width: 100%;
+      border-radius: var(--radius-lg); border: 2px solid transparent;
+      cursor: pointer; font-size: 20px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      transition: transform 0.08s, opacity 0.1s;
+    }
+    .big-btn:active { transform: scale(0.97); opacity: 0.85; }
+    .preset-btn {
+      background: var(--bg-3); border-color: var(--border); color: var(--text-primary);
+    }
+    .preset-btn:active { border-color: var(--accent); background: var(--bg-2); }
+    .other-btn {
+      background: var(--bg-1); border-color: var(--text-muted);
+      border-style: dashed; color: var(--text-secondary); font-size: 18px;
+    }
+    .other-btn:active { border-color: var(--accent); border-style: solid; color: var(--accent); }
+
+    /* ── SUBSCREEN HEADER ── */
+    .subscreen-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg-1); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .subscreen-header h2 { font-size: 16px; font-weight: 600; }
+    .back-btn {
+      width: 36px; height: 36px; background: transparent; border: none;
+      color: var(--accent); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── EQUIPMENT LIST ── */
+    .equipment-list { padding: 12px 16px; overflow-y: auto; }
+    .equip-group { margin-bottom: 20px; }
+    .equip-group-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-secondary);
+      margin-bottom: 8px; padding-left: 4px;
+    }
+    .equip-item {
+      width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 6px;
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer;
+    }
+    .equip-item:active { border-color: var(--accent); background: var(--accent-glow); }
+    .equip-name { font-size: 15px; color: var(--text-primary); }
+
+    /* ── CATEGORY ── */
+    .equip-context-bar {
+      padding: 10px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border);
+      display: flex; gap: 8px; font-size: 13px; flex-shrink: 0;
+    }
+    .equip-context-label { color: var(--text-secondary); }
+    .equip-context-value { color: var(--accent); font-weight: 500; }
+    .category-list { padding: 12px 16px; overflow-y: auto; }
+    .category-item {
+      width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 15px 16px; margin-bottom: 6px;
+      text-align: left; font-size: 15px; color: var(--text-primary); cursor: pointer;
+    }
+    .category-item:active { border-color: var(--accent); background: var(--accent-glow); }
+
+    /* ── TIMER SCREEN ── */
+    .timer-card {
+      margin: 16px; background: var(--bg-card);
+      border: 1px solid var(--border-accent); border-radius: var(--radius-lg);
+      padding: 24px 20px; text-align: center;
+    }
+    .timer-equipment { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+    .timer-category { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; }
+    .timer-clock {
+      font-family: var(--font-mono); font-size: 52px; font-weight: 600;
+      color: var(--accent); letter-spacing: 0.05em; line-height: 1; margin-bottom: 12px;
+    }
+    .timer-started { font-size: 12px; color: var(--text-muted); }
+    .timer-notes-wrap { padding: 0 16px 16px; }
+    .notes-label {
+      font-size: 12px; color: var(--text-secondary); display: block;
+      margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .notes-input {
+      width: 100%; background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 12px; color: var(--text-primary);
+      font-family: var(--font); font-size: 14px; resize: none; outline: none;
+    }
+    .notes-input:focus { border-color: var(--accent); }
+    .notes-input::placeholder { color: var(--text-muted); }
+
+    /* ── RESOLVE ── */
+    .resolve-card {
+      margin: 16px; background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 20px;
+    }
+    .resolve-summary { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .resolve-row { display: flex; justify-content: space-between; padding: 8px 0; }
+    .resolve-label { font-size: 13px; color: var(--text-secondary); }
+    .resolve-value { font-size: 14px; font-weight: 500; }
+    .section-label {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-secondary); margin-bottom: 10px;
+    }
+    .time-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .time-opt {
+      background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 12px 10px;
+      cursor: pointer; font-size: 13px; color: var(--text-primary); text-align: center; line-height: 1.4;
+    }
+    .time-opt.active { border-color: var(--accent); background: var(--accent-glow); color: var(--accent); }
+    .time-opt-sub { display: block; font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+
+    /* ── EVENT LOG ── */
+    .log-date-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .log-date-label { font-size: 13px; font-weight: 500; }
+    .log-date-nav { background: transparent; border: none; color: var(--text-secondary); font-size: 16px; cursor: pointer; padding: 4px 8px; }
+    .log-list { padding: 12px 16px; overflow-y: auto; }
+    .log-entry { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; margin-bottom: 8px; }
+    .log-entry.active-entry { border-color: var(--accent); border-left: 3px solid var(--accent); }
+    .log-entry-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .log-equip { font-size: 14px; font-weight: 600; }
+    .log-badge { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border-radius: 10px; }
+    .resolved-badge { background: rgba(0,212,138,0.1); color: var(--success); border: 1px solid rgba(0,212,138,0.25); }
+    .active-badge { background: rgba(0,194,255,0.1); color: var(--accent); border: 1px solid var(--border-accent); }
+    .log-entry-detail { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
+    .log-entry-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+    .log-entry-actions { display: flex; gap: 8px; }
+    .log-action-btn {
+      background: var(--bg-2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 6px 14px; font-size: 12px;
+      color: var(--text-secondary); cursor: pointer;
+    }
+    .log-action-btn.danger { color: var(--danger); border-color: rgba(255,77,77,0.25); }
+
+    /* ── SETTINGS ── */
+    .settings-list { padding: 16px; overflow-y: auto; }
+    .settings-group { margin-bottom: 24px; }
+    .settings-group-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; }
+    .settings-item {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 6px;
+      display: flex; align-items: center; justify-content: space-between; font-size: 14px;
+    }
+    .settings-value { font-size: 13px; color: var(--text-secondary); }
+    .settings-edit-btn {
+      width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 13px 16px; margin-top: 6px;
+      font-size: 14px; color: var(--accent); cursor: pointer; text-align: center;
+    }
+    .danger-btn { color: var(--danger) !important; border-color: rgba(255,77,77,0.25) !important; }
+
+    /* ── PLACEHOLDER ── */
+    .placeholder-screen {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px; padding: 2rem; color: var(--text-muted);
+    }
+    .placeholder-icon { opacity: 0.3; }
+    .placeholder-text { font-size: 14px; text-align: center; }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.7); z-index: 100;
+      display: flex; align-items: flex-end;
+    }
+    .modal-card {
+      background: var(--bg-1); border: 1px solid var(--border);
+      border-top-left-radius: var(--radius-xl); border-top-right-radius: var(--radius-xl);
+      width: 100%; padding: 28px 24px 36px; text-align: center;
+    }
+    .modal-icon {
+      width: 48px; height: 48px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 700; margin: 0 auto 16px;
+    }
+    .warning-icon { background: rgba(255,170,0,0.15); color: var(--warning); border: 1px solid rgba(255,170,0,0.35); }
+    .modal-title { font-size: 18px; font-weight: 600; margin-bottom: 10px; }
+    .modal-body { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6; }
+    .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .modal-btn { padding: 14px; border-radius: var(--radius-md); font-size: 14px; font-weight: 600; cursor: pointer; border: none; }
+    .modal-btn-secondary { background: var(--bg-2); color: var(--text-secondary); border: 1px solid var(--border); }
+    .modal-btn-primary { background: var(--success); color: #001a0f; }
+  </style>
+</head>
+<body>
+
+<div class="phone-frame">
+
+  <!-- ── LOGIN ── -->
+  <div class="screen active" id="screen-login">
+    <div class="login-wrap">
+      <div>
+        <div class="logo-mark">FW</div>
+        <h1 class="login-title">Factory Watch</h1>
+        <p class="login-vessel">F/V Araho</p>
+      </div>
+      <div class="login-card">
+        <p class="login-prompt">Sign in with your work account to continue.</p>
+        <button class="btn-primary btn-ms" onclick="showScreen('screen-home')">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <rect x="1" y="1" width="7.5" height="7.5" fill="#F25022"/>
+            <rect x="9.5" y="1" width="7.5" height="7.5" fill="#7FBA00"/>
+            <rect x="1" y="9.5" width="7.5" height="7.5" fill="#00A4EF"/>
+            <rect x="9.5" y="9.5" width="7.5" height="7.5" fill="#FFB900"/>
+          </svg>
+          Sign in with Microsoft
+        </button>
+      </div>
+      <p class="login-footer">Factory Watch v0.1 · Demo Build</p>
+    </div>
+  </div>
+
+  <!-- ── HOME: FOUR BUTTONS ── -->
+  <div class="screen" id="screen-home">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="user-avatar">RG</div>
+        <div class="user-info">
+          <span class="user-name">R. Garcia</span>
+          <span class="user-role">Factory Engineer · F/V Araho</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="sync-indicator synced">
+          <span class="sync-dot"></span>
+          <span class="sync-label">Synced</span>
+        </div>
+        <button class="icon-btn" onclick="showScreen('screen-review')" aria-label="Event log">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M3 5h14M3 10h14M3 15h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Only shown when a timer is active — hidden by default -->
+    <div class="active-banner" id="active-banner" style="display:none">
+      <div class="active-banner-inner">
+        <span class="active-banner-dot"></span>
+        <span class="active-banner-text" id="active-banner-text">Plate Freezer Jam · 00:12:34</span>
+        <button class="active-banner-btn" onclick="showScreen('screen-timer')">View</button>
+      </div>
+    </div>
+
+    <div class="big-btn-grid">
+      <button class="big-btn preset-btn" onclick="showScreen('screen-timer')">PLATE FREEZER JAM</button>
+      <button class="big-btn preset-btn" onclick="showScreen('screen-timer')">PAN EJECTOR JAM</button>
+      <button class="big-btn preset-btn" onclick="showScreen('screen-timer')">MISLABEL</button>
+      <button class="big-btn other-btn"  onclick="showScreen('screen-equipment')">OTHER</button>
+    </div>
+  </div>
+
+  <!-- ── EQUIPMENT SELECTION ── -->
+  <div class="screen" id="screen-equipment">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Select Equipment</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="equipment-list">
+      <div class="equip-group">
+        <div class="equip-group-label">Freezing</div>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #3</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #4</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Plate Freezer #5</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="equip-group">
+        <div class="equip-group-label">Breaking &amp; Case Up</div>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Pan Ejector 1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Pan Ejector 2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Bag Applicator</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Welding Machine</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Check Weight Scale</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Label Applicator</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="equip-group">
+        <div class="equip-group-label">Back Line &amp; Packing</div>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Back Line</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Header #1</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Header #2</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+        <button class="equip-item" onclick="showScreen('screen-category')"><span class="equip-name">Packing Station</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CATEGORY ── -->
+  <div class="screen" id="screen-category">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-equipment')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Failure Category</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="equip-context-bar">
+      <span class="equip-context-label">Equipment:</span>
+      <span class="equip-context-value">Plate Freezer #2</span>
+    </div>
+    <div class="category-list">
+      <button class="category-item" onclick="showScreen('screen-timer')">Mechanical jam</button>
+      <button class="category-item" onclick="showScreen('screen-timer')">Hydraulic fitting leak</button>
+      <button class="category-item" onclick="showScreen('screen-timer')">Electrical fault</button>
+      <button class="category-item" onclick="showScreen('screen-timer')">Sensor / calibration</button>
+      <button class="category-item" onclick="showScreen('screen-timer')">Refrigerant issue</button>
+      <button class="category-item" onclick="showScreen('screen-timer')">Scheduled maintenance</button>
+      <button class="category-item" onclick="showScreen('screen-timer')">Operator error</button>
+      <button class="category-item" onclick="showScreen('screen-timer')">Unknown / investigating</button>
+    </div>
+  </div>
+
+  <!-- ── TIMER ── -->
+  <div class="screen" id="screen-timer">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Active Incident</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="timer-card">
+      <div class="timer-equipment">Plate Freezer #2</div>
+      <div class="timer-category">Mechanical jam</div>
+      <div class="timer-clock" id="timer-display">00:00:00</div>
+      <div class="timer-started">Started 14:32 · Day Shift · R. Garcia</div>
+      <button class="btn-resolve" onclick="showScreen('screen-resolve')">Resolve Incident</button>
+    </div>
+    <div class="timer-notes-wrap">
+      <label class="notes-label">Notes (optional)</label>
+      <textarea class="notes-input" placeholder="Describe the issue or actions taken…" rows="3"></textarea>
+    </div>
+  </div>
+
+  <!-- ── RESOLVE ── -->
+  <div class="screen" id="screen-resolve">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-timer')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Close Incident</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="resolve-card">
+      <div class="resolve-summary">
+        <div class="resolve-row"><span class="resolve-label">Equipment</span><span class="resolve-value">Plate Freezer #2</span></div>
+        <div class="resolve-row"><span class="resolve-label">Category</span><span class="resolve-value">Mechanical jam</span></div>
+        <div class="resolve-row"><span class="resolve-label">Duration</span><span class="resolve-value">00:47:12</span></div>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:12px">Close-out time</div>
+        <div class="time-options">
+          <button class="time-opt active">Use current time<br><span class="time-opt-sub">14:32</span></button>
+          <button class="time-opt">Enter custom time<br><span class="time-opt-sub">Manual entry</span></button>
+        </div>
+      </div>
+      <button class="btn-primary btn-confirm" onclick="showScreen('screen-home')">Confirm &amp; Save</button>
+    </div>
+  </div>
+
+  <!-- ── EVENT LOG ── -->
+  <div class="screen" id="screen-review">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Event Log</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="log-date-bar">
+      <button class="log-date-nav">&lt;</button>
+      <span class="log-date-label">Today — 18 Apr 2026</span>
+      <button class="log-date-nav">&gt;</button>
+    </div>
+    <div class="log-list">
+      <div class="log-entry">
+        <div class="log-entry-header"><span class="log-equip">Plate Freezer #2</span><span class="log-badge resolved-badge">Resolved</span></div>
+        <div class="log-entry-detail">Mechanical jam · 47 min</div>
+        <div class="log-entry-meta">09:14 – 10:01 · R. Garcia</div>
+        <div class="log-entry-actions"><button class="log-action-btn">Edit</button><button class="log-action-btn danger">Delete</button></div>
+      </div>
+      <div class="log-entry">
+        <div class="log-entry-header"><span class="log-equip">Label Applicator</span><span class="log-badge resolved-badge">Resolved</span></div>
+        <div class="log-entry-detail">Sensor / calibration · 22 min</div>
+        <div class="log-entry-meta">11:30 – 11:52 · R. Garcia</div>
+        <div class="log-entry-actions"><button class="log-action-btn">Edit</button><button class="log-action-btn danger">Delete</button></div>
+      </div>
+      <div class="log-entry active-entry">
+        <div class="log-entry-header"><span class="log-equip">Pan Ejector 1</span><span class="log-badge active-badge">Active</span></div>
+        <div class="log-entry-detail">Mechanical jam · ongoing</div>
+        <div class="log-entry-meta">14:32 – now · R. Garcia</div>
+        <div class="log-entry-actions"><button class="log-action-btn">View</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SETTINGS ── -->
+  <div class="screen" id="screen-settings">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Settings</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="settings-list">
+      <div class="settings-group">
+        <div class="settings-group-label">Account</div>
+        <div class="settings-item"><span>R. Garcia</span><span class="settings-value">Factory Engineer</span></div>
+        <div class="settings-item"><span>Vessel</span><span class="settings-value">F/V Araho</span></div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-group-label">Quick Log Presets</div>
+        <div class="settings-item"><span>Preset 1</span><span class="settings-value">Plate Freezer Jam</span></div>
+        <div class="settings-item"><span>Preset 2</span><span class="settings-value">Pan Ejector Jam</span></div>
+        <div class="settings-item"><span>Preset 3</span><span class="settings-value">Mislabel</span></div>
+        <button class="settings-edit-btn">Edit Presets</button>
+      </div>
+      <div class="settings-group">
+        <div class="settings-group-label">Sync</div>
+        <div class="settings-item"><span>Auto-sync on WiFi</span><span class="settings-value">On</span></div>
+        <button class="settings-edit-btn">Sync Now</button>
+      </div>
+      <div class="settings-group">
+        <button class="settings-edit-btn danger-btn" onclick="showScreen('screen-login')">Sign Out</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── REPORT PLACEHOLDER ── -->
+  <div class="screen" id="screen-report">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Daily Report</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="placeholder-screen">
+      <div class="placeholder-icon">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none"><path d="M8 36l10-12 10 7 10-16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><rect x="4" y="4" width="40" height="40" rx="4" stroke="currentColor" stroke-width="2"/></svg>
+      </div>
+      <p class="placeholder-text">Report generation — Phase 8</p>
+    </div>
+  </div>
+
+  <!-- ── 30-MIN WARNING MODAL ── -->
+  <div class="modal-overlay" id="timer-warning" style="display:none">
+    <div class="modal-card">
+      <div class="modal-icon warning-icon">!</div>
+      <h3 class="modal-title">Timer Still Running</h3>
+      <p class="modal-body">Plate Freezer #2 – Mechanical jam has been running for 30 minutes. Is this still ongoing?</p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary">Still Ongoing</button>
+        <button class="modal-btn modal-btn-primary" onclick="document.getElementById('timer-warning').style.display='none'; showScreen('screen-resolve')">Resolve Now</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /phone-frame -->
+
+<script>
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(function(s) {
+      s.classList.remove('active');
+    });
+    var t = document.getElementById(id);
+    if (t) { t.classList.add('active'); t.scrollTop = 0; }
+  }
+</script>
+
+</body>
+</html>
