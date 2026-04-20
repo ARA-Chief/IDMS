@@ -2406,7 +2406,12 @@ function deleteEventFromOneDrive(eventId, dateStr) {
 
 function fetchAllLogFilesForDate(dateStr) {
   return refreshToken().then(function() {
-    var listUrl = getLogFolderUrl() + ':/children?$select=name,@microsoft.graph.downloadUrl';
+    var deptKey    = DEPT_FILE_MAP[currentDepartment] ||
+                     currentDepartment.toLowerCase().replace(/\s+/g, '');
+    var folderPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs';
+    var listUrl    = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+                     encodeURIComponent(folderPath).replace(/%2F/g, '/') +
+                     ':/children?$select=name,@microsoft.graph.downloadUrl';
     return fetch(listUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
       .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function(data) {
