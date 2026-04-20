@@ -2411,30 +2411,30 @@ function fetchAllLogFilesForDate(dateStr) {
     var folderPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs';
     var listUrl    = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
                      encodeURIComponent(folderPath).replace(/%2F/g, '/') +
-                     ':/children';
-    console.log('fetchAllLogFilesForDate listUrl:', listUrl);
+                     ':/children?$select=id,name';
     return fetch(listUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
       .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function(data) {
-        console.log('folder listing response:', JSON.stringify(data).substring(0, 500));
-        var files = (data.value || []).filter(function(f) {
-          return f.name && f.name.startsWith('report-' + dateStr + '-') && f.name.endsWith('.json');
+        var items = data.value || [];
+        var files = items.filter(function(f) {
+          return f.name &&
+                 f.name.startsWith('report-' + dateStr + '-') &&
+                 f.name.endsWith('.json');
         });
-        console.log('matching files:', files.map(function(f) { return f.name; }));
         if (!files.length) return [];
+        // Fetch each file by its item id — most reliable method for
+        // OneDrive for Business, avoids path encoding issues entirely
         return Promise.all(files.map(function(f) {
-          var filePath = folderPath + '/' + f.name;
-          var fileUrl  = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-                         encodeURIComponent(filePath).replace(/%2F/g, '/') + ':/content';
-          console.log('fetching file:', fileUrl);
-          return fetch(fileUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
+          var itemUrl = 'https://graph.microsoft.com/v1.0/me/drive/items/' +
+                        f.id + '/content';
+          return fetch(itemUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
             .then(function(r) { return r.ok ? r.json() : null; })
             .catch(function() { return null; });
         }));
       })
       .then(function(fileContents) {
         var all = [];
-        fileContents.forEach(function(fc) {
+        (fileContents || []).forEach(function(fc) {
           if (!fc || !fc.resolved) return;
           fc.resolved.forEach(function(i) { all.push(i); });
         });
