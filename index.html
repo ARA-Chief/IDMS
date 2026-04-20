@@ -1799,16 +1799,12 @@ function renderEventLog() {
     list.appendChild(div);
   });
 
-  // Resolved, newest first
+  // Resolved, newest first — user can delete their own entries
   resolvedIncidents.slice().reverse().forEach(function(i) {
     var div = document.createElement('div');
     div.className = 'log-entry';
-    // Only Admins and 1st Engineers can delete entries
-    var canDelete = (currentUser.role === 'Admin' || currentUser.role === '1st Engineer');
-    var viewBtn  = '<button class="log-action-btn" onclick="openEventDetail(' + i.id + ')">View</button>';
-    var deleteBtn = canDelete
-      ? '<button class="log-action-btn danger" onclick="deleteEvent(' + i.id + ')">Delete</button>'
-      : '';
+    var viewBtn   = '<button class="log-action-btn" onclick="openEventDetail(' + i.id + ')">View</button>';
+    var deleteBtn = '<button class="log-action-btn danger" onclick="deleteEvent(' + i.id + ')">Delete</button>';
     div.innerHTML =
       '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge resolved-badge">Resolved</span></div>' +
       '<div class="log-entry-detail">' + i.category + ' · ' + i.durationLabel + '</div>' +
@@ -1819,9 +1815,14 @@ function renderEventLog() {
 }
 
 function deleteEvent(id) {
-  if (!confirm('Delete this event?')) return;
+  if (!confirm('Delete this event? This will be removed from OneDrive on next sync.')) return;
+  // Mark for permanent OneDrive deletion, remove from local state
+  var deletedIds = JSON.parse(localStorage.getItem('fw_deleted_ids') || '[]');
+  deletedIds.push(id);
+  localStorage.setItem('fw_deleted_ids', JSON.stringify(deletedIds));
   resolvedIncidents = resolvedIncidents.filter(function(i) { return i.id !== id; });
   saveState();
+  syncToOneDrive(); // push deletion to OneDrive immediately
   renderEventLog();
 }
 
@@ -1948,6 +1949,16 @@ function writeLogFile() {
   var deptKey  = (DEPT_FILE_MAP[currentDepartment] || currentDepartment.toLowerCase().replace(/\s+/g, ''));
   var filename = 'report-' + dateStr + '-' + currentUser.username + '.json';
   var path     = ONEDRIVE_BASE + '/data/' + deptKey + '/logs/' + filename;
+
+  // Apply any pending local deletions before writing
+  var deletedIds = JSON.parse(localStorage.getItem('fw_deleted_ids') || '[]');
+  if (deletedIds.length) {
+    resolvedIncidents = resolvedIncidents.filter(function(i) {
+      return deletedIds.indexOf(i.id) === -1;
+    });
+    localStorage.removeItem('fw_deleted_ids');
+    saveState();
+  }
 
   var payload = {
     vessel:     CONFIG ? CONFIG.vessel : 'F/V Araho',
@@ -2154,7 +2165,7 @@ function loadReport(date) {
     // Today — use live local data
     incidentsPromise = Promise.resolve(resolvedIncidents.slice());
   } else {
-    incidentsPromise = fetchLogFilesForDate(dateStr);
+    incidentsPromise = fetchAllLogFilesForDate(dateStr);
   }
 
   incidentsPromise.then(function(incidents) {
@@ -2244,78 +2255,211 @@ function renderBreakdown(elementId, data, totalSeconds) {
 }
 
 // ════════════════════════════════════════
-// OPTION A — ON-DEMAND AGGREGATION
+// ONEDRIVE LOG FETCHING
 //
-// This section fetches all user log files for a given date
-// from OneDrive and merges them into a single incidents array.
+// Two separate fetch functions:
 //
-// To swap to Option B (last-writer aggregation) or Option C
-// (desktop coordinator), replace the body of fetchLogFilesForDate()
-// with a fetch from a pre-aggregated report file instead.
-// The renderReport() and renderEventLogForDate() callers above
-// do not need to change — they just receive an incidents array.
+// fetchUserLogFile(dateStr)
+//   Fetches only the current user's log file.
+//   Used by the Event Log screen (user-specific view).
+//
+// fetchAllLogFilesForDate(dateStr)  [OPTION A]
+//   Fetches all users' log files and merges them.
+//   Used by the Report screen (aggregated view).
+//
+// To swap to Option B or C for the report aggregation,
+// replace only fetchAllLogFilesForDate(). fetchUserLogFile()
+// and all Event Log behaviour remain unchanged.
 // ════════════════════════════════════════
 
-function fetchLogFilesForDate(dateStr) {
-  if (!graphToken || !msalInstance || !msalAccount) {
-    return Promise.reject(new Error('Not authenticated'));
-  }
+// ── Shared: acquire a fresh token and build folder URL ──
+function getLogFolderUrl() {
+  var deptKey    = DEPT_FILE_MAP[currentDepartment] ||
+                   currentDepartment.toLowerCase().replace(/\s+/g, '');
+  var folderPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs';
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+         encodeURIComponent(folderPath).replace(/%2F/g, '/');
+}
 
-  // Refresh token first
-  return msalInstance.acquireTokenSilent({
-    scopes: MSAL_SCOPES, account: msalAccount
-  }).then(function(result) {
-    graphToken = result.accessToken;
+function refreshToken() {
+  if (!msalInstance || !msalAccount) return Promise.reject('Not authenticated');
+  return msalInstance.acquireTokenSilent({ scopes: MSAL_SCOPES, account: msalAccount })
+    .then(function(r) { graphToken = r.accessToken; });
+}
 
-    var deptKey = DEPT_FILE_MAP[currentDepartment] ||
-                  currentDepartment.toLowerCase().replace(/\s+/g, '');
-
-    // List all files in the logs folder for this department
-    var folderPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs';
-    var listUrl    = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-                     encodeURIComponent(folderPath).replace(/%2F/g, '/') +
-                     ':/children?$select=name,@microsoft.graph.downloadUrl';
-
-    return fetch(listUrl, {
-      headers: { 'Authorization': 'Bearer ' + graphToken }
-    })
-    .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
-    .then(function(data) {
-      // Filter to files matching report-<dateStr>-*.json
-      var files = (data.value || []).filter(function(f) {
-        return f.name.startsWith('report-' + dateStr + '-') && f.name.endsWith('.json');
+// ── Fetch current user's log file only ──
+function fetchUserLogFile(dateStr) {
+  return refreshToken().then(function() {
+    var filename = 'report-' + dateStr + '-' + currentUser.username + '.json';
+    var url = getLogFolderUrl() + ':/' + encodeURIComponent(filename) + ':/content';
+    return fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } })
+      .then(function(r) {
+        if (r.status === 404) return [];
+        if (!r.ok) throw new Error(r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        if (Array.isArray(data)) return data; // 404 fallback
+        return (data && data.resolved) ? data.resolved : [];
       });
-
-      if (!files.length) return [];
-
-      // Fetch all matching files in parallel
-      return Promise.all(files.map(function(f) {
-        var dlUrl = f['@microsoft.graph.downloadUrl'];
-        return fetch(dlUrl)
-          .then(function(r) { return r.ok ? r.json() : null; })
-          .catch(function() { return null; });
-      }));
-    })
-    .then(function(fileContents) {
-      // Merge all resolved arrays, deduplicate by id
-      var seen      = {};
-      var incidents = [];
-      fileContents.forEach(function(fc) {
-        if (!fc || !fc.resolved) return;
-        fc.resolved.forEach(function(i) {
-          if (!seen[i.id]) {
-            seen[i.id] = true;
-            incidents.push(i);
-          }
-        });
-      });
-      // Sort by start time
-      incidents.sort(function(a, b) {
-        return new Date(a.startTime) - new Date(b.startTime);
-      });
-      return incidents;
-    });
   });
+}
+
+// ── Delete a single event from the user's OneDrive log file ──
+function deleteEventFromOneDrive(eventId, dateStr) {
+  if (!confirm('Permanently delete this event?')) return;
+  refreshToken().then(function() {
+    var filename = 'report-' + dateStr + '-' + currentUser.username + '.json';
+    var url = getLogFolderUrl() + ':/' + encodeURIComponent(filename) + ':/content';
+    return fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (!data || !data.resolved) return;
+        data.resolved = data.resolved.filter(function(i) { return String(i.id) !== String(eventId); });
+        return fetch(url, {
+          method: 'PUT',
+          headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify(data, null, 2)
+        });
+      })
+      .then(function() {
+        // Refresh the event log view
+        renderEventLogForDate(logViewDate || new Date());
+      });
+  }).catch(function(err) {
+    alert('Could not delete from OneDrive. Check connection.');
+    console.warn('OneDrive delete error:', err);
+  });
+}
+
+// ════════════════════════════════════════
+// OPTION A — ON-DEMAND AGGREGATION
+//
+// Fetches all users' log files for a date and merges them.
+// Overlapping incidents with the same equipment AND category
+// are merged: earliest start, latest end, all contributors listed,
+// notes concatenated (chronological, then alphabetical by username).
+//
+// To swap to Option B (last-writer) or Option C (desktop coordinator),
+// replace only this function. All callers receive the same incidents array.
+// ════════════════════════════════════════
+
+function fetchAllLogFilesForDate(dateStr) {
+  return refreshToken().then(function() {
+    var listUrl = getLogFolderUrl() + ':/children?$select=name,@microsoft.graph.downloadUrl';
+    return fetch(listUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
+      .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function(data) {
+        var files = (data.value || []).filter(function(f) {
+          return f.name.startsWith('report-' + dateStr + '-') && f.name.endsWith('.json');
+        });
+        if (!files.length) return [];
+        return Promise.all(files.map(function(f) {
+          return fetch(f['@microsoft.graph.downloadUrl'])
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .catch(function() { return null; });
+        }));
+      })
+      .then(function(fileContents) {
+        // Collect all resolved incidents from all users
+        var all = [];
+        fileContents.forEach(function(fc) {
+          if (!fc || !fc.resolved) return;
+          fc.resolved.forEach(function(i) { all.push(i); });
+        });
+        return mergeOverlappingIncidents(all);
+      });
+  });
+}
+
+// ── Merge overlapping incidents (same equipment + category) ──
+// Two incidents overlap if one starts before the other ends.
+// Merged result: earliest start, latest end, all contributors,
+// notes concatenated earliest-first then alphabetical by username.
+function mergeOverlappingIncidents(incidents) {
+  // Sort by start time
+  incidents.sort(function(a, b) {
+    return new Date(a.startTime) - new Date(b.startTime);
+  });
+
+  var merged = [];
+
+  incidents.forEach(function(inc) {
+    var startA = new Date(inc.startTime).getTime();
+    var endA   = new Date(inc.endTime).getTime();
+
+    // Look for an existing merged group to join
+    var joined = false;
+    for (var m = 0; m < merged.length; m++) {
+      var group = merged[m];
+      if (group.equipment !== inc.equipment || group.category !== inc.category) continue;
+
+      var startB = group._startMs;
+      var endB   = group._endMs;
+
+      // Check overlap: [startA, endA] overlaps [startB, endB]
+      if (startA <= endB && startB <= endA) {
+        // Extend the group
+        group._startMs   = Math.min(startB, startA);
+        group._endMs     = Math.max(endB,   endA);
+        group.startTime  = new Date(group._startMs).toISOString();
+        group.endTime    = new Date(group._endMs).toISOString();
+        group.duration   = Math.round((group._endMs - group._startMs) / 1000);
+        group.durationLabel = formatElapsed(group.duration);
+
+        // Update start/end labels
+        group.startLabel = padTwo(new Date(group._startMs).getHours()) + ':' +
+                           padTwo(new Date(group._startMs).getMinutes());
+        group.endLabel   = padTwo(new Date(group._endMs).getHours()) + ':' +
+                           padTwo(new Date(group._endMs).getMinutes());
+
+        // Add contributor if not already listed
+        var userName = inc.user || inc.displayName || '';
+        if (userName && group._contributors.indexOf(userName) === -1) {
+          group._contributors.push(userName);
+        }
+
+        // Append notes (sorted chronologically, then alphabetically)
+        if (inc.notes && inc.notes.trim()) {
+          group._noteEntries.push({ time: startA, user: userName, note: inc.notes.trim() });
+        }
+
+        group.user = group._contributors.join(', ');
+        group.notes = group._noteEntries
+          .sort(function(a, b) { return a.time !== b.time ? a.time - b.time : a.user.localeCompare(b.user); })
+          .map(function(e) { return (e.user ? e.user + ': ' : '') + e.note; })
+          .join('\n\n');
+
+        joined = true;
+        break;
+      }
+    }
+
+    if (!joined) {
+      // Start a new group
+      var userName = inc.user || inc.displayName || '';
+      var noteEntries = [];
+      if (inc.notes && inc.notes.trim()) {
+        noteEntries.push({ time: startA, user: userName, note: inc.notes.trim() });
+      }
+      merged.push(Object.assign({}, inc, {
+        _startMs:      startA,
+        _endMs:        endA,
+        _contributors: userName ? [userName] : [],
+        _noteEntries:  noteEntries
+      }));
+    }
+  });
+
+  // Clean up internal fields
+  merged.forEach(function(m) {
+    delete m._startMs;
+    delete m._endMs;
+    delete m._contributors;
+    delete m._noteEntries;
+  });
+
+  return merged;
 }
 
 // ── STARTUP ──────────────────────────────
