@@ -2341,7 +2341,13 @@ function refreshToken() {
 function fetchUserLogFile(dateStr) {
   return refreshToken().then(function() {
     var filename = 'report-' + dateStr + '-' + currentUser.username + '.json';
-    var url = getLogFolderUrl() + '/' + encodeURIComponent(filename) + ':/content';
+    // Build the full path and encode it as one unit, same pattern as writeLogFile
+    var deptKey  = DEPT_FILE_MAP[currentDepartment] ||
+                   currentDepartment.toLowerCase().replace(/\s+/g, '');
+    var fullPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs/' + filename;
+    var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+              encodeURIComponent(fullPath).replace(/%2F/g, '/') + ':/content';
+    console.log('fetchUserLogFile URL:', url);
     return fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } })
       .then(function(r) {
         if (r.status === 404) return [];
@@ -2360,7 +2366,11 @@ function deleteEventFromOneDrive(eventId, dateStr) {
   if (!confirm('Permanently delete this event?')) return;
   refreshToken().then(function() {
     var filename = 'report-' + dateStr + '-' + currentUser.username + '.json';
-    var url = getLogFolderUrl() + '/' + encodeURIComponent(filename) + ':/content';
+    var deptKey  = DEPT_FILE_MAP[currentDepartment] ||
+                   currentDepartment.toLowerCase().replace(/\s+/g, '');
+    var fullPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs/' + filename;
+    var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+              encodeURIComponent(fullPath).replace(/%2F/g, '/') + ':/content';
     return fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } })
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
