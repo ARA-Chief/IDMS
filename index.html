@@ -2408,38 +2408,42 @@ function fetchAllLogFilesForDate(dateStr) {
   return refreshToken().then(function() {
     var deptKey    = DEPT_FILE_MAP[currentDepartment] ||
                      currentDepartment.toLowerCase().replace(/\s+/g, '');
-    var folderPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs';
-    var listUrl    = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-                     encodeURIComponent(folderPath).replace(/%2F/g, '/') +
-                     ':/children?$select=id,name';
-    return fetch(listUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
-      .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
-      .then(function(data) {
-        var items = data.value || [];
-        var files = items.filter(function(f) {
-          return f.name &&
-                 f.name.startsWith('report-' + dateStr + '-') &&
-                 f.name.endsWith('.json');
-        });
-        if (!files.length) return [];
-        // Fetch each file by its item id — most reliable method for
-        // OneDrive for Business, avoids path encoding issues entirely
-        return Promise.all(files.map(function(f) {
-          var itemUrl = 'https://graph.microsoft.com/v1.0/me/drive/items/' +
-                        f.id + '/content';
-          return fetch(itemUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
-            .then(function(r) { return r.ok ? r.json() : null; })
-            .catch(function() { return null; });
-        }));
-      })
-      .then(function(fileContents) {
-        var all = [];
-        (fileContents || []).forEach(function(fc) {
-          if (!fc || !fc.resolved) return;
-          fc.resolved.forEach(function(i) { all.push(i); });
-        });
-        return mergeOverlappingIncidents(all);
+
+    // Get list of usernames who belong to this department from config
+    var users = [];
+    if (CONFIG && CONFIG.users) {
+      CONFIG.users.forEach(function(u) {
+        if (u.departments && u.departments.indexOf(currentDepartment) !== -1) {
+          users.push(u.username);
+        }
       });
+    }
+    // Always include the current user even if config lookup fails
+    if (users.indexOf(currentUser.username) === -1) {
+      users.push(currentUser.username);
+    }
+
+    // Fetch each user's file using the same URL pattern as fetchUserLogFile
+    return Promise.all(users.map(function(username) {
+      var fullPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs/' +
+                    'report-' + dateStr + '-' + username + '.json';
+      var fileUrl  = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+                     encodeURIComponent(fullPath).replace(/%2F/g, '/') + ':/content';
+      return fetch(fileUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
+        .then(function(r) {
+          if (r.status === 404) return null; // user had no incidents that day
+          return r.ok ? r.json() : null;
+        })
+        .catch(function() { return null; });
+    }))
+    .then(function(fileContents) {
+      var all = [];
+      fileContents.forEach(function(fc) {
+        if (!fc || !fc.resolved) return;
+        fc.resolved.forEach(function(i) { all.push(i); });
+      });
+      return mergeOverlappingIncidents(all);
+    });
   });
 }
 
