@@ -2341,7 +2341,7 @@ function refreshToken() {
 function fetchUserLogFile(dateStr) {
   return refreshToken().then(function() {
     var filename = 'report-' + dateStr + '-' + currentUser.username + '.json';
-    var url = getLogFolderUrl() + ':/' + encodeURIComponent(filename) + ':/content';
+    var url = getLogFolderUrl() + '/' + encodeURIComponent(filename) + ':/content';
     return fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } })
       .then(function(r) {
         if (r.status === 404) return [];
@@ -2360,7 +2360,7 @@ function deleteEventFromOneDrive(eventId, dateStr) {
   if (!confirm('Permanently delete this event?')) return;
   refreshToken().then(function() {
     var filename = 'report-' + dateStr + '-' + currentUser.username + '.json';
-    var url = getLogFolderUrl() + ':/' + encodeURIComponent(filename) + ':/content';
+    var url = getLogFolderUrl() + '/' + encodeURIComponent(filename) + ':/content';
     return fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } })
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
