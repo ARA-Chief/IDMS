@@ -2110,9 +2110,9 @@ function renderEventLogForDate(date) {
     incidents.forEach(function(i) {
       var div = document.createElement('div');
       div.className = 'log-entry';
-      var canDelete = (currentUser.role === 'Admin' || currentUser.role === '1st Engineer');
-      var viewBtn   = '<button class="log-action-btn" onclick="openEventDetailFromData(' + "'" + JSON.stringify(i).replace(/'/g, "\\'") + "'" + ')">View</button>';
-      var deleteBtn = canDelete ? '<button class="log-action-btn danger" onclick="deleteEventFromOneDrive(\'' + i.id + '\', \'' + dateStr + '\')">Delete</button>' : '';
+      var safeJson  = encodeURIComponent(JSON.stringify(i));
+      var viewBtn   = '<button class="log-action-btn" onclick="detailBackScreen=\'screen-review\';openEventDetailFromEncoded(\'' + safeJson + '\')">View</button>';
+      var deleteBtn = '<button class="log-action-btn danger" onclick="deleteEventFromOneDrive(\'' + i.id + '\', \'' + dateStr + '\')">Delete</button>';
       div.innerHTML =
         '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge resolved-badge">Resolved</span></div>' +
         '<div class="log-entry-detail">' + i.category + ' \u00b7 ' + i.durationLabel + '</div>' +
@@ -2137,7 +2137,6 @@ function openEventDetailFromData(jsonStr) {
     document.getElementById('detail-duration').textContent = i.durationLabel|| '—';
     document.getElementById('detail-user').textContent     = i.user || i.displayName || '—';
     document.getElementById('detail-notes').textContent    = i.notes || 'No notes recorded.';
-    detailBackScreen = 'screen-review';
     showScreen('screen-event-detail');
   } catch(e) { console.warn('Detail parse error:', e); }
 }
