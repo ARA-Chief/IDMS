@@ -1793,7 +1793,14 @@ function renderEventLog() {
   var nextBtn = document.getElementById('log-date-nav-next');
   if (nextBtn) nextBtn.style.visibility = 'hidden';
 
-  if (!activeIncidents.length && !resolvedIncidents.length) {
+  // Only show incidents whose endTime is today (incidents belong to their endTime date)
+  var todayStr = toDateStr(new Date());
+  var todayResolved = resolvedIncidents.filter(function(i) {
+    var endDate = i.endTime ? toDateStr(new Date(i.endTime)) : todayStr;
+    return endDate === todayStr;
+  });
+
+  if (!activeIncidents.length && !todayResolved.length) {
     list.innerHTML = '<p style="color:var(--text-muted);font-size:14px;text-align:center;padding:2rem">No events logged yet.</p>';
     return;
   }
@@ -1811,16 +1818,16 @@ function renderEventLog() {
     list.appendChild(div);
   });
 
-  // Resolved, newest first — user can delete their own entries
-  resolvedIncidents.slice().reverse().forEach(function(i) {
+  // Resolved today, newest first — user can delete their own entries
+  todayResolved.slice().reverse().forEach(function(i) {
     var div = document.createElement('div');
     div.className = 'log-entry';
     var viewBtn   = '<button class="log-action-btn" onclick="openEventDetail(' + i.id + ')">View</button>';
     var deleteBtn = '<button class="log-action-btn danger" onclick="deleteEvent(' + i.id + ')">Delete</button>';
     div.innerHTML =
       '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge resolved-badge">Resolved</span></div>' +
-      '<div class="log-entry-detail">' + i.category + ' · ' + i.durationLabel + '</div>' +
-      '<div class="log-entry-meta">'   + i.startLabel + ' – ' + i.endLabel + ' · ' + i.user + '</div>' +
+      '<div class="log-entry-detail">' + i.category + ' \u00b7 ' + i.durationLabel + '</div>' +
+      '<div class="log-entry-meta">'   + i.startLabel + ' \u2013 ' + i.endLabel + ' \u00b7 ' + i.user + '</div>' +
       '<div class="log-entry-actions">' + viewBtn + deleteBtn + '</div>';
     list.appendChild(div);
   });
@@ -1955,13 +1962,8 @@ function syncToOneDrive() {
 function writeLogFile() {
   if (!graphToken) { updateSyncIndicator('offline'); return; }
 
-  var today    = new Date();
-  var dateStr  = today.getFullYear() + '-' +
-                 padTwo(today.getMonth() + 1) + '-' +
-                 padTwo(today.getDate());
-  var deptKey  = (DEPT_FILE_MAP[currentDepartment] || currentDepartment.toLowerCase().replace(/\s+/g, ''));
-  var filename = 'report-' + dateStr + '-' + currentUser.username + '.json';
-  var path     = ONEDRIVE_BASE + '/data/' + deptKey + '/logs/' + filename;
+  var deptKey = (DEPT_FILE_MAP[currentDepartment] || currentDepartment.toLowerCase().replace(/\s+/g, ''));
+  var todayStr = toDateStr(new Date());
 
   // Apply any pending local deletions before writing
   var deletedIds = JSON.parse(localStorage.getItem('fw_deleted_ids') || '[]');
@@ -1973,41 +1975,64 @@ function writeLogFile() {
     saveState();
   }
 
-  var payload = {
-    vessel:     CONFIG ? CONFIG.vessel : 'F/V Araho',
-    department: currentDepartment,
-    user:       currentUser.username,
-    displayName: currentUser.name,
-    role:       currentUser.role,
-    date:       dateStr,
-    generated:  new Date().toISOString(),
-    active:     activeIncidents,
-    resolved:   resolvedIncidents
-  };
+  // ── Group resolved incidents by their endTime date ──
+  // Each incident belongs to the date it ended on, not today.
+  var byDate = {};
+  resolvedIncidents.forEach(function(i) {
+    var dateStr = i.endTime ? toDateStr(new Date(i.endTime)) : todayStr;
+    if (!byDate[dateStr]) byDate[dateStr] = [];
+    byDate[dateStr].push(i);
+  });
 
-  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-            encodeURIComponent(path).replace(/%2F/g, '/') +
-            ':/content';
+  // Always include today's file even if empty (writes active incidents)
+  if (!byDate[todayStr]) byDate[todayStr] = [];
+
+  var dates   = Object.keys(byDate);
+  var writes  = dates.map(function(dateStr) {
+    var filename = 'report-' + dateStr + '-' + currentUser.username + '.json';
+    var path     = ONEDRIVE_BASE + '/data/' + deptKey + '/logs/' + filename;
+    var url      = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+                   encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+    var payload  = {
+      vessel:      CONFIG ? CONFIG.vessel : 'F/V Araho',
+      department:  currentDepartment,
+      user:        currentUser.username,
+      displayName: currentUser.name,
+      role:        currentUser.role,
+      date:        dateStr,
+      generated:   new Date().toISOString(),
+      // Only include active incidents in today's file
+      active:      dateStr === todayStr ? activeIncidents : [],
+      resolved:    byDate[dateStr]
+    };
+    return fetch(url, {
+      method:  'PUT',
+      headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload, null, 2)
+    }).then(function(r) {
+      if (!r.ok) throw new Error('Graph API error: ' + r.status + ' for ' + filename);
+      console.log('Synced to OneDrive:', filename);
+      return dateStr;
+    });
+  });
 
   updateSyncIndicator('syncing');
 
-  fetch(url, {
-    method:  'PUT',
-    headers: {
-      'Authorization': 'Bearer ' + graphToken,
-      'Content-Type':  'application/json'
-    },
-    body: JSON.stringify(payload, null, 2)
-  })
-  .then(function(r) {
-    if (!r.ok) throw new Error('Graph API error: ' + r.status);
-    updateSyncIndicator('synced');
-    console.log('Synced to OneDrive:', filename);
-  })
-  .catch(function(err) {
-    console.warn('OneDrive write failed:', err);
-    updateSyncIndicator('offline');
-  });
+  Promise.all(writes)
+    .then(function(writtenDates) {
+      // Prune incidents from previous days out of localStorage —
+      // they've been safely written to their own dated files
+      resolvedIncidents = resolvedIncidents.filter(function(i) {
+        var dateStr = i.endTime ? toDateStr(new Date(i.endTime)) : todayStr;
+        return dateStr === todayStr;
+      });
+      saveState();
+      updateSyncIndicator('synced');
+    })
+    .catch(function(err) {
+      console.warn('OneDrive write failed:', err);
+      updateSyncIndicator('offline');
+    });
 }
 
 // ── LOAD INCIDENT STATE ───────────────────
@@ -2099,9 +2124,9 @@ function renderEventLogForDate(date) {
     return;
   }
 
-  // Past date — fetch from OneDrive
+  // Past date — fetch THIS USER's log file only (event log is user-specific)
   list.innerHTML = '<p style="color:var(--text-muted);font-size:14px;text-align:center;padding:2rem">Loading\u2026</p>';
-  fetchLogFilesForDate(dateStr).then(function(incidents) {
+  fetchUserLogFile(dateStr).then(function(incidents) {
     if (!incidents.length) {
       list.innerHTML = '<p style="color:var(--text-muted);font-size:14px;text-align:center;padding:2rem">No events found for this date.</p>';
       return;
