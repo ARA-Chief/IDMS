@@ -2411,19 +2411,22 @@ function fetchAllLogFilesForDate(dateStr) {
     var folderPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs';
     var listUrl    = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
                      encodeURIComponent(folderPath).replace(/%2F/g, '/') +
-                     ':/children?$select=name';
+                     ':/children';
+    console.log('fetchAllLogFilesForDate listUrl:', listUrl);
     return fetch(listUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
       .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function(data) {
+        console.log('folder listing response:', JSON.stringify(data).substring(0, 500));
         var files = (data.value || []).filter(function(f) {
-          return f.name.startsWith('report-' + dateStr + '-') && f.name.endsWith('.json');
+          return f.name && f.name.startsWith('report-' + dateStr + '-') && f.name.endsWith('.json');
         });
+        console.log('matching files:', files.map(function(f) { return f.name; }));
         if (!files.length) return [];
-        // Fetch each file's content via Graph API path (works for work/school OneDrive)
         return Promise.all(files.map(function(f) {
           var filePath = folderPath + '/' + f.name;
           var fileUrl  = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
                          encodeURIComponent(filePath).replace(/%2F/g, '/') + ':/content';
+          console.log('fetching file:', fileUrl);
           return fetch(fileUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
             .then(function(r) { return r.ok ? r.json() : null; })
             .catch(function() { return null; });
