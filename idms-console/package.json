@@ -1,0 +1,21 @@
+{
+  "name": "idms-console",
+  "version": "1.0.0",
+  "description": "IDMS Desktop Console — F/V Araho",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "keywords": [],
+  "author": "Araho",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "electron": "^29.1.0",
+    "electron-rebuild": "^3.2.9"
+  }
+}
