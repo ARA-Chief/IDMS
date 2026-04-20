@@ -2128,6 +2128,14 @@ function openEventDetailFromData(jsonStr) {
   } catch(e) { console.warn('Detail parse error:', e); }
 }
 
+// Same as above but accepts URI-encoded JSON (used in report entries
+// to avoid quote-escaping issues inside onclick attributes)
+function openEventDetailFromEncoded(encodedStr) {
+  try {
+    openEventDetailFromData(decodeURIComponent(encodedStr));
+  } catch(e) { console.warn('Detail decode error:', e); }
+}
+
 // ════════════════════════════════════════
 // REPORT SCREEN
 // ════════════════════════════════════════
@@ -2220,10 +2228,13 @@ function renderReport(incidents) {
     var div = document.createElement('div');
     div.className = 'log-entry';
     div.style.marginBottom = '8px';
+    // Safely encode incident data for the View button onclick
+    var safeJson = encodeURIComponent(JSON.stringify(i));
     div.innerHTML =
       '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge resolved-badge">Resolved</span></div>' +
       '<div class="log-entry-detail">' + i.category + ' \u00b7 ' + (i.durationLabel || formatElapsed(i.duration || 0)) + '</div>' +
-      '<div class="log-entry-meta">' + (i.startLabel || '') + ' \u2013 ' + (i.endLabel || '') + ' \u00b7 ' + (i.user || i.displayName || '') + '</div>';
+      '<div class="log-entry-meta">' + (i.startLabel || '') + ' \u2013 ' + (i.endLabel || '') + ' \u00b7 ' + (i.user || i.displayName || '') + '</div>' +
+      '<div class="log-entry-actions"><button class="log-action-btn" onclick="openEventDetailFromEncoded(\'' + safeJson + '\')">View</button></div>';
     entriesEl.appendChild(div);
   });
 
