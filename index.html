@@ -2411,7 +2411,7 @@ function fetchAllLogFilesForDate(dateStr) {
     var folderPath = ONEDRIVE_BASE + '/data/' + deptKey + '/logs';
     var listUrl    = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
                      encodeURIComponent(folderPath).replace(/%2F/g, '/') +
-                     ':/children?$select=name,@microsoft.graph.downloadUrl';
+                     ':/children?$select=name';
     return fetch(listUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
       .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function(data) {
@@ -2419,14 +2419,17 @@ function fetchAllLogFilesForDate(dateStr) {
           return f.name.startsWith('report-' + dateStr + '-') && f.name.endsWith('.json');
         });
         if (!files.length) return [];
+        // Fetch each file's content via Graph API path (works for work/school OneDrive)
         return Promise.all(files.map(function(f) {
-          return fetch(f['@microsoft.graph.downloadUrl'])
+          var filePath = folderPath + '/' + f.name;
+          var fileUrl  = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+                         encodeURIComponent(filePath).replace(/%2F/g, '/') + ':/content';
+          return fetch(fileUrl, { headers: { 'Authorization': 'Bearer ' + graphToken } })
             .then(function(r) { return r.ok ? r.json() : null; })
             .catch(function() { return null; });
         }));
       })
       .then(function(fileContents) {
-        // Collect all resolved incidents from all users
         var all = [];
         fileContents.forEach(function(fc) {
           if (!fc || !fc.resolved) return;
