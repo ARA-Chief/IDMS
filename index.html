@@ -2127,7 +2127,8 @@ function openEventDetailFromData(jsonStr) {
     document.getElementById('detail-user').textContent     = i.user || i.displayName || '—';
     document.getElementById('detail-notes').textContent    = i.notes || 'No notes recorded.';
     detailBackScreen = 'screen-review';
-  showScreen('screen-event-detail');
+    showScreen('screen-event-detail');
+  } catch(e) { console.warn('Detail parse error:', e); }
 }
 
 // Same as above but accepts URI-encoded JSON (used in report entries
