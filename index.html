@@ -831,10 +831,14 @@ function initMsal() {
 
 function msalSignIn() {
   var btn = document.getElementById('msauth-btn');
+  if (!msalInstance) {
+    // MSAL failed to initialise — fall through to manual login
+    console.warn('MSAL not available, falling through');
+    showScreen('screen-login');
+    return;
+  }
   btn.textContent = 'Signing in\u2026';
   btn.disabled    = true;
-  // Use redirect flow on all devices — more reliable than popup
-  // when the browser already has an active Microsoft session
   msalInstance.loginRedirect({ scopes: MSAL_SCOPES });
 }
 
@@ -849,14 +853,21 @@ function onMsalSuccess() {
 
 function msalSignOut() {
   if (msalInstance && msalAccount) {
-    msalInstance.logoutPopup({ account: msalAccount })
-      .catch(function() {})
-      .finally(function() {
-        msalAccount = null;
-        graphToken  = null;
-        showScreen('screen-msauth');
+    // Use redirect flow — popup is blocked on mobile Safari
+    try {
+      msalInstance.logoutRedirect({
+        account:              msalAccount,
+        postLogoutRedirectUri: MSAL_CONFIG.auth.redirectUri
       });
+    } catch(err) {
+      // If redirect fails, clear state and go to splash manually
+      msalAccount = null;
+      graphToken  = null;
+      showScreen('screen-msauth');
+    }
   } else {
+    msalAccount = null;
+    graphToken  = null;
     showScreen('screen-msauth');
   }
 }
