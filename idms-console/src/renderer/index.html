@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self';
+                 style-src 'self' 'unsafe-inline';
+                 connect-src https://login.microsoftonline.com
+                             https://graph.microsoft.com
+                             https://raw.githubusercontent.com;">
+  <title>IDMS Console</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+
+  <!-- ── Auth screen ─────────────────────────────────────────── -->
+  <div id="screen-auth" class="screen active">
+    <div class="auth-wrap">
+      <div class="auth-logo">IDMS</div>
+      <div class="auth-vessel" id="auth-vessel-label">Console</div>
+      <div class="auth-card">
+        <p class="auth-prompt">Sign in with your Microsoft account to access the console.</p>
+        <div id="auth-error" class="auth-error" style="display:none"></div>
+        <button class="btn-primary" id="auth-btn" onclick="startAuth()">Sign in with Microsoft</button>
+      </div>
+      <p class="auth-footer">IDMS Console v1.0</p>
+    </div>
+  </div>
+
+  <!-- ── Main app shell ──────────────────────────────────────── -->
+  <div id="screen-app" class="screen">
+
+    <!-- Title bar -->
+    <div class="titlebar">
+      <div class="tb-left">
+        <div class="tb-traffic">
+          <span class="tb-dot" id="tb-close"   onclick="window.close()"></span>
+          <span class="tb-dot" id="tb-min"     onclick="/* minimise -->"></span>
+          <span class="tb-dot" id="tb-max"                              ></span>
+        </div>
+        <span class="tb-title">IDMS Console</span>
+      </div>
+      <div class="tb-right" id="tb-badges"></div>
+    </div>
+
+    <!-- App body -->
+    <div class="app-body">
+
+      <!-- Sidebar -->
+      <nav class="sidebar" id="sidebar">
+        <div class="nav-section">Operations</div>
+        <button class="nav-item active" data-screen="overview">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="14" rx="2"/><path d="M1 6h14M6 6v9"/></svg>
+          Overview
+        </button>
+        <button class="nav-item disabled" data-screen="timers" title="Coming in Phase 5">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></svg>
+          Live timers
+        </button>
+        <button class="nav-item disabled" data-screen="fuel" title="Coming in Phase 5">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 14V4a1 1 0 011-1h5l3 3v8"/><path d="M3 8h8"/></svg>
+          Fuel &amp; transfers
+        </button>
+        <button class="nav-item disabled" data-screen="nav" title="Coming in Phase 5">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 2v2m0 8v2M2 8h2m8 0h2"/></svg>
+          Navigation
+        </button>
+
+        <div class="nav-section">Logs</div>
+        <button class="nav-item" data-screen="eventlogs">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M3 8h7M3 12h5"/></svg>
+          Event logs
+        </button>
+        <button class="nav-item" data-screen="reports">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M5 6h6M5 9h4"/></svg>
+          Reports
+        </button>
+        <button class="nav-item disabled" data-screen="analytics" title="Coming in Phase 4">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14l3-3 3 3 3-6 3 3"/></svg>
+          Analytics
+        </button>
+
+        <div class="nav-section">Administration</div>
+        <button class="nav-item" data-screen="users">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg>
+          Users
+        </button>
+        <button class="nav-item" data-screen="vessel">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13l6-10 6 10H2z"/><path d="M8 8v5"/></svg>
+          Vessel setup
+        </button>
+        <button class="nav-item" data-screen="settings">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="3"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2m-2.9-4.1-1.4 1.4M4.3 11.7l-1.4 1.4m0-9.2 1.4 1.4m7 7 1.4 1.4"/></svg>
+          Settings
+        </button>
+
+        <div class="nav-spacer"></div>
+        <div class="nav-vessel">
+          <div class="vessel-name" id="sidebar-vessel">F/V Araho</div>
+          <div class="vessel-sub" id="sidebar-version">schema v1 · IDMS v1.0</div>
+        </div>
+      </nav>
+
+      <!-- Content area -->
+      <div class="content-area">
+
+        <!-- Top bar -->
+        <div class="topbar">
+          <span class="topbar-title" id="topbar-title">Overview</span>
+          <div class="topbar-actions" id="topbar-actions"></div>
+        </div>
+
+        <!-- Screen: Overview -->
+        <div id="screen-overview" class="content-screen active" data-title="Overview">
+          <div id="overview-content">
+            <div class="placeholder-msg">Connecting to OneDrive…</div>
+          </div>
+        </div>
+
+        <!-- Screen: Event logs -->
+        <div id="screen-eventlogs" class="content-screen" data-title="Event logs">
+          <div class="placeholder-msg">Event log browser — coming in Phase 4.</div>
+        </div>
+
+        <!-- Screen: Reports -->
+        <div id="screen-reports" class="content-screen" data-title="Reports">
+          <div class="placeholder-msg">Report generation — coming in Phase 4.</div>
+        </div>
+
+        <!-- Screen: Users -->
+        <div id="screen-users" class="content-screen" data-title="Users">
+          <div class="placeholder-msg">User management — coming in Phase 4.</div>
+        </div>
+
+        <!-- Screen: Vessel setup -->
+        <div id="screen-vessel" class="content-screen" data-title="Vessel setup">
+          <div class="placeholder-msg">Vessel configuration — coming in Phase 4.</div>
+        </div>
+
+        <!-- Screen: Settings -->
+        <div id="screen-settings" class="content-screen" data-title="Settings">
+          <div id="settings-content"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="js/auth.js"></script>
+  <script src="js/graph.js"></script>
+  <script src="js/ingest.js"></script>
+  <script src="js/overview.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
