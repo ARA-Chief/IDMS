@@ -1143,19 +1143,56 @@ var DEPT_FILE_MAP = {
   'Deck':        'deck'
 };
 
+// ── DEPT CONFIG CACHE KEYS ───────────────
+function deptConfigCacheKey(dept)  { return 'fw_deptcfg_'   + (DEPT_FILE_MAP[dept] || dept.toLowerCase().replace(/\s+/g, '')); }
+function shellConfigCacheKey(dept) { return 'fw_shellcfg_'  + (DEPT_FILE_MAP[dept] || dept.toLowerCase().replace(/\s+/g, '')); }
+
 function loadDeptConfig(dept) {
   var key      = DEPT_FILE_MAP[dept] || dept.toLowerCase().replace(/\s+/g, '');
   var dataURL  = configURL('config/' + key + 'config.json');
   var shellURL = configURL('config/shells/' + key + 'shell.json');
 
-  return Promise.all([
-    fetch(dataURL).then(function(r)  { return r.ok ? r.json() : null; }).catch(function() { return null; }),
-    fetch(shellURL).then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
-  ]).then(function(results) {
-    DEPT_CONFIG  = results[0];
-    SHELL_CONFIG = results[1];
-    return { deptConfig: DEPT_CONFIG, shellConfig: SHELL_CONFIG };
-  });
+  var deptCacheKey  = deptConfigCacheKey(dept);
+  var shellCacheKey = shellConfigCacheKey(dept);
+
+  function safeFetch(url) {
+    return fetch(url).then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
+  }
+
+  return Promise.all([safeFetch(dataURL), safeFetch(shellURL)])
+    .then(function(results) {
+      var fetchedDept  = results[0];
+      var fetchedShell = results[1];
+      var usedCache    = false;
+
+      // If fetch succeeded, update localStorage cache
+      if (fetchedDept) {
+        try { localStorage.setItem(deptCacheKey,  JSON.stringify(fetchedDept));  } catch(e) {}
+      }
+      if (fetchedShell) {
+        try { localStorage.setItem(shellCacheKey, JSON.stringify(fetchedShell)); } catch(e) {}
+      }
+
+      // Fall back to cached version for anything that failed to load
+      if (!fetchedDept) {
+        try {
+          var cached = localStorage.getItem(deptCacheKey);
+          if (cached) { fetchedDept = JSON.parse(cached); usedCache = true; }
+        } catch(e) {}
+      }
+      if (!fetchedShell) {
+        try {
+          var cachedShell = localStorage.getItem(shellCacheKey);
+          if (cachedShell) { fetchedShell = JSON.parse(cachedShell); usedCache = true; }
+        } catch(e) {}
+      }
+
+      DEPT_CONFIG  = fetchedDept;
+      SHELL_CONFIG = fetchedShell;
+
+      // Signal to enterDepartment whether we used cached config
+      return { deptConfig: DEPT_CONFIG, shellConfig: SHELL_CONFIG, fromCache: usedCache };
+    });
 }
 
 // ── ENTER DEPARTMENT ─────────────────────
@@ -1172,7 +1209,7 @@ function enterDepartment(dept) {
   // Show a brief loading state while fetching dept config
   updateSyncIndicator('syncing');
 
-  loadDeptConfig(dept).then(function() {
+  loadDeptConfig(dept).then(function(result) {
     loadUserPresets();
     applyRolePermissions();
     updateUserDisplay();
@@ -1183,12 +1220,13 @@ function enterDepartment(dept) {
     renderTimerBars();
     updatePresetButtons();
     renderEventLog();
-    updateSyncIndicator('synced');
+    // If we had to fall back to cached config, show amber "Not Synced" — the
+    // OneDrive autosync will clear it to green on the next successful write.
+    updateSyncIndicator(result && result.fromCache ? 'offline' : 'synced');
     startSyncTimer();   // begin 5-minute autosync
     showScreen('screen-home');
   }).catch(function(err) {
-    console.warn('Dept config load failed:', err);
-    // Fall through with whatever loaded — hardcoded fallback still in HTML
+    console.warn('Dept config load failed (no cache available):', err);
     loadUserPresets();
     applyRolePermissions();
     updateUserDisplay();
