@@ -1071,6 +1071,7 @@ function submitLogin() {
     var initials = parts.filter(Boolean).map(function(p) { return p[0].toUpperCase(); }).join('').slice(0, 2);
     currentUser = {
       username:    match.username,
+      user_id:     match.user_id || null,    
       name:        displayName,
       initials:    initials,
       role:        match.role,
@@ -2065,6 +2066,7 @@ function writeLogFile() {
       vessel:      CONFIG ? CONFIG.vessel : 'F/V Araho',
       department:  currentDepartment,
       user:        currentUser.username,
+      user_id:     currentUser.user_id || null, 
       displayName: currentUser.name,
       role:        currentUser.role,
       date:        dateStr,
