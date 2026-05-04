@@ -1,5 +1,11 @@
 # IDMS Schema Specification
-**Version 2.8 — F/V Araho**  
+**Version 2.11 — F/V Araho**  
+v2.11 — Rounds entry module built on the Field PWA (`roundsentry.js`). Per-user round log file format defined (§22): `roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json` written to `data/rounds/logs/{username}/`. Rounds aggregate file format defined (§23): `rounds-{YYYY-MM-DD}-{HHmm}.json` written to `data/rounds/{year}/`. OneDrive path conventions and round number inference rule documented (§24). `userprefs-{username}.json` introduced at `config/userprefs-{username}.json` (§21) — stores per-user PWA preferences (`keypad_side`, `colour_mode`). `roundsconfig.json` item schema updated: new item types `add_oil` and `heading`; new item fields `active_days` (day-of-week filter, 1=Monday), `add_oil_tank_id` (tank source for oil additions). Console rounds ingestion rebuilt: `rounds:ingestLog` IPC handler ingests per-user log files from per-user subdirectories; `rounds:buildAggregate` computes §23 aggregates; `rounds:markAggregateWritten` / `rounds:markAggregateFailed` track OneDrive write status. Three new SQLite tables: `rounds_entries` (§22-compatible schema, no UNIQUE constraint — multi-user support), `rounds_aggregates` (with `onedrive_write_status` column: `pending` / `complete` / `failed`), `rounds_config_snapshots` (updated). Old `rounds_entries` schema migrated to `rounds_entries_legacy` on upgrade. Console rounds viewer added: `roundsviewer.js` with three panels — Overview (per-day/round summary), Round Detail (per-item per-user values), Add Oil Summary (fuel-module feed for Phase 5). New IPC handlers: `rounds:getOverview`, `rounds:getRoundDetail`, `rounds:getAddOilSummary`, `rounds:getDistinctDates`, `rounds:saveConfigSnapshot`. New Graph helpers: `listRoundsUserDirs`, `listRoundsLogFilesForUser`, `loadRoundsUserLogFile`, `writeRoundsAggregate`. Ingest poller updated: old flat-folder rounds block replaced with `pollRoundsLogs()` + `buildAndWriteAggregate()` + `retryPendingAggregates()`.
+
+v2.10 — Daily Production Report (DPR) ingestion redesigned (§37.11). Microsoft Graph Mail API replaced with OneDrive folder polling driven by a Power Automate flow. The flow watches the user's inbox for "Daily Production Report" emails and saves their PDF attachments to `OneDrive/Daily Production Reports/{YYYY}/` (note: this folder is *outside* `Documents/IDMS/`). IDMS lists that folder, sorts by `lastModifiedDateTime`, downloads the most recent file, parses it with a pure-Node.js text extractor (no `pdfjs-dist` / `pdf-parse` dependency — broken in Electron's main process), and renames it to `DPR-{YYYY-MM-DD}.pdf` using the file's modification date (since midnight reports are dated the previous day inside the PDF). Three new `graph.js` helpers: `graphGetBinaryById`, `graphRenameItem`, plus `id` added to `graphListFolder` `$select`. New main-process IPC handler `pdf:parse` exposed as `window.idms.pdf.parse(buffer)`. The `production-state.json` `source` field changes from `"email"` to `"dpr"`. `email_subject_filter` and `email_source_address` fields in `factoryconfig.json → production` are deprecated (no longer used). MSAL `Mail.Read*` scopes no longer required — `User.Read` and `Files.ReadWrite` suffice. The renderer's DPR fetch now extracts richer per-species production data (trip number, trip day, daily/trip totals in MT and cases, full per-species grade breakdown). Overview "Refresh DPR" panel shows "Today's report not available" when the most recent file's modification date is not today. Bug fix: `ingest.js` `pollNow()` referenced undefined `loadTaskRecordFile` — corrected to `loadTaskEquipmentFile`.
+
+v2.9 — OEE Report (§39) refined. Per-asset rate maps in `assembleOeeReportData` extended with an upstream-bottleneck cap (`equipmentAdjustedRateMap`): each sub-asset's MT/day is capped at the minimum rate of any same-section sub-asset with a lower `order` value, so a fast downstream item only loses what its slowest upstream feeder could have produced. Both incidents and OEE observations carry `adjusted_rate_mt_per_day` alongside `asset_rate_mt_per_day` in `chart_data`. The on-screen and PDF "Observations in Window" tables gain an **Adjusted Δ** column (suppressed to "—" when the cap doesn't change the value, in which case the Delta cell renders muted grey to keep the eye on Adjusted). Available Max calculation made series-aware: line-wide MT lost is no longer the additive sum of per-section losses (which double-counted across sections in series); instead the chart's available-max step function takes the per-section minimum of `(theoreticalRate − lostRate)` at each time slice, and the headline `available_max_mt` is integrated from that step function. Both incident and observation losses contribute per-section. `chart_data` gains `demonstrated_max_mt_per_hour`; both the canvas chart and the PDF SVG chart gain a dashed amber **Demonstrated Max** reference line and matching legend entry.
+
 v2.8 — OEE (Overall Equipment Effectiveness) module added (§39). Per-user factory log file gains `observations` array (schema_version 2). `capacity-{YYYY-MM-DD}.json` retired as a write target (legacy read retained). `capacity_observations` SQLite table gains `failure_mode_id`, `oee_session_id`, `source_user` columns. New IPC handlers: `db:ingestObservationsFromLog`, `db:saveObservationsToLog`, `db:getOeeSessions`, `db:generateRosReportPdf`. Factory Production gains OEE tab (§39) and report generator. PWA gains observation push for factory users. Overview tab gains PWA observation overlay.
 
 v2.7 — FMEA module added (§38). `fmeaconfig.json` introduced at `config/fmeaconfig.json`. Resolved incident object (§11) gains optional `failure_mode_id` and `failure_mode_other_notes` fields (Factory department only on the PWA). Three new SQLite tables: `fmea_failure_modes`, `fmea_occurrence_events`, `fmea_config_snapshots`. Seven new IPC handlers: `db:ingestFmeaConfig`, `db:saveFmeaConfigSnapshot`, `db:getFmeaFailureModes`, `db:getFmeaOccurrence`, `db:ingestFmeaOccurrenceEvents`, `db:getFmeaRpnSummary`, `db:upsertFmeaFailureMode`. graph.js helpers `loadFmeaConfig` / `saveFmeaConfig`. New `pollFmeaOccurrenceEvents()` pass in ingest.js (factory incidents + completed maintenance records). Factory Production gains a dedicated **FMEA tab** with a failure-mode registry, RPN display, occurrence-confidence indicators, and an add/edit modal whose Asset dropdown is filtered to the selected section's sub-assets. Sub-asset objects (§37) gain an `iso14224_equipment_class` field, settable in Setup and auto-populated into the FMEA modal on asset selection. Throughput-section MT/day calculation revised to bottleneck across series stages and sum within parallel stages (grouped by sub-asset `order`) instead of summing all sub-assets.
@@ -42,8 +48,13 @@ v2.1 — Navigation restructure. Sidebar groups renamed and reorganised. Stabili
 18. [Console Application](#18-console-application)
 19. [tankconfig.json](#19-tankconfigjson)
 20. [roundsconfig.json](#20-roundsconfigjson)
-21. [Rounds Log File (per-date)](#21-rounds-log-file-per-date)
-22. [fuelstate.json](#22-fuelstatejson)
+21. [userprefs-{username}.json](#21-userprefs-usernamejson)
+22. [Rounds Entry Log File (per-user, per-round)](#22-rounds-entry-log-file-per-user-per-round)
+23. [Rounds Aggregate File](#23-rounds-aggregate-file)
+24. [Rounds OneDrive Paths & Round Number Inference](#24-rounds-onedrive-paths--round-number-inference)
+25. [fuelstate.json](#25-fuelstatejson)
+26. [Stability Calculations](#26-stability-calculations)
+27. [Trip Planner](#27-trip-planner)
 23. [Trip Planner](#23-trip-planner)
 24. [portsconfig.json](#24-portsconfigjson)
 25. [scheduleconfig.json](#25-scheduleconfigjson)
@@ -85,6 +96,7 @@ Documents/IDMS/
 │   ├── scheduleconfig.json         ← Approved crew rotation schedule (current year)
 │   ├── schedule_draft.json         ← Working draft schedule (editable, not crew-visible)
 │   ├── fmeaconfig.json             ← Factory production FMEA failure mode registry
+│   ├── userprefs-{username}.json   ← Per-user PWA preferences (keypad side, colour mode) — one file per user
 │   └── shells/
 │       ├── factoryshell.json       ← Factory module behaviour
 │       ├── engineshell.json        ← Engine Room module behaviour
@@ -104,7 +116,9 @@ Documents/IDMS/
 │   │   ├── logs/
 │   │   └── reports/
 │   ├── rounds/
-│   │   ├── logs/                   ← rounds-{YYYY-MM-DD}.json
+│   │   ├── logs/
+│   │   │   └── {username}/         ← roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json  (per-user entry logs, written by PWA)
+│   │   ├── {YYYY}/                 ← rounds-{YYYY-MM-DD}-{HHmm}.json  (aggregates, written by console)
 │   │   └── reports/                ← rounds-report-{YYYY-MM-DD}.json (future)
 │   ├── roughlog/
 │   │   └── roughlog-{YYYY}.json    ← Vessel-wide rough log, one file per calendar year
@@ -117,6 +131,16 @@ Documents/IDMS/
 │       └── notifications/          ← schedule-notification-{YYYY-MM-DD}.json (audit log mirrors)
 │
 └── console.lock                    ← Active console heartbeat file
+```
+
+**External OneDrive folders** (outside `Documents/IDMS/`, read by IDMS but written by other tools):
+
+```
+OneDrive root/
+└── Daily Production Reports/
+    └── {YYYY}/                     ← DPR PDFs dropped here by a Power Automate flow.
+                                       Filenames standardized to `DPR-{YYYY-MM-DD}.pdf`
+                                       on first read by IDMS. See §37.11.
 ```
 
 **Local machine files** (not on OneDrive):
@@ -1453,13 +1477,40 @@ CREATE TABLE IF NOT EXISTS task_skill_tags (
 | `department` | Computed at ingest. One of: a dept key (`engine`, `factory`, `deck`), a comma-separated list for multi-matches, `ignore`, or `NULL` (unassigned). |
 | `ingested_at` | ISO 8601 UTC timestamp of last ingest. |
 
-**`rounds_entries` column notes:**
+**`rounds_entries` column notes (v2.11 schema — §22-compatible):**
 
 | Column | Notes |
 |---|---|
-| `value_numeric` / `value_bool` / `value_text` | Mutually exclusive — exactly one is non-null per row, determined by `item_type`. |
-| `completed_by` | Username of the user who filled in this section's entries. Populated at ingest from the `section_completions` block in the log file. `NULL` for log files written before this field existed. |
-| `ingested_at` | ISO 8601 UTC timestamp of last ingest. |
+| `source_file` | Full OneDrive path of the ingested log file. Used for deduplication — if any rows exist for a given `source_file`, the file is skipped on subsequent polls. |
+| `vessel` | Vessel name from the log file top-level. |
+| `username` | IDMS username of the submitting user. |
+| `display_name` | Display name snapshot at submission time. |
+| `round_number` | Inferred round number. |
+| `scheduled_time` | Nominal `"HH:MM"` round time. |
+| `submitted` | ISO 8601 UTC. Submission timestamp from the log file. Used for recency sorting in aggregate display-value computation. |
+| `date` | `YYYY-MM-DD`. From the entry object. |
+| `section_id` / `section_label` | Section UUID and label snapshot. |
+| `item_id` / `item_label` | Item UUID and label snapshot. |
+| `item_type` | Item type string. |
+| `unit` | Unit string or `NULL`. |
+| `asset_code` | Asset code or `NULL`. |
+| `add_oil_tank_id` | Tank source UUID for `add_oil` items; `NULL` for all other types. |
+| `value` | All values stored as `TEXT`. `NULL` when `secd = 1`. |
+| `secd` | `1` if the item was SEC'd; `0` otherwise. |
+| `ingested_at` | ISO 8601 UTC timestamp of ingest. |
+
+**`rounds_entries` migration note:** If a `rounds_entries` table exists from a pre-v2.11 schema (identifiable by the absence of a `source_file` column), the console renames it to `rounds_entries_legacy` on startup and creates the new table. The legacy table is retained for reference; the old `db:ingestRoundsLog` handler continues to work against it.
+
+**`rounds_aggregates` column notes:**
+
+| Column | Notes |
+|---|---|
+| `date` / `round_number` | Composite unique key. `UNIQUE(date, round_number)`. |
+| `scheduled_time` | Nominal `"HH:MM"`. Populated from `rounds_entries` at upsert time. |
+| `onedrive_path` | Full OneDrive path of the written aggregate file. |
+| `generated_at` | ISO 8601 UTC. Timestamp of the last aggregation run. |
+| `contributing_users` | Comma-separated username list. `GROUP_CONCAT(DISTINCT username)` at upsert time. |
+| `onedrive_write_status` | `"pending"` (not yet written), `"complete"` (successfully written), `"failed"` (last attempt failed — retry on next poll cycle). |
 
 **`equipment_assignments` notes:** Denormalised snapshot of current `equipmentconfig.json` ranges. Fully rebuilt on every ingest. `dept_order` mirrors the department's `order` value and is used during ingest to resolve conflicts: when an asset matches multiple department ranges the row with the highest `dept_order` determines the stored department. Used for fast range queries and by `db:getAssetRangeCounts`.
 
@@ -1493,6 +1544,7 @@ CREATE TABLE IF NOT EXISTS task_skill_tags (
 | `stability.js`      | Embedded in Vessel Setup → Stability Calculations tab (to be moved)       | Partial     |
 | `equipment.js`      | Config → Equipment Setup (2 tabs: Department Assignment, Group Assignment) | Built       |
 | `rounds.js`         | Config → Rounds Setup                                                     | Built       |
+| `roundsviewer.js`   | Operations → Rounds Log (Overview, Round Detail, Add Oil Summary panels)  | Built       |
 | `users.js`          | Config → Users                                                            | Built       |
 | `crewsetup.js`      | Config → Crew Setup                                                       | Built       |
 | `crew.js`           | Embedded in Crew Setup → Crew List tab                                    | Built       |
@@ -1774,25 +1826,30 @@ The `round_times` array must be sorted ascending by `time`. The UI enforces this
 | `label`          | string            | yes      | Row label as it appears on the sheet. E.g. `"COOLANT PRESS IN"`.                                                        |
 | `unit`           | string            | no       | Unit of measurement. Must be one of the valid unit values listed below, or `null`. Only applies to `"numeric"` items. Set `null` for all other types. |
 | `asset_code`     | string            | no       | Equipment asset code from `assets.csv`. Alphanumeric with periods, e.g. `"601.001.001.001"`. Set `null` if not applicable. Validated against the SQLite `assets` table by the console UI on input, but **not enforced at schema level** — an unrecognised code is stored as-is and flagged in the UI. |
-| `active_rounds`  | integer[]         | no       | Array of round numbers (1-indexed) for which this item is active. Defaults to all rounds when not present. Omitted for `"heading"` type items. When `rounds_per_day` changes, the console adds new rounds as active and prunes removed rounds from all items. |
-| `custom_options` | string[]          | no       | Required when `type` is `"custom"`. Ordered list of selectable options presented as a dropdown at data entry time. E.g. `["Normal", "Standby", "Fault", "Shutdown"]`. Must be `null` or omitted for all other types. |
-| `notes`          | string            | yes      | Free text. Internal operator note visible during config editing. Does not appear on the printed sheet. May be empty string. |
+| `active_rounds`    | integer[]         | no       | Array of round numbers (1-indexed) for which this item is active. Defaults to all rounds when not present. Omitted for `"heading"` type items. When `rounds_per_day` changes, the console adds new rounds as active and prunes removed rounds from all items. |
+| `active_days`      | integer[]         | no       | Array of days-of-week (1=Monday … 7=Sunday) on which this item is shown. Defaults to all days when not present or `null`. Omitted for `"heading"` type items. The field PWA filters items on module load. |
+| `custom_options`   | string[]          | no       | Required when `type` is `"custom"`. Ordered list of selectable options presented as a dropdown at data entry time. E.g. `["Normal", "Standby", "Fault", "Shutdown"]`. Must be `null` or omitted for all other types. |
+| `add_oil_tank_id`  | string            | no       | Required when `type` is `"add_oil"`. UUID matching a lube oil or waste oil tank in `tankconfig.json` — identifies the tank being drawn from when oil is added. Must be `null` or omitted for all other types. |
+| `notes`            | string            | yes      | Free text. Internal operator note visible during config editing. Does not appear on the printed sheet. May be empty string. |
 
 ---
 
 ### Item type reference
 
-| Type       | Data cell content                       | Has `unit` | Has `custom_options` | Has `active_rounds` | Appears in log data |
-|------------|-----------------------------------------|------------|----------------------|---------------------|---------------------|
-| `numeric`  | Number input                            | Yes        | No                   | Yes                 | Yes — numeric value or `null` if not recorded  |
-| `text`     | Free-text input (unvalidated)           | No         | No                   | Yes                 | Yes — string value or `null` if not recorded   |
-| `custom`   | Dropdown from `custom_options` list     | No         | Yes                  | Yes                 | Yes — string value or `null` if not recorded   |
-| `checkbox` | Checked / unchecked                     | No         | No                   | Yes                 | Yes — boolean or `null` if not recorded        |
-| `heading`  | Display separator only                  | No         | No                   | No                  | No — omitted from log entirely                 |
+| Type       | Data cell content                       | Has `unit` | Has `custom_options` | Has `add_oil_tank_id` | Has `active_rounds` | Appears in log data |
+|------------|-----------------------------------------|------------|----------------------|-----------------------|---------------------|---------------------|
+| `numeric`  | Number input                            | Yes        | No                   | No                    | Yes                 | Yes — string value or `null` if not recorded  |
+| `text`     | Free-text input (unvalidated)           | No         | No                   | No                    | Yes                 | Yes — string value or `null` if not recorded  |
+| `custom`   | Dropdown from `custom_options` list     | No         | Yes                  | No                    | Yes                 | Yes — string value or `null` if not recorded  |
+| `checkbox` | Checked / unchecked                     | No         | No                   | No                    | Yes                 | Yes — string value or `null` if not recorded  |
+| `add_oil`  | Numeric volume entry (oil addition)     | Yes        | No                   | Yes                   | Yes                 | Yes — string (numeric as string) or `null`; SEC'd entries are `null` |
+| `heading`  | Display separator only                  | No         | No                   | No                    | No                  | No — omitted from log entirely                |
 
-`heading` items have no data column and no `active_rounds` field. They are purely a visual element on the generated sheet. Their `unit`, `asset_code`, and `custom_options` fields must be `null`.
+`heading` items have no data column and no `active_rounds` field. They are purely a visual element on the generated sheet. Their `unit`, `asset_code`, `custom_options`, and `add_oil_tank_id` fields must be `null`. In the field PWA, the SEC'D button groups items under the nearest heading above the active row.
 
-`text` items accept any free-form string with no validation. `custom` items constrain entry to the values listed in `custom_options` — the field PWA presents these as a dropdown. Both types store their log value as a string in the `value_text` column of `rounds_entries`.
+`text` items accept any free-form string with no validation. `custom` items constrain entry to the values listed in `custom_options` — the field PWA presents these as a dropdown. Both types store their log value as a string in the `value` column of `rounds_entries`.
+
+`add_oil` items represent a lubricating oil addition event. The value is the volume added (stored as a string to preserve precision). On aggregation the console **sums** all non-null, non-SEC'd values across contributing users. The `add_oil_tank_id` field identifies the tank being drawn from and is propagated into `rounds_entries.add_oil_tank_id` at ingest, ready for consumption by the Phase 5 fuel/transfer module.
 
 ---
 
@@ -1855,11 +1912,13 @@ The Rounds Setup screen (Administration → Rounds Setup) operates as follows:
 - An **[ADD HEADING]** button appends a new `heading` item.
 - Each item row exposes:
   - `label` — text input
-  - `type` — dropdown: `numeric`, `text`, `custom`, `checkbox`, `heading`
-  - `unit` — dropdown (valid unit values above); visible only when type is `numeric`
+  - `type` — dropdown: `numeric`, `text`, `custom`, `checkbox`, `add_oil`, `heading`
+  - `unit` — dropdown (valid unit values above); visible only when type is `numeric` or `add_oil`
   - `custom_options` — comma-separated text input; visible only when type is `custom`. Values are split on commas, trimmed, and stored as a string array. These become the selectable options in the field PWA dropdown at data entry time. Cleared automatically when type changes away from `custom`.
+  - `add_oil_tank_id` — dropdown of lube/waste oil tanks from `tankconfig.json`; visible only when type is `add_oil`. Cleared automatically when type changes away from `add_oil`.
   - `asset_code` — text input; hidden for `heading` type. Validated on blur against the SQLite `assets` table. Displays the asset name on match; shows a warning on no-match (does not block save).
   - `active_rounds` — one checkbox per round (labelled by round number). All checked by default. Hidden for `heading` type. Allows per-item scheduling — e.g. an item that only applies to daytime rounds.
+  - `active_days` — seven checkboxes labelled Mon–Sun. All checked by default. Hidden for `heading` type. Allows per-item day-of-week filtering — e.g. an item that only applies on weekdays.
   - Delete button — removes the item. No confirmation required.
 - Items can be reordered within a section using up/down buttons (updates `order` values).
 - Items **cannot** be moved between sections. Move via delete and re-add.
@@ -1872,102 +1931,265 @@ The Rounds Setup screen (Administration → Rounds Setup) operates as follows:
 
 ---
 
-## 20. Rounds Log File (per-date)
+## 21. userprefs-{username}.json
 
-**Location:** `Documents/IDMS/data/rounds/logs/rounds-{YYYY-MM-DD}.json`
-**Written by:** Console (sheet generation + submission) or Field PWA (future — when digital rounds entry is implemented)
-**Read by:** Console (ingestion into SQLite)
+**Location:** `Documents/IDMS/config/userprefs-{username}.json`  
+**Written by:** Field PWA (rounds entry module) — on preference change  
+**Read by:** Field PWA (rounds entry module) — on load  
 
-One file per calendar date. A file may be partially populated — entries are present only for rounds that have been submitted. Incomplete rounds (started but not submitted) are not written.
+Per-user preference file for the rounds entry module. One file per IDMS user. Created automatically by `roundsentry.js` on first preference change; absent files are treated as defaults.
 
 ### Full example
 
 ```json
 {
   "schema_version": 1,
-  "vessel": "F/V Araho",
-  "date": "2026-04-21",
-  "generated": "2026-04-21T06:05:00.000Z",
-  "generated_by": "tploch",
-  "config_version": 1,
+  "username": "tploch",
+  "keypad_side": "right",
+  "colour_mode": "dark"
+}
+```
 
-  "rounds": [
+### Fields
+
+| Field            | Type    | Default   | Notes                                                                                   |
+|------------------|---------|-----------|-----------------------------------------------------------------------------------------|
+| `schema_version` | integer | `1`       | Always `1`.                                                                             |
+| `username`       | string  | —         | IDMS username. Must match the logged-in user. Written at save time.                     |
+| `keypad_side`    | string  | `"right"` | `"left"` or `"right"`. Controls which side the keypad docks on tablet layout.          |
+| `colour_mode`    | string  | `"dark"`  | `"dark"` or `"light"`. Scoped to the rounds entry screen only; does not affect other PWA screens. |
+
+---
+
+## 22. Rounds Entry Log File (per-user, per-round)
+
+**Location:** `Documents/IDMS/data/rounds/logs/{username}/roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json`  
+**Written by:** Field PWA (`roundsentry.js`) on submit  
+**Read by:** Console (`rounds:ingestLog` IPC handler via `pollRoundsLogs()`)
+
+One file per user per round submission. `{HHmm}` is the UTC wall-clock time at the moment of submission (not the scheduled round time). A user who submits the same round twice produces two files with different `{HHmm}` values; the console deduplicates by `source_file` — the second file is skipped if the first is already ingested.
+
+### Full example
+
+```json
+{
+  "schema_version": 2,
+  "vessel": "F/V Araho",
+  "username": "tploch",
+  "display_name": "Tyler Ploch",
+  "submitted": "2026-05-04T06:14:22.000Z",
+
+  "entries": [
     {
-      "round_number": 1,
-      "scheduled_time": "00:00",
-      "submitted_at": "2026-04-21T00:12:00.000Z",
-      "submitted_by": "tploch",
-      "section_completions": [
-        { "section_id": "a1b2c3d4-0001-4000-8000-000000000001", "completed_by": "tploch" },
-        { "section_id": "a1b2c3d4-0002-4000-8000-000000000001", "completed_by": "spotchik" }
-      ],
-      "entries": [
-        {
-          "section_id": "a1b2c3d4-0001-4000-8000-000000000001",
-          "item_id":    "b2c3d4e5-0001-4000-8000-000000000001",
-          "value":      48.0
-        },
-        {
-          "section_id": "a1b2c3d4-0001-4000-8000-000000000001",
-          "item_id":    "b2c3d4e5-0004-4000-8000-000000000001",
-          "value":      true
-        },
-        {
-          "section_id": "a1b2c3d4-0001-4000-8000-000000000001",
-          "item_id":    "b2c3d4e5-0005-4000-8000-000000000001",
-          "value":      "HP alarm cleared at 0008, reset normal."
-        }
-      ]
+      "round_number":   1,
+      "scheduled_time": "06:00",
+      "date":           "2026-05-04",
+      "section_id":     "a1b2c3d4-0001-4000-8000-000000000001",
+      "section_label":  "MAIN ENGINE",
+      "item_id":        "b2c3d4e5-0001-4000-8000-000000000001",
+      "item_label":     "COOLANT PRESS IN",
+      "item_type":      "numeric",
+      "unit":           "PSI",
+      "asset_code":     "601.001.001.001",
+      "add_oil_tank_id": null,
+      "value":          "48.5",
+      "secd":           false
+    },
+    {
+      "round_number":   1,
+      "scheduled_time": "06:00",
+      "date":           "2026-05-04",
+      "section_id":     "a1b2c3d4-0001-4000-8000-000000000001",
+      "section_label":  "MAIN ENGINE",
+      "item_id":        "b2c3d4e5-0007-4000-8000-000000000001",
+      "item_label":     "CRANK CASE OIL",
+      "item_type":      "add_oil",
+      "unit":           "L",
+      "asset_code":     "601.001.001.001",
+      "add_oil_tank_id": "a1b2c3d4-tank-lube-sump-001",
+      "value":          "2.50",
+      "secd":           false
+    },
+    {
+      "round_number":   1,
+      "scheduled_time": "06:00",
+      "date":           "2026-05-04",
+      "section_id":     "a1b2c3d4-0002-4000-8000-000000000001",
+      "section_label":  "REFER SYSTEM",
+      "item_id":        "b2c3d4e5-0010-4000-8000-000000000001",
+      "item_label":     "CONDENSER PRESS",
+      "item_type":      "numeric",
+      "unit":           "PSI",
+      "asset_code":     "602.001.001.001",
+      "add_oil_tank_id": null,
+      "value":          null,
+      "secd":           true
     }
   ]
 }
 ```
 
-### Top-level log file fields
+### Top-level fields
 
-| Field            | Type     | Notes                                                                                             |
-|------------------|----------|---------------------------------------------------------------------------------------------------|
-| `schema_version` | integer  | Always `1` for this version.                                                                      |
-| `vessel`         | string   | Copied from `roundsconfig.json → vessel` at time of generation.                                  |
-| `date`           | string   | `YYYY-MM-DD`. Calendar date this file covers (vessel local date at time of first round entry).   |
-| `generated`      | string   | ISO 8601 UTC. Timestamp when the file was first created.                                         |
-| `generated_by`   | string   | Username of the user who created the file.                                                        |
-| `config_version` | integer  | The `schema_version` value of `roundsconfig.json` at the time of generation. Used by the console to detect config drift when ingesting older log files. |
-| `rounds`         | object[] | Array of submitted round objects. Absent rounds are simply not present in this array.            |
-
-### round object fields
-
-| Field                | Type     | Notes                                                                                     |
-|----------------------|----------|-------------------------------------------------------------------------------------------|
-| `round_number`       | integer  | Which round this is (matches `round_times[].round` in `roundsconfig.json`).              |
-| `scheduled_time`     | string   | The nominal `"HH:MM"` time from config, copied at time of submission. Preserved even if config later changes. |
-| `submitted_at`       | string   | ISO 8601 UTC. Actual time of submission.                                                  |
-| `submitted_by`       | string   | Username of the user who submitted this round (pressed submit).                           |
-| `section_completions`| object[] | One entry per section that was filled in. Records which user completed each section's entries. Sections with no recorded entries are omitted. |
-| `entries`            | object[] | One entry per non-`heading` item that was recorded. Unrecorded items are omitted (not stored as `null` entries). Flat array — not grouped by section. |
-
-### section_completion object fields
-
-| Field          | Type   | Notes                                                                                    |
-|----------------|--------|------------------------------------------------------------------------------------------|
-| `section_id`   | string | UUID matching `sections[].section_id` in `roundsconfig.json`.                           |
-| `completed_by` | string | Username of the user who filled in this section's entries. May differ from `submitted_by` when multiple crew members contribute to a single round. |
-
-**Design note:** `section_completions` is stored as a parallel array alongside the flat `entries` array, rather than grouping entries by section. This preserves the intentionally flat entries structure while allowing per-section user attribution. At ingest, the console joins each entry to its section's `completed_by` value and stores it in the `rounds_entries.completed_by` column.
+| Field            | Type     | Notes                                                                                 |
+|------------------|----------|---------------------------------------------------------------------------------------|
+| `schema_version` | integer  | Always `2` for this format. Version `1` was the legacy per-date format (retired).    |
+| `vessel`         | string   | Vessel name. Copied from `roundsconfig.json → vessel` at submission time.            |
+| `username`       | string   | IDMS username of the submitting user.                                                 |
+| `display_name`   | string   | Full display name. Copied from the user's session object at submission time.         |
+| `submitted`      | string   | ISO 8601 UTC. Exact moment of submission. Used for deduplication and recency sorting. |
+| `entries`        | object[] | Flat array of all items the user interacted with — one entry per non-heading item.   |
 
 ### entry object fields
 
-| Field        | Type                       | Notes                                                                                              |
-|--------------|----------------------------|----------------------------------------------------------------------------------------------------|
-| `section_id` | string                     | UUID matching `sections[].section_id` in `roundsconfig.json`.                                     |
-| `item_id`    | string                     | UUID matching `sections[].items[].item_id` in `roundsconfig.json`.                                |
-| `value`      | number\|boolean\|string    | Type matches the item's `type`: `number` for `numeric`, `boolean` for `checkbox`, `string` for `text` and `custom`. For `custom` items the string must be one of the values in `custom_options`, enforced by the field PWA at entry time. Never `null` — if a value was not recorded, the entry is omitted entirely from the array. |
+| Field            | Type          | Notes                                                                                                       |
+|------------------|---------------|-------------------------------------------------------------------------------------------------------------|
+| `round_number`   | integer        | Which round. Inferred at load time; see §24.                                                               |
+| `scheduled_time` | string         | Nominal `"HH:MM"` from config. Copied at submission.                                                       |
+| `date`           | string         | `YYYY-MM-DD`. Vessel-local calendar date the entry relates to.                                             |
+| `section_id`     | string         | UUID from `roundsconfig.json`.                                                                              |
+| `section_label`  | string         | Section label at time of submission. Snapshot — preserved if config later changes.                         |
+| `item_id`        | string         | UUID from `roundsconfig.json`.                                                                              |
+| `item_label`     | string         | Item label at time of submission. Snapshot.                                                                 |
+| `item_type`      | string         | One of `"numeric"`, `"text"`, `"custom"`, `"checkbox"`, `"add_oil"`.                                      |
+| `unit`           | string \| null | Unit from config. `null` for items with no unit.                                                            |
+| `asset_code`     | string \| null | From config. `null` if not applicable.                                                                      |
+| `add_oil_tank_id`| string \| null | From config. Non-null only for `add_oil` type items.                                                        |
+| `value`          | string \| null | All values are stored as strings for uniformity. `null` when `secd` is `true`. For `add_oil` items, a numeric string (e.g. `"2.50"`). For `checkbox`, `"true"` or `"false"`. |
+| `secd`           | boolean        | `true` if the item was marked secured (SEC'D) rather than individually entered. When `true`, `value` is `null`. |
 
-**Note on `active_rounds`:** Items with `active_rounds` that exclude a given round number are not expected to appear in that round's entries. The field PWA enforces this at entry time. The console ingestion layer stores whatever entries are present without validating against `active_rounds`.
+**Key design rules:**
+- All non-heading items that were visible to the user appear in `entries`, including SEC'd items (`secd: true, value: null`). Items filtered out by `active_rounds` or `active_days` are never included.
+- `value` is always a string or `null`. The console casts to the appropriate type on ingest.
+- `text` items with no input are stored as `value: ""` (empty string), not `null` — they count as complete.
+- SEC'd items are excluded from aggregate display values but are stored in SQLite for audit purposes.
 
 ---
 
-## 22. fuelstate.json
+## 23. Rounds Aggregate File
+
+**Location:** `Documents/IDMS/data/rounds/{year}/rounds-{YYYY-MM-DD}-{HHmm}.json`  
+**Written by:** Console (`buildAndWriteAggregate()` in `ingest.js`, via `writeRoundsAggregate()` Graph helper)  
+**Read by:** Field PWA (`roundsentry.js`) — the two most recent files per year are fetched to populate history columns  
+
+One file per calendar date per round. `{HHmm}` is the scheduled round time (e.g. `0600` for a 06:00 round), not the actual submission time. The file is overwritten on each aggregation run — it always reflects the latest state of all ingested user logs for that round.
+
+### Full example
+
+```json
+{
+  "schema_version": 2,
+  "date": "2026-05-04",
+  "round_number": 2,
+  "scheduled_time": "06:00",
+  "generated_at": "2026-05-04T06:28:44.000Z",
+
+  "contributing_users": [
+    { "username": "tploch",   "display_name": "Tyler Ploch" },
+    { "username": "spotchik", "display_name": "Steve Potchik" }
+  ],
+
+  "items": {
+    "b2c3d4e5-0001-4000-8000-000000000001": {
+      "item_label":     "COOLANT PRESS IN",
+      "item_type":      "numeric",
+      "section_id":     "a1b2c3d4-0001-4000-8000-000000000001",
+      "section_label":  "MAIN ENGINE",
+      "unit":           "PSI",
+      "asset_code":     "601.001.001.001",
+      "add_oil_tank_id": null,
+      "values": {
+        "tploch":   "48.5",
+        "spotchik": "47.0"
+      },
+      "display_value": "48.5"
+    },
+    "b2c3d4e5-0007-4000-8000-000000000001": {
+      "item_label":     "CRANK CASE OIL",
+      "item_type":      "add_oil",
+      "section_id":     "a1b2c3d4-0001-4000-8000-000000000001",
+      "section_label":  "MAIN ENGINE",
+      "unit":           "L",
+      "asset_code":     "601.001.001.001",
+      "add_oil_tank_id": "a1b2c3d4-tank-lube-sump-001",
+      "values": {
+        "tploch":   "2.50",
+        "spotchik": "1.00"
+      },
+      "display_value": "3.50"
+    }
+  }
+}
+```
+
+### Top-level fields
+
+| Field                | Type     | Notes                                                                                       |
+|----------------------|----------|---------------------------------------------------------------------------------------------|
+| `schema_version`     | integer  | Always `2`.                                                                                  |
+| `date`               | string   | `YYYY-MM-DD`.                                                                                |
+| `round_number`       | integer  | 1-indexed round number.                                                                      |
+| `scheduled_time`     | string   | Nominal `"HH:MM"` from config.                                                               |
+| `generated_at`       | string   | ISO 8601 UTC. Timestamp when this file was last written.                                    |
+| `contributing_users` | object[] | One entry per user whose non-SEC'd entries contributed to this aggregate.                   |
+| `items`              | object   | Keyed by `item_id`. One entry per non-SEC'd, non-heading item from the source log files.    |
+
+### contributing_user object fields
+
+| Field          | Type   | Notes                                         |
+|----------------|--------|-----------------------------------------------|
+| `username`     | string | IDMS username.                                |
+| `display_name` | string | Display name at time of last aggregation run. |
+
+### item aggregate object fields
+
+| Field            | Type          | Notes                                                                                                      |
+|------------------|---------------|-------------------------------------------------------------------------------------------------------------|
+| `item_label`     | string         | Label snapshot from the most recently ingested log file for this item.                                     |
+| `item_type`      | string         | Item type.                                                                                                  |
+| `section_id`     | string         | Parent section UUID.                                                                                        |
+| `section_label`  | string         | Parent section label snapshot.                                                                              |
+| `unit`           | string \| null | Unit, or `null`.                                                                                            |
+| `asset_code`     | string \| null | Asset code, or `null`.                                                                                      |
+| `add_oil_tank_id`| string \| null | Tank source UUID for `add_oil` items; `null` for all other types.                                          |
+| `values`         | object         | Per-user value map: `{ username: value_string }`. Only non-null, non-SEC'd entries are included.           |
+| `display_value`  | string \| null | Computed aggregate value. For `add_oil`: sum of all `values` formatted to 2 decimal places. For all other types: the value from the most recently submitted log (highest `submitted` timestamp). `null` if no non-null values. |
+
+**History column display rule (field PWA):** When loading aggregate files for the history columns (columns 2 and 3 of the entry grid), the PWA displays `display_value` for each item. If a history aggregate file shows `secd: true` for an item (legacy format) or if `display_value` is absent from `items`, the history cell shows `—`.
+
+---
+
+## 24. Rounds OneDrive Paths & Round Number Inference
+
+### OneDrive path conventions
+
+| File | Path pattern | `{HHmm}` meaning |
+|------|--------------|------------------|
+| User entry log | `data/rounds/logs/{username}/roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json` | UTC wall-clock time at submission |
+| Round aggregate | `data/rounds/{year}/rounds-{YYYY-MM-DD}-{HHmm}.json` | Scheduled round time, zero-padded (e.g. `0600`) |
+
+The two `{HHmm}` values are different: the log filename records *when* the user submitted; the aggregate filename records *which round* it covers (the scheduled time). This means an 06:00 round submitted at 06:14 produces:
+- Log: `roundslog-tploch-2026-05-04-0614.json`
+- Aggregate: `rounds-2026-05-04-0600.json`
+
+### Round number inference rule (field PWA — `reInferRound`)
+
+The field PWA infers the current round number on module load using the following algorithm. The goal is to identify which round the crew should be entering *right now*.
+
+1. Get the current UTC time as `HH:MM`.
+2. Find the most recently passed scheduled round time — i.e., the largest `schedule.round_times[].time` value ≤ current time.
+3. **Exception:** if the *next* round's scheduled time is within 60 minutes from now, use the next round instead (pre-populate for upcoming round).
+4. If no round has passed yet today (current time is before the first scheduled round), use round 1.
+
+**Edge cases:**
+- Midnight wrap: times are compared as strings in `HH:MM` order. If the current time is before the first scheduled time (e.g., current = `05:30`, first round = `06:00`), step 4 applies and round 1 is used.
+- The exception in step 3 means a round scheduled at 06:00 will be pre-populated from 05:00 onwards (one hour before). This is the intended "early start" window.
+
+The inferred `round_number` and corresponding `scheduled_time` are stored in module state and embedded in each entry object at submission time.
+
+---
+
+## 25. fuelstate.json
 
 **Location:** `Documents/IDMS/data/fuel/fuelstate.json`
 **Edited by:** Console (via Operations → Fuel & Oil Transfers screen)
@@ -2097,7 +2319,7 @@ This section was added in the Phase 5 (Liquid Cargo & Fuel) implementation. No m
 
 ---
 
-## 22. Stability Calculations  *(added v1.8)*
+## 26. Stability Calculations  *(added v1.8)*
 
 ### Overview
 
@@ -2222,7 +2444,7 @@ Added in IDMS Console v1.8. No migration required for existing installations —
 
 ---
 
-## 23. Trip Planner
+## 27. Trip Planner
 
 **Added in:** IDMS Console v1.9 (Phase 6)
 **Screen:** Operations → Trip Planner (after Fuel & Oil Transfers)
@@ -4193,9 +4415,9 @@ All paths are relative to `Documents/IDMS/` (the `ONEDRIVE_BASE` constant in `gr
     {
       "entry_date":  "2026-04-28",
       "midnight_mt": 45.2,
-      "source":      "email",
+      "source":      "dpr",
       "fetched_at":  "2026-04-29T00:05:00Z",
-      "notes":       "Daily Production Report"
+      "notes":       "Trip ARA2607 Day 5"
     }
   ]
 }
@@ -4203,7 +4425,8 @@ All paths are relative to `Documents/IDMS/` (the `ONEDRIVE_BASE` constant in `gr
 
 **Field notes:**
 - `trip_number` — matches `trips.trip_number` in SQLite
-- `source` — `"email"` | `"manual"`
+- `source` — `"dpr"` (parsed from PDF in `Daily Production Reports/{YYYY}/`) | `"email"` (legacy, pre-v2.10) | `"manual"`
+- `notes` — for `"dpr"` source, populated as `"Trip {tripNumber} Day {tripDay}"` extracted from the PDF
 - `fetched_at` — ISO 8601 UTC; null for manually entered records
 - Keyed by `(trip_number, entry_date)` — one row per calendar day per trip
 
@@ -4273,8 +4496,8 @@ The `production` block lives inside `factoryconfig.json` alongside the `equipmen
 | `pan_volume_l` | number \| null | Pan internal volume in litres. Used to derive density. |
 | `pan_gross_weight_kg` | number \| null | Pan gross fill weight in kg (pan + ice + product at full fill). |
 | `pan_target_overpack_pct` | number \| null | Percentage of gross weight that is overpack. Net weight = gross × (1 − overpack/100). |
-| `email_subject_filter` | string | Substring matched against email subjects when fetching DPR emails. |
-| `email_source_address` | string \| null | Shared mailbox address for DPR email ingestion. |
+| ~~`email_subject_filter`~~ | string | **DEPRECATED in v2.10.** Was used by the old Graph Mail API DPR fetch. The current flow uses Power Automate to filter by subject and drop PDFs into OneDrive. Field is retained in config for backward compatibility but ignored by the renderer. |
+| ~~`email_source_address`~~ | string \| null | **DEPRECATED in v2.10.** Was used to point Graph Mail API requests at a shared mailbox. The current flow reads from the signed-in user's own OneDrive `Daily Production Reports/{YYYY}/` folder. Field is retained for backward compatibility but ignored. |
 | `bottleneck_mt_per_day` | number \| null | Auto-calculated: minimum `theoretical_mt_per_day` across all enabled sections (null sections excluded). Written back on each Setup save. |
 
 **Pan derived values (computed in UI, not stored):**
@@ -4552,7 +4775,10 @@ Added to `src/renderer/js/graph.js`:
 | `saveProductionState(state)` | Writes `production-state.json` |
 | `loadCapacityLog(dateStr)` | Reads `capacity-{dateStr}.json` (legacy read) |
 | `saveCapacityLog(dateStr, data)` | Writes `capacity-{dateStr}.json` (legacy; no longer used for new observations) |
-| `graphMailFetch(url)` | GET request to any Graph API URL with Bearer auth; throws `err.status = 403` on Access Denied |
+| ~~`graphMailFetch(url)`~~ | **DEPRECATED in v2.10.** GET against any Graph API URL with Bearer auth. Was used by the old DPR email fetch; no longer called by any module. Retained in source for now but slated for removal. |
+| `graphListFolder(folderPath)` | Lists items in a OneDrive folder. v2.10: `$select` widened to `id,name,lastModifiedDateTime,size`. Returns `[]` on 404. |
+| `graphGetBinaryById(itemId)` | **NEW in v2.10.** Downloads a file's raw bytes by drive-item ID via `GET /me/drive/items/{itemId}/content`. Returns an `ArrayBuffer`. |
+| `graphRenameItem(itemId, newName)` | **NEW in v2.10.** Renames a OneDrive item via `PATCH /me/drive/items/{itemId}` with body `{ "name": newName }`. Used by the DPR ingestion to standardize PDF filenames to `DPR-{YYYY-MM-DD}.pdf`. |
 | `loadUserLogFile(username, dateStr)` | Reads `data/factory/logs/report-{dateStr}-{username}.json`. Returns null on 404. |
 | `saveUserLogFile(username, dateStr, data)` | Writes `data/factory/logs/report-{dateStr}-{username}.json`. |
 | `loadFmeaConfig()` | Reads `config/fmeaconfig.json`. Returns null on 404. |
@@ -4571,31 +4797,183 @@ Added to `src/renderer/js/graph.js`:
 
 ---
 
-### 37.11 Email ingestion
+### 37.11 DPR ingestion (v2.10)
 
-On the Overview tab, admin/standard users see a **Fetch from DPR Email** panel.
+On the Overview tab, admin/standard users see a **Refresh DPR** panel (button label changed from "Fetch latest email" in v2.10).
 
-**API call:**
+#### 37.11.1 Architecture overview
+
+The Microsoft Graph Mail API is **not used**. Instead, a Power Automate flow running under the signed-in user's M365 account watches the user's inbox for "Daily Production Report" emails and writes their PDF attachments to OneDrive. IDMS reads OneDrive via the existing `Files.ReadWrite` scope. This avoids requiring `Mail.Read*` scopes (which require admin consent in many tenants) and decouples IDMS from email delivery latency.
+
 ```
-GET https://graph.microsoft.com/v1.0/users/{email_source_address}/mailFolders/inbox/messages
-  ?$filter=receivedDateTime ge {today}T00:00:00Z and contains(subject,'{email_subject_filter}')
-  &$top=1
-  &$select=subject,receivedDateTime,from,body
+┌─────────────────┐   email arrives   ┌──────────────────┐   PDF attachment   ┌────────────────────────────┐
+│ Inbox of signed-│─────────────────▶│  Power Automate  │─────────────────▶│ OneDrive: Daily Production │
+│ in user account │                  │  flow (cloud)    │                  │ Reports/{YYYY}/{name}.pdf  │
+└─────────────────┘                  └──────────────────┘                  └────────────────────────────┘
+                                                                                         │
+                                                                            list + sort  │
+                                                                                         ▼
+                                                                          ┌──────────────────────────┐
+                                                                          │ IDMS Console (renderer): │
+                                                                          │  graphListFolder         │
+                                                                          │  graphGetBinaryById      │
+                                                                          │  window.idms.pdf.parse   │
+                                                                          │  parseDPRText            │
+                                                                          │  graphRenameItem         │
+                                                                          └──────────────────────────┘
 ```
 
-**MT extraction regex:**
+#### 37.11.2 Power Automate flow
+
+The flow runs in the signed-in user's M365 tenant at flow.microsoft.com. Required template: **"Save Office 365 email attachments to OneDrive for Business"** (or a custom flow with equivalent steps).
+
+**Trigger:** *When a new email arrives (V3)* — Office 365 Outlook connector
+- Subject Filter: `Daily Production Report`
+- Include Attachments: `Yes`
+- Only with attachments: `Yes`
+
+**Action loop:** *Apply to each attachment* with an inner *Condition* on the attachment name containing `Araho Daily Production`, then *Create file* (OneDrive for Business connector):
+- Folder Path: `Daily Production Reports/@{formatDateTime(utcNow(),'yyyy')}`
+- File Name: `@{items('Apply_to_each_Attachment_on_the_email')?['name']}` (the original attachment filename — IDMS standardizes it on read)
+- File Content: `@{items('Apply_to_each_Attachment_on_the_email')?['contentBytes']}`
+
+The flow JSON is stored in the user's M365 environment, not in this repository.
+
+#### 37.11.3 OneDrive folder layout (external to `Documents/IDMS/`)
+
 ```
-/(?:midnight|total|production)[^\d]*(\d{1,4}(?:\.\d{1,3})?)\s*(?:mt|tonnes?)/i
+OneDrive root/
+└── Daily Production Reports/
+    ├── 2025/
+    │   └── (prior year archive)
+    └── 2026/
+        ├── Araho Daily Production (05-02).pdf   ← original purser-named file (transient)
+        ├── DPR-2026-05-03.pdf                   ← after IDMS standardization
+        └── DPR-2026-05-04.pdf
 ```
 
-**State machine:** `idle` → `fetching` → `found` | `notfound` | `error` → (on save) `saving` → `idle`
+The folder is *outside* `Documents/IDMS/` because it serves as a long-term archive of source documents, not application state. IDMS treats it read-mostly: it lists, downloads, and renames; it does not delete.
 
-**Error states:**
-- 403: display "Access denied — check Mail API permissions."
-- No match: display "No matching email found for today."
-- Parse failure: display specific error message
+#### 37.11.4 Renderer fetch flow (`production.js → fetchFromEmail`)
 
-**On save:** entry is appended to `production-state.json` on OneDrive with `source: "email"`, then ingested to SQLite. Page re-renders.
+The function is still named `fetchFromEmail` for git diff stability, but no longer touches email APIs.
+
+1. List `Daily Production Reports/{currentYear}` via `graphListFolder` (returns items with `id`, `name`, `lastModifiedDateTime`, `size`).
+2. Empty folder → state `notfound`.
+3. Sort by `lastModifiedDateTime` descending; take `files[0]`.
+4. `graphGetBinaryById(latest.id)` → `ArrayBuffer`.
+5. `window.idms.pdf.parse(buffer)` → `{ ok, text }` via the `pdf:parse` IPC handler in main.js.
+6. `parseDPRText(text)` extracts structured fields (see §37.11.6).
+7. Compute `isoDate` from `latest.lastModifiedDateTime` (UTC). The midnight DPR is dated the previous day inside the PDF, so the file's modification date is the canonical "report-as-of" date.
+8. If `latest.name !== "DPR-{isoDate}.pdf"`, fire-and-forget `graphRenameItem` to standardize. Failures log to console only.
+9. Compare `isoDate` to `prodLocalDateStr(PROD.timezone)` — if different, set `isToday: false` so the UI shows a "Today's report not available" notice.
+10. Populate `PROD.emailResult` and re-render the panel.
+
+#### 37.11.5 Pure-Node PDF text extractor (`main.js`)
+
+`pdf-parse` (and its dependency `pdfjs-dist`) is broken in Electron's main process: `pdfjs-dist` requires `DOMMatrix`, `ImageData`, `Path2D`, and `process.getBuiltinModule` (Node ≥22.3). Even with all globals patched, the export resolves as a non-callable, so the package was abandoned in v2.10.
+
+The replacement is a pure-Node extractor in `src/main/main.js`:
+
+| Function | Purpose |
+|----------|---------|
+| `extractPdfText(buffer)` | Top-level: walks the PDF byte-by-byte finding `stream`/`endstream` blocks, FlateDecode-inflates them with Node's built-in `zlib`, and accumulates lines. |
+| `extractTextFromContentStream(content, out)` | Finds `BT`/`ET` text-block pairs and feeds each to `collectStringsFromBlock`. |
+| `collectStringsFromBlock(block)` | Parses balanced `(...)` strings (handling escaped parens/backslashes) and `[...]` array operators (`Tj` / `TJ`). |
+| `unescapePdfString(s)` | Decodes PDF string escapes (octal, `\n`, `\r`, `\t`, `\b`, `\f`, escaped parens/backslashes). |
+
+The handler is registered as `ipcMain.handle('pdf:parse', ...)` and exposed to the renderer via `preload.js` as `window.idms.pdf.parse(buffer)`. Returns `{ ok: true, text }` or `{ ok: false, error }`.
+
+This extractor is sufficient for text-based PDFs whose content streams use `Tj`/`TJ` with `(...)` literal strings (the format produced by Crystal Reports, Word, Excel, and most ERP systems). It will not handle hex strings (`<48656C>` Tj), CMap-mapped fonts, or scanned/image PDFs — none of which apply to the DPR.
+
+#### 37.11.6 `parseDPRText(text)` (in `production.js`)
+
+Extracts a structured object from the PDF text. Regex patterns:
+
+| Field | Pattern |
+|-------|---------|
+| `tripNumber` | `/Trip Number:\s*(\S+)/` |
+| `tripDay` | `/Trip Day:\s*(\d+)/` |
+| `area` | `/Area:\s*(\d+)/` |
+| `weather` | `/Weather:\s*(.+?)(?=\s+Date:)/` |
+| `date` (PDF internal — *not* used as canonical) | `/Date:\s*([\d\/]+)/` |
+| `dailyTotalCases`, `dailyTotalMT` | `/Daily Total:\s*([\d,]+)\s*\/\s*([\d.]+)/` |
+| `tripTotalCases`, `tripTotalMT` | `/Trip Total:\s*([\d,]+)\s*\/\s*([\d.]+)/` |
+| Species header line | `/^(\d{3}-\d{2}-\w{2,3})\s+(.+)$/` |
+| Per-grade row | `/^([\d.]+)\s+([\d.]+)\s+(\S+)\s+([\d,]+)\s+([\d.]+)\s+(\d+)%\s+([\d,]+)\s+([\d.]+)\s+(\d+)%$/` |
+| Species TOTAL row | `/^([\d.]+)\s+TOTAL\s+([\d,]+)\s+([\d.]+)\s+(\d+)%\s+([\d,]+)\s+([\d.]+)\s+(\d+)%$/` |
+
+Returned shape:
+
+```js
+{
+  tripNumber: "ARA2607",
+  tripDay: 5,
+  area: 543,
+  weather: "15 kts",
+  date: "5/2/2026",                  // PDF internal — informational only
+  dailyTotalCases: 4227,
+  dailyTotalMT: 80.3130,
+  tripTotalCases: 17219,
+  tripTotalMT: 327.1610,
+  species: [
+    {
+      processCode: "110-08-G1",
+      name: "Pacific Cod - J-Cut #1",
+      grades: [
+        { pack: 19.0, avgGross: 20.380, size: "3L", dailyCases: 83, dailyMT: 1.5770, dailyPct: 53, tripCases: 247, tripMT: 4.6930, tripPct: 43 },
+        ...
+      ],
+      total: { avgGross: 20.356, dailyCases: 156, dailyMT: 2.9640, dailyPct: 4, tripCases: 571, tripMT: 10.8490, tripPct: 3 }
+    },
+    ...
+  ]
+}
+```
+
+#### 37.11.7 `PROD.emailResult` shape (post-parse)
+
+```js
+{
+  date:        "2026-05-03",          // file modification date (UTC), the canonical DPR-as-of date
+  isToday:     true,                   // false if file mod date != today (in PROD.timezone)
+  midnight_mt: 80.3130,                // alias for dailyTotalMT, retained for save-path compatibility
+  dailyCases:  4227,
+  tripMT:      327.1610,
+  tripCases:   17219,
+  tripNumber:  "ARA2607",
+  tripDay:     5,
+  species:     [ ... ]                 // full structured array from parseDPRText
+}
+```
+
+#### 37.11.8 State machine
+
+`idle` → `fetching` → `found` | `notfound` | `error` → (on save) `saving` → `idle`
+
+**`found` rendering** (Overview panel):
+- If `!isToday`: yellow notice — `Today's report not available. Showing {date}.`
+- Report Date: `{date}`
+- Trip: `{tripNumber} — Day {tripDay}`
+- Daily Total: `{midnight_mt.toFixed(2)} MT ({dailyCases.toLocaleString()} cases)` — bolded
+- Trip Total: `{tripMT.toFixed(2)} MT ({tripCases.toLocaleString()} cases)`
+- Buttons: *Save to trip log* / *Cancel*
+
+**Error / not-found cases:**
+- Empty folder for current year: state `notfound` → "No matching email found for today." (panel string retained from v2.9; covers both no-flow-yet and no-DPR-this-year).
+- PDF parse failure (no Date or Daily Total match): state `error` → message `"Could not parse DPR content."`.
+- Network / Graph errors: state `error` → exception message verbatim.
+
+#### 37.11.9 Save path
+
+Unchanged from v2.9 except `source` value:
+
+1. Load `production-state.json` (or initialize empty).
+2. Find or append entry for `r.date` (which is now the file modification date).
+3. Write entry: `{ entry_date, midnight_mt, source: "dpr", fetched_at, notes: "Trip {tripNumber} Day {tripDay}" }`.
+4. `saveProductionState(state)` → OneDrive.
+5. `db:ingestProductionState` → SQLite.
+6. Refresh local `PROD.entries` and re-render screen.
 
 ---
 

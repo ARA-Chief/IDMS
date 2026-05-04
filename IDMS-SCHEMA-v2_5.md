@@ -1,8 +1,6 @@
 # IDMS Schema Specification
-**Version 2.8 — F/V Araho**  
-v2.8 — OEE (Overall Equipment Effectiveness) module added (§39). Per-user factory log file gains `observations` array (schema_version 2). `capacity-{YYYY-MM-DD}.json` retired as a write target (legacy read retained). `capacity_observations` SQLite table gains `failure_mode_id`, `oee_session_id`, `source_user` columns. New IPC handlers: `db:ingestObservationsFromLog`, `db:saveObservationsToLog`, `db:getOeeSessions`, `db:generateRosReportPdf`. Factory Production gains OEE tab (§39) and report generator. PWA gains observation push for factory users. Overview tab gains PWA observation overlay.
-
-v2.7 — FMEA module added (§38). `fmeaconfig.json` introduced at `config/fmeaconfig.json`. Resolved incident object (§11) gains optional `failure_mode_id` and `failure_mode_other_notes` fields (Factory department only on the PWA). Three new SQLite tables: `fmea_failure_modes`, `fmea_occurrence_events`, `fmea_config_snapshots`. Seven new IPC handlers: `db:ingestFmeaConfig`, `db:saveFmeaConfigSnapshot`, `db:getFmeaFailureModes`, `db:getFmeaOccurrence`, `db:ingestFmeaOccurrenceEvents`, `db:getFmeaRpnSummary`, `db:upsertFmeaFailureMode`. graph.js helpers `loadFmeaConfig` / `saveFmeaConfig`. New `pollFmeaOccurrenceEvents()` pass in ingest.js (factory incidents + completed maintenance records). Factory Production gains a dedicated **FMEA tab** with a failure-mode registry, RPN display, occurrence-confidence indicators, and an add/edit modal whose Asset dropdown is filtered to the selected section's sub-assets. Sub-asset objects (§37) gain an `iso14224_equipment_class` field, settable in Setup and auto-populated into the FMEA modal on asset selection. Throughput-section MT/day calculation revised to bottleneck across series stages and sum within parallel stages (grouped by sub-asset `order`) instead of summing all sub-assets.
+**Version 2.7 — F/V Araho**  
+v2.7 — Tasks & Maintenance module revised (§32). Status lifecycle expanded from 4 states to 7 active states plus 2 terminal states. due_date retired; tasks ordered by priority and created_at. Task event log introduced: append-only thread of transition and comment entries on each task object. Active state file retired; replaced by event log as source of in-flight state truth. task_active_state SQLite table retired; task_events and task_transitions tables added. ISO 14224 failure mode, mechanism, and detection method fields added — editable at any point, required at close. Close task is a distinct admin action (Chief Engineer or admin tier only) that triggers asset history write. Tab rename: Due & Assigned → Active Tasks, All Tasks → Closed Tasks. failure_modes reference table added to SQLite (db:getFailureModes IPC handler). Asset Records module added (§38): data/assets/{codeRange}/{codeRange}-assets.json, one file per code range. Each asset carries item_id, asset_no, asset_name, last_round, event_history[], and oil_history[]. Four new IPC handlers, two new SQLite tables. consoleconfig.json connections.data gains tasks_assets path; schema_version incremented to 9.
 
 v2.6 — Factory Production module §37 revised. `factoryconfig.json` production section restructured: pan specification (`pan_volume_l`, `pan_gross_weight_kg`, `pan_target_overpack_pct`) moved to production top-level (global, replaces per-section `pan_net_weight_kg`); `target_species` field added; line sections consolidated to 7 (removed Check Weigher, Label Applicator, Welding Machine; renamed Pan Ejectors → Pan Breaking, Bag Applicator → Case-Up, added Headers as distinct `header` type). Sub-assets gain arrangement topology fields (`arrangement`, `order`, `sub_order`, `ranking`). Type-specific sub-asset fields added per section type (plate_freezer: ops params; throughput: `pans_per_minute` per sub-asset; header: `belt_speed_ms`, `fish_per_minute` at section level; belt: `belt_speed_ms` per sub-asset; packing: `minutes_per_pan` per sub-asset). Three new IPC handlers: `db:getEquipmentGroups`, `db:getAssetChildren`, `db:searchAssetsByGroup`, `db:getDistinctFisheries`, `db:getProductionAvgByFishery`. Equipment list in `factoryconfig.json` updated (Breaking Station 1/2, Case Up, Conveyor Belts, Packing Stations).
 
@@ -58,8 +56,8 @@ v2.1 — Navigation restructure. Sidebar groups renamed and reorganised. Stabili
 34. [Messages](#34-messages)
 35. [KSA Profiles](#35-ksa-profiles)
 36. [Navigation & Weather](#36-navigation--weather)
-38. [FMEA Module](#38-fmea-module)
-39. [OEE Module](#39-oee-module)
+37. [Factory Production Module](#37-factory-production-module)
+38. [Asset Records](#38-asset-records)
 
 ---
 
@@ -84,7 +82,6 @@ Documents/IDMS/
 │   ├── crewconfig.json             ← Vessel crew registry (personnel, contact info, vessel assignment)
 │   ├── scheduleconfig.json         ← Approved crew rotation schedule (current year)
 │   ├── schedule_draft.json         ← Working draft schedule (editable, not crew-visible)
-│   ├── fmeaconfig.json             ← Factory production FMEA failure mode registry
 │   └── shells/
 │       ├── factoryshell.json       ← Factory module behaviour
 │       ├── engineshell.json        ← Engine Room module behaviour
@@ -93,10 +90,7 @@ Documents/IDMS/
 ├── data/
 │   ├── factory/
 │   │   ├── logs/                   ← report-{date}-{username}.json
-│   │   ├── reports/                ← report-factory-{YYYY-MM-DD}.json
-│   │   └── production/
-│   │       ├── production-state.json
-│   │       └── capacity-{YYYY-MM-DD}.json  ← LEGACY — read-only. Superseded by observations[] in per-user log files.
+│   │   └── reports/                ← report-factory-{YYYY-MM-DD}.json
 │   ├── engine/
 │   │   ├── logs/
 │   │   └── reports/
@@ -112,7 +106,10 @@ Documents/IDMS/
 │   │   ├── definitions/            ← tasks-{codeRange}-{year}.json (task definition files per equip range per year)
 │   │   ├── records/
 │   │   │   └── {YYYY}/             ← {equipmentCodeTop}-{YYYY}.json (completed task records per equipment top per year)
-│   │   └── active/                 ← {username}.json (per-user active task state)
+│   │   └── ~~active/~~             ← RETIRED. Per-user active state files no longer written.
+│   ├── assets/
+│   │   └── {codeRange}/
+│   │       └── {codeRange}-assets.json  ← Asset records with full history (§38)
 │   └── schedule/
 │       └── notifications/          ← schedule-notification-{YYYY-MM-DD}.json (audit log mirrors)
 │
@@ -348,7 +345,7 @@ Operational settings, console behaviour, and OneDrive path configuration. Not pr
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 9,
   "vessel": "F/V Araho",
   "vessel_type": "Factory Trawler",
   "call_sign": "WDH7704",
@@ -389,7 +386,8 @@ Operational settings, console behaviour, and OneDrive path configuration. Not pr
       "engineshell":   "config/shells/engineshell.json",
       "deckshell":     "config/shells/deckshell.json",
       "roundsconfig":  "config/roundsconfig.json",
-      "tankconfig":    "config/tankconfig.json"
+      "tankconfig":    "config/tankconfig.json",
+      "failure_modes": "config/failuremodes.json"
     },
     "data": {
       "factory_logs":    "data/factory/logs/",
@@ -403,7 +401,7 @@ Operational settings, console behaviour, and OneDrive path configuration. Not pr
       "roughlog":        "data/roughlog/",
       "tasks_definitions":   "data/tasks/definitions/",
       "tasks_records":       "data/tasks/records/",
-      "tasks_active":        "data/tasks/active/",
+      "tasks_assets":        "data/assets/",
       "trips_log":           "data/trips/trips.json",
       "trips_daily":         "data/trips/daily/",
       "icms_production":     "data/icms/production/",
@@ -423,7 +421,8 @@ Operational settings, console behaviour, and OneDrive path configuration. Not pr
     { "version": 5, "date": "2026-04-26", "note": "Added active_trip_number to operational; trips_log, trips_daily, icms_production to connections.data." },
     { "version": 6, "date": "2026-04-27", "note": "Added ports_config, schedule_approved, schedule_draft, schedule_notify_log to connections.data (Schedule module)." },
     { "version": 7, "date": "2026-04-28", "note": "Added roughlog to connections.data (Rough Log module)." },
-    { "version": 8, "date": "2026-04-28", "note": "Added tasks_definitions, tasks_records, tasks_active to connections.data (Tasks & Maintenance module)." }
+    { "version": 8, "date": "2026-04-28", "note": "Added tasks_definitions, tasks_records, tasks_active to connections.data (Tasks & Maintenance module)." },
+    { "version": 9, "date": "2026-05-03", "note": "Retired tasks_active path; added tasks_assets path (Tasks revision + Asset Records module). Added failure_modes to connections.config." }
   ]
 }
 ```
@@ -795,51 +794,32 @@ On every ingest triggered by Refresh or Save:
 **Written by:** Field PWA (on resolve and on 5-minute autosave)
 **Read by:** Field PWA (own file only); Console (all files, during ingestion)
 
-> **schema_version 2** (factory only) adds the `observations` array. schema_version 1 files (no `observations` field) remain valid — the console treats missing `observations` as an empty array. Engine Room and Deck log files remain at schema_version 1.
-
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "vessel": "F/V Araho",
-  "department": "Factory",
+  "department": "Engine Room",
   "user": "tploch",
   "user_id": "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
   "displayName": "Tyler Ploch",
   "role": "Chief Engineer",
-  "date": "2026-04-30",
-  "generated": "2026-04-30T14:32:00.000Z",
+  "date": "2026-04-20",
+  "generated": "2026-04-20T14:32:00.000Z",
+
   "active": [],
+
   "resolved": [
     {
       "id": 1713620000000,
-      "equipment": "Plate Freezer #1",
+      "equipment": "Main Engine",
       "category": "Mechanical fault",
-      "startTime": "2026-04-30T09:15:00.000Z",
-      "endTime":   "2026-04-30T09:44:00.000Z",
-      "duration":  1740,
+      "startTime": "2026-04-20T12:15:00.000Z",
+      "endTime": "2026-04-20T12:44:00.000Z",
+      "duration": 1740,
       "durationLabel": "29m 00s",
-      "notes": "Hydraulic pressure low. Topped up fluid, pressure restored.",
+      "notes": "Investigated oil pressure alarm. Topped up lube oil, alarm cleared.",
       "user": "tploch",
-      "displayName": "Tyler Ploch",
-      "failure_mode_id": "uuid-of-fmea-mode",
-      "failure_mode_other_notes": ""
-    }
-  ],
-  "observations": [
-    {
-      "obs_id":          "uuid-v4",
-      "obs_timestamp":   "2026-04-30T09:42:00.000Z",
-      "section_id":      "3e4a5f6b-7c8d-4e0f-a1b2-000000000001",
-      "section_label":   "Plate Freezers",
-      "asset_code":      null,
-      "observed_rate":   48.5,
-      "rate_unit":       "mt/day",
-      "failure_mode_id": null,
-      "notes":           "",
-      "source":          "pwa",
-      "oee_session_id":  null,
-      "wind_speed_kt":   null,
-      "sea_state_ft":    null
+      "displayName": "Tyler Ploch"
     }
   ]
 }
@@ -859,28 +839,6 @@ On every ingest triggered by Refresh or Save:
 | `notes`         | string  | Free text. May be empty string.                                  |
 | `user`          | string  | Username of the logging user.                                    |
 | `displayName`   | string  | Display name at time of logging.                                 |
-| `failure_mode_id`         | string \| null | Optional. UUID of selected FMEA mode. `"other"` if "Other / unsure" selected. Absent in schema_version 1 files — treat as null. Factory only. |
-| `failure_mode_other_notes`| string         | Notes entered when `failure_mode_id === "other"`. Empty string otherwise. Absent in schema_version 1 files — treat as empty string. Factory only. |
-
-### Observation object fields
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `obs_id` | string (UUID v4) | Upsert key on ingest. |
-| `obs_timestamp` | string | ISO 8601 UTC. When the observation was made. |
-| `section_id` | string | References `section_id` in `factoryconfig.production.line_sections`. |
-| `section_label` | string | Denormalised for display. |
-| `asset_code` | string \| null | Optional. Asset register code if scoped to a specific asset. |
-| `observed_rate` | number \| null | Null for qualitative-only observations. |
-| `rate_unit` | string \| null | `"mt/day"` \| `"pans/min"` \| `"cases/hr"`. Null if no rate. |
-| `failure_mode_id` | string \| null | Optional link to FMEA failure mode. |
-| `notes` | string | Free text. |
-| `source` | string | `"pwa"` \| `"manual"` \| `"oee"` |
-| `oee_session_id` | string \| null | UUID grouping all observations from one OEE submission. Null for non-OEE. |
-| `wind_speed_kt` | number \| null | Optional. |
-| `sea_state_ft` | number \| null | Optional. |
-
-> **Factory only.** The `observations` array is present only in factory department log files.
 
 **Note on field naming:** Production log files use camelCase (`startTime`, `endTime`, `duration`, `durationLabel`, `displayName`). The console ingestion layer normalises both camelCase and snake_case forms — both are accepted. New tooling should write camelCase to remain consistent with the PWA.
 
@@ -1105,6 +1063,7 @@ To add a new module to a department, add an entry to `DEPT_RESOURCES` in `users.
 - IPC handlers added: `db:ingestRoundsLog`, `db:getRoundsDates`, `db:getRoundsSummary`.
 - Rounds log polling added to the console ingestion cycle alongside department event logs.
 - `active_rounds` field added to item objects in `roundsconfig.json` — integer array of round numbers for which a given item is active. Defaults to all rounds. Headings do not carry this field.
+- `active_days` field added to item objects in `roundsconfig.json` — integer array of ISO weekday numbers (1=Monday … 7=Sunday) for which a given item is active. Defaults to all seven days when not present. Headings do not carry this field.
 - `section_completions` block added to round objects in the rounds log file — records which user completed each section. `completed_by` is stored per row in `rounds_entries` (see §20).
 - `custom_options` field added to item objects in `roundsconfig.json` — required when `type` is `"custom"`. Stores an ordered string array of selectable options. At data entry time the field PWA renders these as a dropdown. Value stored in log files as a plain string.
 - Item type `"custom"` added alongside `"numeric"`, `"text"`, `"checkbox"`, `"heading"`. `"text"` remains an unvalidated free-text input; `"custom"` constrains entry to `custom_options`.
@@ -1207,6 +1166,19 @@ Sidebar groups renamed: Administration → Config; new groups Overview, Operatio
 - `graph.js` helpers added: `loadRoughLogFile(year)`, `saveRoughLogFile(year, data)`.
 - `app.js` SCREENS registry: `roughlog` entry added with `onEnter: initRoughLog`.
 - `index.html`: `screen-roughlog` div added; `roughlog.js` script tag added before `app.js`; nav button `disabled` class removed.
+
+### v2.7 — Tasks & Maintenance revision
+
+- `task_active_state` table: retained but no longer populated. Safe to drop via `DROP TABLE IF EXISTS task_active_state` after confirming no active in-flight tasks remain.
+- `tasks` table: run the `ALTER TABLE` migrations below to add `other_label`, `failure_mode`, `failure_mechanism`, `detection_method` columns. Existing rows will have `null` for all new columns.
+- `task_records` table: run the `ALTER TABLE` migrations below. Existing rows will have `null` for `outcome`, `closed_by`, `closed_at`, ISO 14224 fields, `close_note`, `events_snapshot`. Display `outcome` as `completed` where null.
+- Definition files on OneDrive: existing files have `schema_version: 1` and no `events[]` array. The ingest handler must treat a missing or empty `events[]` as an empty array. `due_date` fields on existing task objects are ignored but not removed — they will remain in OneDrive files until those tasks are next written.
+- Active state files (`data/tasks/active/`): no action required. Console will stop reading and writing them. They can be manually deleted from OneDrive at any time.
+
+### v2.7 — Asset Records
+
+- No migration required — all asset record files are new.
+- `asset_records` and `asset_event_history` tables created via `CREATE TABLE IF NOT EXISTS` on console startup.
 
 ### Pending
 
@@ -1440,9 +1412,80 @@ CREATE TABLE IF NOT EXISTS task_skill_tags (
   tag             TEXT PRIMARY KEY,
   label           TEXT NOT NULL
 );
+
+-- v2.7 additions: ALTER TABLE migrations for existing tables
+ALTER TABLE tasks ADD COLUMN other_label       TEXT;
+ALTER TABLE tasks ADD COLUMN failure_mode      TEXT;
+ALTER TABLE tasks ADD COLUMN failure_mechanism TEXT;
+ALTER TABLE tasks ADD COLUMN detection_method  TEXT;
+
+ALTER TABLE task_records ADD COLUMN outcome           TEXT;
+ALTER TABLE task_records ADD COLUMN closed_by         TEXT;
+ALTER TABLE task_records ADD COLUMN closed_at         TEXT;
+ALTER TABLE task_records ADD COLUMN failure_mode      TEXT;
+ALTER TABLE task_records ADD COLUMN failure_mechanism TEXT;
+ALTER TABLE task_records ADD COLUMN detection_method  TEXT;
+ALTER TABLE task_records ADD COLUMN close_note        TEXT;
+ALTER TABLE task_records ADD COLUMN events_snapshot   TEXT;  -- JSON string
+
+-- v2.7 new tables
+CREATE TABLE IF NOT EXISTS task_events (
+  event_id      TEXT PRIMARY KEY,
+  task_id       TEXT NOT NULL,
+  type          TEXT NOT NULL,           -- 'transition' or 'comment'
+  actor         TEXT NOT NULL,
+  timestamp     TEXT NOT NULL,           -- ISO 8601 UTC
+  from_status   TEXT,
+  to_status     TEXT,
+  note          TEXT,
+  ingested_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS failure_modes (
+  code          TEXT NOT NULL,
+  list          TEXT NOT NULL,           -- 'failure_mode', 'failure_mechanism', 'detection_method'
+  label         TEXT NOT NULL,
+  PRIMARY KEY (code, list)
+);
+
+-- v2.7 indexes
+CREATE INDEX IF NOT EXISTS idx_task_events_task_id   ON task_events (task_id);
+CREATE INDEX IF NOT EXISTS idx_task_events_timestamp ON task_events (timestamp);
+CREATE INDEX IF NOT EXISTS idx_tasks_status          ON tasks (status);
+CREATE INDEX IF NOT EXISTS idx_tasks_priority        ON tasks (priority);
+
+-- §38 Asset Records tables (v2.7)
+CREATE TABLE IF NOT EXISTS asset_records (
+  item_id     TEXT PRIMARY KEY,
+  asset_no    TEXT NOT NULL,
+  asset_name  TEXT NOT NULL,
+  last_round  TEXT,                    -- ISO 8601 UTC, nullable
+  code_range  TEXT NOT NULL,
+  ingested_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS asset_event_history (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id             TEXT NOT NULL,
+  task_id             TEXT NOT NULL,
+  title               TEXT NOT NULL,
+  category            TEXT NOT NULL,
+  outcome             TEXT NOT NULL,
+  opened_at           TEXT NOT NULL,
+  closed_at           TEXT NOT NULL,
+  closed_by           TEXT NOT NULL,
+  failure_mode        TEXT,
+  failure_mechanism   TEXT,
+  detection_method    TEXT,
+  ingested_at         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_asset_event_item_id   ON asset_event_history (item_id);
+CREATE INDEX IF NOT EXISTS idx_asset_event_task_id   ON asset_event_history (task_id);
+CREATE INDEX IF NOT EXISTS idx_asset_event_closed_at ON asset_event_history (closed_at);
 ```
 
-`user_id` columns in `log_files` and `events` were added via `ALTER TABLE` migration in Phase 4 and are nullable to support pre-UUID log files. The `assets` and `equipment_assignments` tables were added in Phase 5 via `CREATE TABLE IF NOT EXISTS` on startup. The `rounds_config_snapshots` and `rounds_entries` tables were added in Phase 5 (continued) via `CREATE TABLE IF NOT EXISTS` on startup. The `schedule_notifications` and `schedule_drift_log` tables were added in Phase 7 (Schedule module) via `CREATE TABLE IF NOT EXISTS` on startup. The `rough_log` table was added in v2.2 (Rough Log module) via `CREATE TABLE IF NOT EXISTS` on startup. The `tasks`, `task_records`, `task_active_state`, and `task_skill_tags` tables were added in v2.3 (Tasks & Maintenance module) via `CREATE TABLE IF NOT EXISTS` on startup. No SQLite schema changes in v2.4 — `tank_layout` is stored entirely within `vesselconfig.json` on OneDrive.
+`user_id` columns in `log_files` and `events` were added via `ALTER TABLE` migration in Phase 4 and are nullable to support pre-UUID log files. The `assets` and `equipment_assignments` tables were added in Phase 5 via `CREATE TABLE IF NOT EXISTS` on startup. The `rounds_config_snapshots` and `rounds_entries` tables were added in Phase 5 (continued) via `CREATE TABLE IF NOT EXISTS` on startup. The `schedule_notifications` and `schedule_drift_log` tables were added in Phase 7 (Schedule module) via `CREATE TABLE IF NOT EXISTS` on startup. The `rough_log` table was added in v2.2 (Rough Log module) via `CREATE TABLE IF NOT EXISTS` on startup. The `tasks`, `task_records`, `task_active_state`, and `task_skill_tags` tables were added in v2.3 (Tasks & Maintenance module) via `CREATE TABLE IF NOT EXISTS` on startup. No SQLite schema changes in v2.4 — `tank_layout` is stored entirely within `vesselconfig.json` on OneDrive. In v2.7 (Tasks revision + Asset Records), `ALTER TABLE` migrations added `other_label`, `failure_mode`, `failure_mechanism`, `detection_method` to `tasks`; and `outcome`, `closed_by`, `closed_at`, ISO 14224 fields, `close_note`, `events_snapshot` to `task_records`. New tables `task_events`, `failure_modes`, `asset_records`, and `asset_event_history` added via `CREATE TABLE IF NOT EXISTS`. `task_active_state` is retired (no longer populated). See §16 for migration guidance.
 
 **`assets` column notes:**
 
@@ -1775,6 +1818,7 @@ The `round_times` array must be sorted ascending by `time`. The UI enforces this
 | `unit`           | string            | no       | Unit of measurement. Must be one of the valid unit values listed below, or `null`. Only applies to `"numeric"` items. Set `null` for all other types. |
 | `asset_code`     | string            | no       | Equipment asset code from `assets.csv`. Alphanumeric with periods, e.g. `"601.001.001.001"`. Set `null` if not applicable. Validated against the SQLite `assets` table by the console UI on input, but **not enforced at schema level** — an unrecognised code is stored as-is and flagged in the UI. |
 | `active_rounds`  | integer[]         | no       | Array of round numbers (1-indexed) for which this item is active. Defaults to all rounds when not present. Omitted for `"heading"` type items. When `rounds_per_day` changes, the console adds new rounds as active and prunes removed rounds from all items. |
+| `active_days`    | integer[]         | no       | Array of ISO weekday numbers (1=Monday … 7=Sunday) for which this item is active. Defaults to all seven days when not present. Omitted for `"heading"` type items. Allows per-item day-of-week scheduling — e.g. an item that only applies on weekdays. |
 | `custom_options` | string[]          | no       | Required when `type` is `"custom"`. Ordered list of selectable options presented as a dropdown at data entry time. E.g. `["Normal", "Standby", "Fault", "Shutdown"]`. Must be `null` or omitted for all other types. |
 | `notes`          | string            | yes      | Free text. Internal operator note visible during config editing. Does not appear on the printed sheet. May be empty string. |
 
@@ -1782,15 +1826,15 @@ The `round_times` array must be sorted ascending by `time`. The UI enforces this
 
 ### Item type reference
 
-| Type       | Data cell content                       | Has `unit` | Has `custom_options` | Has `active_rounds` | Appears in log data |
-|------------|-----------------------------------------|------------|----------------------|---------------------|---------------------|
-| `numeric`  | Number input                            | Yes        | No                   | Yes                 | Yes — numeric value or `null` if not recorded  |
-| `text`     | Free-text input (unvalidated)           | No         | No                   | Yes                 | Yes — string value or `null` if not recorded   |
-| `custom`   | Dropdown from `custom_options` list     | No         | Yes                  | Yes                 | Yes — string value or `null` if not recorded   |
-| `checkbox` | Checked / unchecked                     | No         | No                   | Yes                 | Yes — boolean or `null` if not recorded        |
-| `heading`  | Display separator only                  | No         | No                   | No                  | No — omitted from log entirely                 |
+| Type       | Data cell content                       | Has `unit` | Has `custom_options` | Has `active_rounds` | Has `active_days` | Appears in log data |
+|------------|-----------------------------------------|------------|----------------------|---------------------|-------------------|---------------------|
+| `numeric`  | Number input                            | Yes        | No                   | Yes                 | Yes               | Yes — numeric value or `null` if not recorded  |
+| `text`     | Free-text input (unvalidated)           | No         | No                   | Yes                 | Yes               | Yes — string value or `null` if not recorded   |
+| `custom`   | Dropdown from `custom_options` list     | No         | Yes                  | Yes                 | Yes               | Yes — string value or `null` if not recorded   |
+| `checkbox` | Checked / unchecked                     | No         | No                   | Yes                 | Yes               | Yes — boolean or `null` if not recorded        |
+| `heading`  | Display separator only                  | No         | No                   | No                  | No                | No — omitted from log entirely                 |
 
-`heading` items have no data column and no `active_rounds` field. They are purely a visual element on the generated sheet. Their `unit`, `asset_code`, and `custom_options` fields must be `null`.
+`heading` items have no data column and no `active_rounds` or `active_days` fields. They are purely a visual element on the generated sheet. Their `unit`, `asset_code`, and `custom_options` fields must be `null`.
 
 `text` items accept any free-form string with no validation. `custom` items constrain entry to the values listed in `custom_options` — the field PWA presents these as a dropdown. Both types store their log value as a string in the `value_text` column of `rounds_entries`.
 
@@ -1860,6 +1904,7 @@ The Rounds Setup screen (Administration → Rounds Setup) operates as follows:
   - `custom_options` — comma-separated text input; visible only when type is `custom`. Values are split on commas, trimmed, and stored as a string array. These become the selectable options in the field PWA dropdown at data entry time. Cleared automatically when type changes away from `custom`.
   - `asset_code` — text input; hidden for `heading` type. Validated on blur against the SQLite `assets` table. Displays the asset name on match; shows a warning on no-match (does not block save).
   - `active_rounds` — one checkbox per round (labelled by round number). All checked by default. Hidden for `heading` type. Allows per-item scheduling — e.g. an item that only applies to daytime rounds.
+  - `active_days` — seven checkboxes labelled M T W Th F Sa Su (ISO weekdays 1–7). All checked by default. Hidden for `heading` type. Allows per-item day-of-week scheduling — e.g. an item that only applies on weekdays.
   - Delete button — removes the item. No confirmation required.
 - Items can be reordered within a section using up/down buttons (updates `order` values).
 - Items **cannot** be moved between sections. Move via delete and re-add.
@@ -1963,7 +2008,7 @@ One file per calendar date. A file may be partially populated — entries are pr
 | `item_id`    | string                     | UUID matching `sections[].items[].item_id` in `roundsconfig.json`.                                |
 | `value`      | number\|boolean\|string    | Type matches the item's `type`: `number` for `numeric`, `boolean` for `checkbox`, `string` for `text` and `custom`. For `custom` items the string must be one of the values in `custom_options`, enforced by the field PWA at entry time. Never `null` — if a value was not recorded, the entry is omitted entirely from the array. |
 
-**Note on `active_rounds`:** Items with `active_rounds` that exclude a given round number are not expected to appear in that round's entries. The field PWA enforces this at entry time. The console ingestion layer stores whatever entries are present without validating against `active_rounds`.
+**Note on `active_rounds` / `active_days`:** Items whose `active_rounds` exclude a given round number, or whose `active_days` exclude the current day of the week, are not expected to appear in that round's entries. The field PWA enforces both constraints at entry time. The console ingestion layer stores whatever entries are present without validating against either field.
 
 ---
 
@@ -3644,16 +3689,50 @@ When the daily report is generated from the Dashboard screen, the rough log cont
 
 ## §32 — Tasks & Maintenance
 
-**Status:** Built (v2.3)
+**Status:** Built (v2.3), Revised (v2.7)
 **File:** `tasks.js`
 **Location:** Operations → Tasks & Maintenance
-**Tabs:** All Tasks · Due & Assigned · Create Task · Manual Entry
+**Tabs:** Active Tasks · Closed Tasks · Create Task · Manual Entry
 
 ---
 
 ### Overview
 
-The Tasks & Maintenance module manages planned and unplanned maintenance work orders for vessel equipment. Tasks are created by admin users (Create Task tab), completed by crew members, and their completion records are stored permanently. Recurring tasks automatically create the next instance on completion. Manual entries allow one-off completion records without a pre-created task.
+The Tasks & Maintenance module manages planned and unplanned maintenance work orders for vessel equipment. Tasks move through a structured lifecycle with a full event log recording every state transition and comment. Tasks are created by admin users (Create Task tab). Any authenticated user can add comments or update status. Only admin-tier users (Chief Engineer or above) may close a task, which triggers the write to the asset's event history. Recurring tasks automatically create the next instance on close.
+
+The module was revised in v2.7 to support a richer CRM-style lifecycle, ISO 14224 failure mode capture at close, and a shared read/write model between the console and the field PWA (PWA access defined in a separate addendum).
+
+---
+
+### Status lifecycle
+
+`due_date` is retired. Tasks are ordered by `priority` then `created_at`. The close action (not a status selection) moves a task to a terminal state.
+
+```
+open
+  └──→ investigating
+         └──→ waiting_parts
+         └──→ waiting_opportunity
+         └──→ shipyard
+         └──→ other
+         └──→ (any status can transition to any other active status)
+
+Any active status ──→ [Close Task action] ──→ completed
+Any active status ──→ [Close Task action] ──→ cancelled
+```
+
+| Status | Meaning |
+|---|---|
+| `open` | Task created, not yet acted on. |
+| `investigating` | Assigned; inspection or diagnosis underway. |
+| `waiting_parts` | Blocked on parts or materials. |
+| `waiting_opportunity` | Blocked on operational window (offload, steam, drydock). |
+| `shipyard` | Deferred to shipyard availability. |
+| `other` | Blocked or deferred for another reason. `other_label` field stores free text. |
+| `completed` | Terminal. Set by close action. Work done; asset history written. |
+| `cancelled` | Terminal. Set by close action. Closed without completion; asset history written with outcome `cancelled`. |
+
+**Note:** `in_progress` is retired. All active statuses above are functionally `in_progress` states with more descriptive semantics. The filter value `Active` in the UI maps to all non-terminal statuses.
 
 ---
 
@@ -3661,37 +3740,70 @@ The Tasks & Maintenance module manages planned and unplanned maintenance work or
 
 #### Task Definition File
 
-**Location:** `Documents/IDMS/data/tasks/definitions/tasks-{codeRange}-{year}.json`
+**Location:** `Documents/IDMS/data/tasks/definitions/tasks-{codeRange}-{year}.json`  
+**No change to filename or location.**
 
-One file per equipment code range per year. The `codeRange` is the 3-digit top-level equipment code (e.g. `601` for Main Engine group). Files are created when the first task for that code range and year is saved.
+The task object gains an `events[]` array, ISO 14224 fields, and loses `due_date`. The active state file (`data/tasks/active/{username}.json`) is retired — current status is derived from the most recent `transition` event in `events[]`.
 
-**Written by:** Console (Create Task tab on task save)  
-**Read by:** Console (ingest cycle; All Tasks and Due & Assigned tabs on load)
+**Written by:** Console and PWA (on task create, status update, comment, or close)  
+**Read by:** Console and PWA
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "code_range": "601",
   "year": 2026,
   "tasks": [
     {
-      "task_id":       "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
-      "title":         "Change main engine oil",
-      "equipment_ids": ["601.001.001.001", "601.001.001.002"],
-      "category":      "LUB",
-      "priority":      "Normal",
-      "role":          "Chief Engineer",
-      "assigned_to":   "tploch",
-      "description":   "Drain and refill HT circuit with Mobilgard 410 NC.",
-      "skill_tags":    ["lubrication", "engine_maintenance"],
-      "status":        "open",
-      "recurring":     true,
-      "interval":      "3M",
-      "interval_hours": null,
-      "due_date":      "2026-07-15",
-      "created_at":    "2026-04-28T14:00:00.000Z",
-      "created_by":    "tploch",
-      "notes":         ""
+      "task_id":          "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
+      "title":            "Investigate main engine oil pressure drop",
+      "equipment_ids":    ["601.001.001.001"],
+      "category":         "REP",
+      "priority":         "High",
+      "role":             "Chief Engineer",
+      "assigned_to":      "spotchik",
+      "description":      "Low lube oil pressure alarm on main engine. Investigate cause.",
+      "skill_tags":       ["engine_maintenance"],
+      "status":           "investigating",
+      "other_label":      null,
+      "recurring":        false,
+      "interval":         null,
+      "interval_hours":   null,
+      "failure_mode":     "LOO",
+      "failure_mechanism": "WEA",
+      "detection_method": "ALM",
+      "created_at":       "2026-05-03T08:00:00.000Z",
+      "created_by":       "tploch",
+      "notes":            "",
+      "events": [
+        {
+          "event_id":   "aaaaaaaa-aaaa-4aaa-baaa-aaaaaaaaaaaa",
+          "type":       "transition",
+          "actor":      "tploch",
+          "timestamp":  "2026-05-03T08:00:00.000Z",
+          "from_status": null,
+          "to_status":  "open",
+          "note":       "Task created."
+        },
+        {
+          "event_id":   "bbbbbbbb-bbbb-4bbb-cbbb-bbbbbbbbbbbb",
+          "type":       "transition",
+          "actor":      "tploch",
+          "timestamp":  "2026-05-03T08:05:00.000Z",
+          "from_status": "open",
+          "to_status":  "investigating",
+          "note":       "Assigned to Spotchik for diagnosis."
+        },
+        {
+          "event_id":   "cccccccc-cccc-4ccc-dccc-cccccccccccc",
+          "type":       "comment",
+          "actor":      "spotchik",
+          "timestamp":  "2026-05-03T10:30:00.000Z",
+          "from_status": null,
+          "to_status":  null,
+          "note":       "Found scoring on oil pump drive gear. Recommending replacement."
+        }
+      ]
     }
   ]
 }
@@ -3699,25 +3811,31 @@ One file per equipment code range per year. The `codeRange` is the 3-digit top-l
 
 ##### Task definition object fields
 
-| Field           | Type     | Required | Notes |
-|-----------------|----------|----------|-------|
-| `task_id`       | string   | yes      | UUID v4. Generated at creation. Primary key. |
-| `title`         | string   | yes      | Short description of the work. Free text. |
-| `equipment_ids` | string[] | yes      | Array of asset codes from `assets.csv`. One or more. |
-| `category`      | string   | yes      | One of the 9 valid category codes (see Category reference below). |
-| `priority`      | string   | yes      | One of `Critical`, `High`, `Normal`, `Low`. Default: `Normal`. |
-| `role`          | string   | no       | Role label (e.g. `"Chief Engineer"`). Filters the Due & Assigned tab. |
-| `assigned_to`   | string   | no       | Username of a specific assignee. Takes precedence over `role` for assignment matching. |
-| `description`   | string   | no       | Detailed work instructions. Free text. |
-| `skill_tags`    | string[] | no       | Skill category keys. Planned for KSA profile integration. |
-| `status`        | string   | yes      | One of `open`, `in_progress`, `completed`, `cancelled`. |
-| `recurring`     | boolean  | yes      | If `true`, a new task instance is created when this task is completed. |
-| `interval`      | string   | no       | Required when `recurring` is `true`. One of the valid interval values (see below). |
-| `interval_hours`| integer  | no       | Required when `interval` is `CUSTOM`. Duration in hours. |
-| `due_date`      | string   | no       | `YYYY-MM-DD`. When the task is due. |
-| `created_at`    | string   | yes      | ISO 8601 UTC. |
-| `created_by`    | string   | yes      | Username. |
-| `notes`         | string   | no       | Internal admin note. Free text. |
+| Field              | Type     | Required | Notes |
+|--------------------|----------|----------|-------|
+| `task_id`          | string   | yes      | UUID v4. Generated at creation. Primary key. |
+| `title`            | string   | yes      | Short description of the work. |
+| `equipment_ids`    | string[] | yes      | Array of asset codes from `assets.csv`. One or more. |
+| `category`         | string   | yes      | One of the 9 valid category codes (unchanged from v2.3). |
+| `priority`         | string   | yes      | One of `Critical`, `High`, `Normal`, `Low`. Default: `Normal`. |
+| `role`             | string   | no       | Role label for assignment filtering. Not displayed in task list columns. |
+| `assigned_to`      | string   | no       | Username of specific assignee. |
+| `description`      | string   | no       | Detailed work instructions. Free text. |
+| `skill_tags`       | string[] | no       | Skill category keys. |
+| `status`           | string   | yes      | Current status. Must match the `to_status` of the most recent `transition` event. |
+| `other_label`      | string   | no       | Required when `status` is `other`. Free text description of the reason. |
+| `recurring`        | boolean  | yes      | If `true`, a new instance is created on close. |
+| `interval`         | string   | no       | Required when `recurring` is `true`. |
+| `interval_hours`   | integer  | no       | Required when `interval` is `CUSTOM`. |
+| `failure_mode`     | string   | no       | ISO 14224 failure mode code. Editable at any point; required at close. |
+| `failure_mechanism`| string   | no       | ISO 14224 failure mechanism code. Editable at any point; required at close. |
+| `detection_method` | string   | no       | ISO 14224 detection method code. Editable at any point; required at close. |
+| `created_at`       | string   | yes      | ISO 8601 UTC. |
+| `created_by`       | string   | yes      | Username. |
+| `notes`            | string   | no       | Internal admin note. |
+| `events`           | array    | yes      | Append-only event log. Minimum one entry (creation transition). See event object below. |
+
+**Retired fields:** `due_date` — removed. Tasks are ordered by `priority` then `created_at`.
 
 ##### Valid category codes
 
@@ -3746,35 +3864,60 @@ One file per equipment code range per year. The `codeRange` is the 3-digit top-l
 | `1Y`     | 1 year            |
 | `CUSTOM` | `interval_hours` defines duration in hours |
 
+##### Event object fields
+
+| Field        | Type   | Required | Notes |
+|--------------|--------|----------|-------|
+| `event_id`   | string | yes      | UUID v4. Generated at event creation. |
+| `type`       | string | yes      | `transition` or `comment`. |
+| `actor`      | string | yes      | Username of the user who created this event. |
+| `timestamp`  | string | yes      | ISO 8601 UTC. |
+| `from_status`| string | no       | Previous status. `null` for the creation transition and for comments. |
+| `to_status`  | string | no       | New status. `null` for comments. |
+| `note`       | string | no       | Free text. The comment body, or a brief note accompanying a transition. |
+
+##### Write pattern for event log updates
+
+To prevent last-write-wins collisions when both console and PWA may update the same definition file:
+
+1. Fetch the current definition file from OneDrive (fresh copy).
+2. Append the new event object to `events[]`.
+3. Update `status` (and `other_label` if applicable) to match the new event.
+4. Write the updated file back to OneDrive.
+
+The fetch-before-write is mandatory on every update. The append-only nature of `events[]` means the collision window is limited to the milliseconds between fetch and write, and simultaneous transitions from two users are the only realistic collision scenario.
+
 ---
 
 #### Completed Task Record File
 
-**Location:** `Documents/IDMS/data/tasks/records/{year}/{equipmentCodeTop}-{year}.json`
+**Location:** `Documents/IDMS/data/tasks/records/{year}/{equipmentCodeTop}-{year}.json`  
+**No change to filename or location.**
 
-One file per equipment code top-level prefix (first 3 digits of any asset code in the completed task) per year. `equipmentCodeTop` is the 3-digit code, e.g. `601`.
-
-**Written by:** Console (on task completion via Due & Assigned tab or Manual Entry tab)  
-**Read by:** Console (ingest cycle; All Tasks tab)
+The completed record gains ISO 14224 fields, a `close_note`, and an `outcome` field distinguishing `completed` from `cancelled`. `follow_up` is retired (superseded by the event log).
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "code_range": "601",
   "year": 2026,
   "records": [
     {
-      "record_id":     "yyyyyyyy-yyyy-4yyy-zyyy-yyyyyyyyyyyy",
-      "task_id":       "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
-      "equipment_ids": ["601.001.001.001"],
-      "title":         "Change main engine oil",
-      "category":      "LUB",
-      "completed_by":  "tploch",
-      "completed_at":  "2026-05-01T08:30:00.000Z",
-      "hours_spent":   2.5,
-      "parts_used":    "20 USG Mobilgard 410 NC",
-      "notes":         "Filter also replaced.",
-      "follow_up":     null
+      "record_id":          "yyyyyyyy-yyyy-4yyy-zyyy-yyyyyyyyyyyy",
+      "task_id":            "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
+      "equipment_ids":      ["601.001.001.001"],
+      "title":              "Investigate main engine oil pressure drop",
+      "category":           "REP",
+      "outcome":            "completed",
+      "closed_by":          "tploch",
+      "closed_at":          "2026-05-03T14:00:00.000Z",
+      "hours_spent":        3.5,
+      "parts_used":         "1x oil pump drive gear 601-PG-004",
+      "failure_mode":       "LOO",
+      "failure_mechanism":  "WEA",
+      "detection_method":   "ALM",
+      "close_note":         "Gear replaced. Pressure restored to normal. Monitor for 24hrs.",
+      "events_snapshot":    []
     }
   ]
 }
@@ -3782,153 +3925,236 @@ One file per equipment code top-level prefix (first 3 digits of any asset code i
 
 ##### Completed record object fields
 
-| Field           | Type     | Required | Notes |
-|-----------------|----------|----------|-------|
-| `record_id`     | string   | yes      | UUID v4. Generated at completion. Primary key. |
-| `task_id`       | string   | no       | UUID of the parent task. `null` for Manual Entry completions (no pre-created task). |
-| `equipment_ids` | string[] | yes      | Asset codes from the task or manual entry. |
-| `title`         | string   | yes      | Work description. Copied from the task title or entered manually. |
-| `category`      | string   | yes      | Category code from the parent task or manually selected. |
-| `completed_by`  | string   | yes      | Username of the user who completed the work. |
-| `completed_at`  | string   | yes      | ISO 8601 UTC. Timestamp of completion. |
-| `hours_spent`   | number   | no       | Time spent on the job in hours. |
-| `parts_used`    | string   | no       | Free text. Parts, lubricants, and materials consumed. |
-| `notes`         | string   | no       | Work notes and observations. Free text. |
-| `follow_up`     | string   | no       | Any follow-up action required. Free text. `null` if none. |
+| Field               | Type     | Required | Notes |
+|---------------------|----------|----------|-------|
+| `record_id`         | string   | yes      | UUID v4. Generated at close. Primary key. |
+| `task_id`           | string   | no       | UUID of the parent task. `null` for Manual Entry. |
+| `equipment_ids`     | string[] | yes      | Asset codes. |
+| `title`             | string   | yes      | Copied from the task title or entered manually. |
+| `category`          | string   | yes      | Category code. |
+| `outcome`           | string   | yes      | `completed` or `cancelled`. |
+| `closed_by`         | string   | yes      | Username of the admin user who closed the task. |
+| `closed_at`         | string   | yes      | ISO 8601 UTC. |
+| `hours_spent`       | number   | no       | Time spent in hours. |
+| `parts_used`        | string   | no       | Free text. |
+| `failure_mode`      | string   | no       | ISO 14224 code. Required on `completed` outcome; omitted on `cancelled`. |
+| `failure_mechanism` | string   | no       | ISO 14224 code. Required on `completed` outcome; omitted on `cancelled`. |
+| `detection_method`  | string   | no       | ISO 14224 code. Required on `completed` outcome; omitted on `cancelled`. |
+| `close_note`        | string   | no       | Closing summary. Free text. |
+| `events_snapshot`   | array    | yes      | Full copy of `events[]` from the task definition at time of close. Provides self-contained history in the record file. |
+
+**Retired fields:** `completed_by` (replaced by `closed_by`), `completed_at` (replaced by `closed_at`), `notes` (superseded by event log and `close_note`), `follow_up` (superseded by event log).
 
 ---
 
-#### Active User State File
+#### Active State File — RETIRED
 
-**Location:** `Documents/IDMS/data/tasks/active/{username}.json`
+`Documents/IDMS/data/tasks/active/{username}.json` is no longer written. Current task status is derived from the `status` field on the task object (which always reflects the most recent transition event). The `task_active_state` SQLite table is retired accordingly.
 
-One file per console user. Records which tasks the user has moved to `in_progress` (started but not yet completed). Used by the Due & Assigned tab to show the current user's active task states without querying all task definition files.
+Existing active state files on OneDrive may be left in place; the console and PWA will ignore them.
 
-**Written by:** Console (when user changes a task status to `in_progress`)  
-**Read by:** Console (ingest cycle; Due & Assigned tab on load)
+---
+
+### ISO 14224 Reference Tables
+
+Three reference tables define the valid values for `failure_mode`, `failure_mechanism`, and `detection_method`. These are stored as a static config file on OneDrive and loaded into SQLite at startup.
+
+**Location:** `Documents/IDMS/config/failuremodes.json`  
+Path key in `consoleconfig.json → connections.config`: `failure_modes`
+
+#### Failure Mode codes
+
+| Code  | Label |
+|-------|-------|
+| `STR` | Structural failure |
+| `LOO` | Loss of function — output |
+| `LOI` | Loss of function — input |
+| `PAR` | Partial loss of function |
+| `INC` | Intermittent failure |
+| `DEG` | Degraded performance |
+| `UNI` | Unintended operation |
+| `OVH` | Overheating |
+| `LEK` | Leakage (external) |
+| `LEI` | Leakage (internal) |
+| `VIB` | Vibration |
+| `NOI` | Noise / abnormal sound |
+| `OTH` | Other |
+
+#### Failure Mechanism codes
+
+| Code  | Label |
+|-------|-------|
+| `COR` | Corrosion |
+| `ERO` | Erosion |
+| `WEA` | Wear |
+| `FAT` | Fatigue |
+| `OVL` | Overload |
+| `CAV` | Cavitation |
+| `FOL` | Fouling / blockage |
+| `ELE` | Electrical fault |
+| `INS` | Insulation breakdown |
+| `MIS` | Misalignment |
+| `INF` | Instrument / sensor failure |
+| `HUM` | Human error |
+| `UNK` | Unknown |
+| `OTH` | Other |
+
+#### Detection Method codes
+
+| Code  | Label |
+|-------|-------|
+| `ALM` | Alarm / automatic detection |
+| `OBS` | Operator observation |
+| `RND` | Routine inspection / rounds |
+| `TST` | Functional test |
+| `MON` | Condition monitoring |
+| `STV` | Scheduled service / teardown |
+| `OTH` | Other |
+
+#### failuremodes.json structure
 
 ```json
 {
   "schema_version": 1,
-  "username": "tploch",
-  "updated_at": "2026-04-28T14:00:00.000Z",
-  "active": [
-    {
-      "task_id":    "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
-      "state":      "in_progress",
-      "updated_at": "2026-04-28T14:00:00.000Z"
-    }
+  "failure_modes": [
+    { "code": "STR", "label": "Structural failure" },
+    { "code": "LOO", "label": "Loss of function — output" }
+  ],
+  "failure_mechanisms": [
+    { "code": "COR", "label": "Corrosion" },
+    { "code": "WEA", "label": "Wear" }
+  ],
+  "detection_methods": [
+    { "code": "ALM", "label": "Alarm / automatic detection" },
+    { "code": "OBS", "label": "Operator observation" }
   ]
 }
 ```
 
-##### Active state fields
-
-| Field        | Type     | Required | Notes |
-|--------------|----------|----------|-------|
-| `task_id`    | string   | yes      | UUID matching a task in a definition file. |
-| `state`      | string   | yes      | `in_progress`. Only active (non-terminal) states are stored here. |
-| `updated_at` | string   | yes      | ISO 8601 UTC. When this state was last set. |
-
 ---
 
-### Task status lifecycle
+### Task status lifecycle — close action
 
-```
-  open ──→ in_progress ──→ completed
-    │                         ↑
-    └─────────────────────────┘ (skip in_progress via Manual Entry)
-    │
-    └──→ cancelled
-```
+The close action is available to `admin` permission tier only. It is a distinct button ("Close Task"), not a status dropdown selection. On click it opens a modal form:
 
-| Status        | Meaning |
-|---------------|---------|
-| `open`        | Task exists; not started. Visible in All Tasks and Due & Assigned. |
-| `in_progress` | User has started but not completed. Stored in active state file. |
-| `completed`   | Completion record written. If recurring, next instance created automatically. |
-| `cancelled`   | Task closed without completion. No record written. |
+**Close Task form fields:**
 
-When a recurring task is completed, the console:
-1. Writes the completion record to the equipment record file.
-2. Sets the task `status` to `completed` in the definition file.
-3. Creates a new task object in the same definition file with `status: 'open'`, a new `task_id`, a new `due_date` computed from `completed_at + interval`, and all other fields copied from the completed task.
-4. Displays a confirmation banner to the user showing the new due date before creating the next instance.
+| Field              | Type     | Required | Notes |
+|--------------------|----------|----------|-------|
+| Outcome            | Select   | yes      | `Completed` or `Cancelled`. |
+| Failure Mode       | Select   | yes (if Completed) | Populated from `failuremodes.json`. Pre-filled if already set on task. |
+| Failure Mechanism  | Select   | yes (if Completed) | Pre-filled if already set on task. |
+| Detection Method   | Select   | yes (if Completed) | Pre-filled if already set on task. |
+| Hours Spent        | Number   | no       | |
+| Parts Used         | Text     | no       | |
+| Closing Note       | Textarea | no       | |
+
+On submit:
+1. Appends a final `transition` event to `events[]` with `to_status: 'completed'` or `'cancelled'`.
+2. Updates `status` on the task definition object.
+3. Writes updated definition file to OneDrive.
+4. Writes completed record (including `events_snapshot`) to the equipment record file.
+5. Appends a summary entry to the asset's `event_history[]` in `data/assets/{codeRange}/{codeRange}-assets.json`.
+6. If `recurring`, creates the next task instance in the definition file.
+
+Steps 3–5 are performed as three sequential OneDrive writes. If step 4 or 5 fails, the console displays an error and retains the record for retry. The task definition write (step 3) is always attempted first as it is the authoritative state change.
 
 ---
 
 ### SQLite Tables
 
-All four tables are created via `CREATE TABLE IF NOT EXISTS` in the console startup sequence.
+Tables and column definitions reflect the v2.7 state (post-ALTER TABLE migrations). See §16 for migration guidance and §18 for the full schema block including the DDL.
 
 #### `tasks`
 
-One row per task definition. Ingested from definition files; updated on every poll if the definition file has changed.
+One row per task definition. Ingested from definition files; updated on every poll if the definition file has changed. **Default sort: `priority` ASC then `created_at` ASC.**
 
-| Column          | Type    | Constraints  | Notes |
-|-----------------|---------|--------------|-------|
-| `task_id`       | TEXT    | PRIMARY KEY  | UUID v4. |
-| `title`         | TEXT    | NOT NULL     | |
-| `equipment_ids` | TEXT    | NOT NULL     | JSON array string. `["601.001.001.001"]` |
-| `category`      | TEXT    | NOT NULL     | 3-letter category code. |
-| `priority`      | TEXT    | NOT NULL DEFAULT 'Normal' | |
-| `role`          | TEXT    | nullable     | |
-| `assigned_to`   | TEXT    | nullable     | Username. |
-| `description`   | TEXT    | nullable     | |
-| `skill_tags`    | TEXT    | nullable     | JSON array string. |
-| `status`        | TEXT    | NOT NULL DEFAULT 'open' | |
-| `recurring`     | INTEGER | NOT NULL DEFAULT 0 | Boolean. |
-| `interval`      | TEXT    | nullable     | |
-| `interval_hours`| INTEGER | nullable     | |
-| `due_date`      | TEXT    | nullable     | `YYYY-MM-DD`. |
-| `created_at`    | TEXT    | NOT NULL     | ISO 8601 UTC. |
-| `created_by`    | TEXT    | NOT NULL     | |
-| `notes`         | TEXT    | nullable     | |
-| `code_range`    | TEXT    | NOT NULL     | 3-digit equipment code prefix. |
-| `year`          | INTEGER | NOT NULL     | Calendar year of the definition file. |
-| `ingested_at`   | TEXT    | NOT NULL     | ISO 8601 UTC. |
+| Column             | Type    | Constraints               | Notes |
+|--------------------|---------|---------------------------|-------|
+| `task_id`          | TEXT    | PRIMARY KEY               | UUID v4. |
+| `title`            | TEXT    | NOT NULL                  | |
+| `equipment_ids`    | TEXT    | NOT NULL                  | JSON array string. |
+| `category`         | TEXT    | NOT NULL                  | 3-letter category code. |
+| `priority`         | TEXT    | NOT NULL DEFAULT 'Normal' | |
+| `role`             | TEXT    | nullable                  | |
+| `assigned_to`      | TEXT    | nullable                  | Username. |
+| `description`      | TEXT    | nullable                  | |
+| `skill_tags`       | TEXT    | nullable                  | JSON array string. |
+| `status`           | TEXT    | NOT NULL DEFAULT 'open'   | |
+| `other_label`      | TEXT    | nullable                  | Free text reason when status is `other`. Added v2.7. |
+| `recurring`        | INTEGER | NOT NULL DEFAULT 0        | Boolean. |
+| `interval`         | TEXT    | nullable                  | |
+| `interval_hours`   | INTEGER | nullable                  | |
+| `failure_mode`     | TEXT    | nullable                  | ISO 14224 code. Added v2.7. |
+| `failure_mechanism`| TEXT    | nullable                  | ISO 14224 code. Added v2.7. |
+| `detection_method` | TEXT    | nullable                  | ISO 14224 code. Added v2.7. |
+| `created_at`       | TEXT    | NOT NULL                  | ISO 8601 UTC. |
+| `created_by`       | TEXT    | NOT NULL                  | |
+| `notes`            | TEXT    | nullable                  | |
+| `code_range`       | TEXT    | NOT NULL                  | 3-digit equipment code prefix. |
+| `year`             | INTEGER | NOT NULL                  | Calendar year of the definition file. |
+| `ingested_at`      | TEXT    | NOT NULL                  | ISO 8601 UTC. |
+
+**Retired column:** `due_date` — present in old rows but no longer written.
 
 #### `task_records`
 
 One row per completed task record. Ingested from equipment record files; idempotent via `INSERT OR REPLACE`.
 
-| Column          | Type    | Constraints  | Notes |
-|-----------------|---------|--------------|-------|
-| `record_id`     | TEXT    | PRIMARY KEY  | UUID v4. |
-| `task_id`       | TEXT    | nullable     | `null` for standalone manual entries. |
-| `equipment_ids` | TEXT    | NOT NULL     | JSON array string. |
-| `title`         | TEXT    | NOT NULL     | |
-| `category`      | TEXT    | NOT NULL     | |
-| `completed_by`  | TEXT    | NOT NULL     | |
-| `completed_at`  | TEXT    | NOT NULL     | ISO 8601 UTC. |
-| `hours_spent`   | REAL    | nullable     | |
-| `parts_used`    | TEXT    | nullable     | |
-| `notes`         | TEXT    | nullable     | |
-| `follow_up`     | TEXT    | nullable     | |
-| `code_range`    | TEXT    | NOT NULL     | |
-| `year`          | INTEGER | NOT NULL     | |
-| `ingested_at`   | TEXT    | NOT NULL     | |
+| Column             | Type    | Constraints  | Notes |
+|--------------------|---------|--------------|-------|
+| `record_id`        | TEXT    | PRIMARY KEY  | UUID v4. |
+| `task_id`          | TEXT    | nullable     | `null` for standalone manual entries. |
+| `equipment_ids`    | TEXT    | NOT NULL     | JSON array string. |
+| `title`            | TEXT    | NOT NULL     | |
+| `category`         | TEXT    | NOT NULL     | |
+| `outcome`          | TEXT    | nullable     | `completed` or `cancelled`. Null on pre-v2.7 rows — treat as `completed`. Added v2.7. |
+| `closed_by`        | TEXT    | nullable     | Added v2.7. Pre-v2.7 rows carry `completed_by` instead. |
+| `closed_at`        | TEXT    | nullable     | Added v2.7. Pre-v2.7 rows carry `completed_at` instead. |
+| `hours_spent`      | REAL    | nullable     | |
+| `parts_used`       | TEXT    | nullable     | |
+| `failure_mode`     | TEXT    | nullable     | ISO 14224 code. Added v2.7. |
+| `failure_mechanism`| TEXT    | nullable     | ISO 14224 code. Added v2.7. |
+| `detection_method` | TEXT    | nullable     | ISO 14224 code. Added v2.7. |
+| `close_note`       | TEXT    | nullable     | Added v2.7. |
+| `events_snapshot`  | TEXT    | nullable     | JSON string. Full events array at time of close. Added v2.7. |
+| `code_range`       | TEXT    | NOT NULL     | |
+| `year`             | INTEGER | NOT NULL     | |
+| `ingested_at`      | TEXT    | NOT NULL     | |
 
-#### `task_active_state`
+#### `task_active_state` — RETIRED
 
-One row per (username, task_id) pair. Ingested from active state files on every poll.
+No longer populated. Retained in schema to avoid breaking existing installations. Safe to drop via `DROP TABLE IF EXISTS task_active_state`.
 
-| Column       | Type | Constraints                  | Notes |
-|--------------|------|------------------------------|-------|
-| `username`   | TEXT | NOT NULL, PRIMARY KEY (part) | |
-| `task_id`    | TEXT | NOT NULL, PRIMARY KEY (part) | Composite PK with username. |
-| `state`      | TEXT | NOT NULL                     | `in_progress`. |
-| `updated_at` | TEXT | NOT NULL                     | ISO 8601 UTC. |
-| `ingested_at`| TEXT | NOT NULL                     | |
+#### `task_events`
+
+One row per event. Append-only. Ingested from `events[]` arrays in task definition files.
+
+| Column       | Type | Constraints  | Notes |
+|--------------|------|--------------|-------|
+| `event_id`   | TEXT | PRIMARY KEY  | UUID v4. |
+| `task_id`    | TEXT | NOT NULL     | FK to `tasks`. |
+| `type`       | TEXT | NOT NULL     | `transition` or `comment`. |
+| `actor`      | TEXT | NOT NULL     | Username. |
+| `timestamp`  | TEXT | NOT NULL     | ISO 8601 UTC. |
+| `from_status`| TEXT | nullable     | |
+| `to_status`  | TEXT | nullable     | |
+| `note`       | TEXT | nullable     | |
+| `ingested_at`| TEXT | NOT NULL     | ISO 8601 UTC. |
+
+#### `failure_modes`
+
+Lookup table for ISO 14224 reference codes. Populated from `failuremodes.json` at startup.
+
+| Column  | Type | Constraints         | Notes |
+|---------|------|---------------------|-------|
+| `code`  | TEXT | NOT NULL, PK (part) | |
+| `list`  | TEXT | NOT NULL, PK (part) | `failure_mode`, `failure_mechanism`, or `detection_method`. |
+| `label` | TEXT | NOT NULL            | Human-readable label. |
 
 #### `task_skill_tags`
 
-Lookup table for known skill tags. Populated at ingest from tags encountered in task definitions.
-
-| Column  | Type | Constraints  | Notes |
-|---------|------|--------------|-------|
-| `tag`   | TEXT | PRIMARY KEY  | Machine-readable key. E.g. `"lubrication"`. |
-| `label` | TEXT | NOT NULL     | Human-readable display label. |
+Unchanged from v2.3.
 
 ---
 
@@ -3936,44 +4162,55 @@ Lookup table for known skill tags. Populated at ingest from tags encountered in 
 
 | Handler | Direction | Description |
 |---------|-----------|-------------|
-| `db:ingestTasks` | renderer → main | Accepts `{ tasks[] }`. Inserts/replaces task rows. Returns `{ ok, upserted }`. |
-| `db:ingestTaskRecords` | renderer → main | Accepts `{ records[] }`. Inserts/replaces record rows. Returns `{ ok, upserted }`. |
-| `db:ingestActiveState` | renderer → main | Accepts `{ username, active[] }`. Replaces all active state rows for that user. Returns `{ ok }`. |
-| `db:getTasks` | renderer → main | Accepts filter object (see below). Returns `{ rows, total }`. |
-| `db:getTaskRecords` | renderer → main | Accepts filter object. Returns `{ rows, total }`. |
-| `db:getActiveState` | renderer → main | No arguments. Returns all rows from `task_active_state`. |
-| `db:completeTask` | renderer → main | Accepts `{ task_id, record }`. Sets `status='completed'` on the task (if task_id is non-null); inserts the record. Returns `{ ok, pending_next }` where `pending_next` is `true` if the task is recurring. |
-| `db:confirmNextTask` | renderer → main | Accepts `{ task_id, next_task }`. Inserts the next recurring task instance. Returns `{ ok }`. |
-| `db:getSkillTags` | renderer → main | No arguments. Returns all rows from `task_skill_tags`. |
+| `db:ingestTasks` | renderer → main | Unchanged. Now also accepts `other_label`, `failure_mode`, `failure_mechanism`, `detection_method` fields. |
+| `db:ingestTaskRecords` | renderer → main | Now also accepts `outcome`, `closed_by`, `closed_at`, ISO 14224 fields, `close_note`, `events_snapshot`. |
+| `db:ingestTaskEvents` | renderer → main | **New.** Accepts `{ task_id, events[] }`. Upserts event rows into `task_events`. Returns `{ ok, upserted }`. |
+| `db:ingestActiveState` | renderer → main | **Retired.** No longer called. |
+| `db:getTasks` | renderer → main | Filter object gains `status[]` (replaces single `status`). `due_before` retired. Default sort: `priority` ASC then `created_at` ASC. |
+| `db:getTaskEvents` | renderer → main | **New.** Accepts `{ task_id }`. Returns all events for that task ordered by `timestamp` ASC. |
+| `db:getTaskRecords` | renderer → main | Unchanged. |
+| `db:completeTask` | renderer → main | **Retired.** Replaced by `db:closeTask`. |
+| `db:closeTask` | renderer → main | **New.** Accepts `{ task_id, record, final_event }`. Writes close record, appends final event, sets `status` to terminal value. Returns `{ ok, pending_next }`. |
+| `db:confirmNextTask` | renderer → main | Unchanged. |
+| `db:getSkillTags` | renderer → main | Unchanged. |
+| `db:getFailureModes` | renderer → main | **New.** No arguments. Returns all rows from `failure_modes` table grouped by `list`. |
 
-#### `db:getTasks` filter object
+#### `db:getTasks` filter object (revised)
 
-| Field       | Type     | Notes |
-|-------------|----------|-------|
-| `status`    | string[] | Array of status values to include. Omit for all statuses. |
-| `category`  | string   | Exact match on `category`. Omit for all. |
-| `priority`  | string   | Exact match on `priority`. Omit for all. |
-| `assigned_to` | string | Exact match on `assigned_to`. Omit for all. |
-| `role`      | string   | Exact match on `role`. Omit for all. |
-| `due_before`| string   | `YYYY-MM-DD`. Returns tasks where `due_date <= due_before`. |
-| `search`    | string   | Substring search against `title`. |
-| `limit`     | integer  | Page size. Default `50`. |
-| `offset`    | integer  | Pagination offset. Default `0`. |
+| Field          | Type     | Notes |
+|----------------|----------|-------|
+| `status`       | string[] | Array of status values. Omit for all. `'active'` expands to all non-terminal statuses. |
+| `category`     | string   | Exact match. |
+| `priority`     | string   | Exact match. |
+| `assigned_to`  | string   | Exact match. |
+| `role`         | string   | Exact match. Used for filtering; not displayed as a column. |
+| `failure_mode` | string   | Exact match on code. |
+| `search`       | string   | Substring match against `title`. |
+| `limit`        | integer  | Default `50`. |
+| `offset`       | integer  | Default `0`. |
+
+**Retired filter fields:** `due_before`.
 
 ---
 
 ### graph.js helpers
 
 ```javascript
-async function listTaskDefinitionFiles()                          // LIST data/tasks/definitions/
-async function loadTaskDefinitionFile(filename)                   // GET  data/tasks/definitions/{filename}
-async function saveTaskDefinitionFile(filename, data)             // PUT  data/tasks/definitions/{filename}
-async function listTaskRecordFiles(year)                          // LIST data/tasks/records/{year}/
-async function loadTaskEquipmentFile(year, filename)              // GET  data/tasks/records/{year}/{filename}
-async function saveTaskEquipmentFile(year, filename, data)        // PUT  data/tasks/records/{year}/{filename}
-async function listTaskActiveStateFiles()                         // LIST data/tasks/active/
-async function loadTaskActiveStateFile(username)                  // GET  data/tasks/active/{username}.json
+async function listTaskDefinitionFiles()                           // LIST data/tasks/definitions/
+async function loadTaskDefinitionFile(filename)                    // GET  data/tasks/definitions/{filename}
+async function saveTaskDefinitionFile(filename, data)              // PUT  data/tasks/definitions/{filename}
+async function listTaskRecordFiles(year)                           // LIST data/tasks/records/{year}/
+async function loadTaskEquipmentFile(year, filename)               // GET  data/tasks/records/{year}/{filename}
+async function saveTaskEquipmentFile(year, filename, data)         // PUT  data/tasks/records/{year}/{filename}
+async function loadFailureModes()                                  // GET  config/failuremodes.json
+async function saveTaskActiveWrite(codeRange, year, taskObj)       // Fetch-append-write for single task update
+async function loadAssetFile(codeRange)                            // GET  data/assets/{codeRange}/{codeRange}-assets.json
+async function saveAssetFile(codeRange, data)                      // PUT  data/assets/{codeRange}/{codeRange}-assets.json
 ```
+
+`saveTaskActiveWrite` encapsulates the mandatory fetch-before-write pattern for task updates: fetches the current definition file, finds the task by `task_id`, applies the update, writes back. Used for status transitions, comment appends, and ISO 14224 field updates.
+
+**Retired helpers:** `listTaskActiveStateFiles`, `loadTaskActiveStateFile` — no longer called.
 
 Definition filenames follow the pattern `tasks-{codeRange}-{year}.json`. Equipment record filenames follow `{equipmentCodeTop}-{year}.json`.
 
@@ -3985,86 +4222,113 @@ The Tasks & Maintenance screen (Operations → Tasks & Maintenance) is a four-ta
 
 ---
 
-#### Tab 1 — All Tasks
+#### Tab 1 — Active Tasks (formerly All Tasks)
 
-Displays all tasks from SQLite with pagination and filtering.
+Displays all non-terminal tasks (`status` not in `completed`, `cancelled`). Refreshes from OneDrive on every tab open.
 
-**Filters:**
+**Task list columns (left to right):**
 
-| Filter   | Type           | Notes |
-|----------|----------------|-------|
-| Status   | Select         | Options: Active (open + in_progress), All, Open, In Progress, Complete, Cancelled. Default: Active. |
-| Category | Select         | All categories plus individual codes. Default: All. |
-| Priority | Select         | All, Critical, High, Normal, Low. Default: All. |
-| Search   | Text input     | Matches against `title`. |
+| Column | Notes |
+|---|---|
+| Priority | Badge. `Critical` = red, `High` = amber, `Normal` = grey, `Low` = slate. Editable inline via dropdown. |
+| Created | `created_at` formatted as `YYYY-MM-DD HH:MM`. |
+| Equipment | Asset code on first line, asset name on second line. |
+| Description | Task `title`. |
+| Assigned | `assigned_to` display name, or `— Unassigned —` if null. |
+| Status | Current status badge. Editable inline via dropdown (all active statuses). When `other` selected, a text input appears for `other_label`. |
+| Category | 3-letter code badge with colour (unchanged from v2.3). |
+| Failure Mode | ISO 14224 code badge if set, `—` if not. Editable inline via dropdown. |
 
-**Results table columns:** Priority badge · Title · Equipment (asset tags) · Category · Due Date · Assigned · Status badge
+**Default sort:** Priority ascending (Critical first), then `created_at` ascending (oldest first).
 
-Each row is expandable (click anywhere on the row) to reveal a detail panel showing `description`, `notes`, `skill_tags`, and a completion history pulled from `task_records`. Pagination: 20 rows per page.
+**Filters:** Status (Active / Open / Investigating / Waiting Parts / Waiting Opportunity / Shipyard / Other) · Category · Priority · Assigned To · Role (hidden column, filter only) · Search (title).
+
+**Expanded row (click anywhere on row):**
+
+Shows the full event log thread in chronological order. Each entry displays:
+- Actor display name + timestamp
+- For `transition` entries: status change badge (`from → to`) + note
+- For `comment` entries: comment text only, no badge
+
+**Actions in expanded row:**
+- **Add Comment** — text input + submit. Appends a `comment` event. Available to all users.
+- **Update Status** — status dropdown + optional note + submit. Appends a `transition` event. Available to all users.
+- **Update Failure Mode** — three dropdowns (mode, mechanism, detection). Updates task fields directly; does not append an event. Available to all users.
+- **Close Task** — opens close modal (admin tier only). See close action spec above.
 
 ---
 
-#### Tab 2 — Due & Assigned
+#### Tab 2 — Closed Tasks (formerly Due & Assigned)
 
-Displays open and in-progress tasks filtered to the current user's role and direct assignments. The tab refreshes active state from OneDrive every time it is opened (not just on first load) to reflect task status changes made on other sessions.
+Displays completed and cancelled tasks from `task_records` in SQLite.
 
-**Grouping:**
+**Task list columns (left to right):**
 
-1. **Overdue** — tasks where `due_date < today`.
-2. **Due Today** — tasks where `due_date = today`.
-3. **Upcoming** — tasks where `due_date > today`, sorted ascending.
-4. **Assigned to Me** — tasks with `assigned_to = current_username`, regardless of due date.
+| Column | Notes |
+|---|---|
+| Priority | Badge (read-only). |
+| Closed | `closed_at` formatted as `YYYY-MM-DD HH:MM`. |
+| Equipment | Asset code + name. |
+| Description | `title`. |
+| Closed By | Display name of the user who closed. |
+| Outcome | `Completed` (green) or `Cancelled` (grey) badge. |
+| Category | Code badge. |
+| Failure Mode | ISO 14224 code badge, or `—` if cancelled without findings. |
 
-For each task, a **[Mark In Progress]** button sets `status = 'in_progress'` and writes to the active state file. A **[Complete]** button opens an inline completion form.
+**Expanded row:** Shows `events_snapshot` thread (read-only), ISO 14224 fields, hours spent, parts used, close note.
 
-**Inline completion form fields:** Hours spent · Parts used · Notes · Follow-up (optional). Submitting writes the completion record to OneDrive and updates the task status in the definition file. For recurring tasks, a confirmation banner appears showing the new instance's due date before it is created.
+**Filters:** Outcome · Category · Failure Mode · Failure Mechanism · Search · Date range (closed_at).
 
 ---
 
-#### Tab 3 — Create Task
+#### Tab 3 — Create Task (unchanged structure, field changes)
 
-Form for creating new task definitions. Admin or standard permission required.
+`due_date` field removed. No other structural changes to the form. `failure_mode`, `failure_mechanism`, `detection_method` fields added as optional dropdowns (populated from `failuremodes.json`).
 
 **Fields:**
 
-| Field         | Type           | Notes |
-|---------------|----------------|-------|
-| Title         | Text input     | Required. |
-| Equipment     | Asset search + tag list | Multi-select. Type-ahead search against `assets.csv`. Selected assets shown as removable tags displaying code + name. |
-| Category      | Select         | 9 options (see category reference above). |
-| Priority      | Select         | Critical / High / Normal / Low. Default: Normal. |
-| Role          | Text input     | Optional. Role label for assignment filtering. |
-| Assigned To   | Text input     | Optional. Specific username. |
-| Description   | Textarea       | Optional. Work instructions. |
-| Skill Tags    | Multi-select dropdown | Optional. Tags from `task_skill_tags`. |
-| Recurring     | Checkbox       | Enables interval fields when checked. |
-| Interval      | Select         | Visible when Recurring is checked. |
-| Interval Hours| Number input   | Visible when Interval is `CUSTOM`. |
-| Due Date      | Date input     | Optional. |
+| Field              | Type                    | Notes |
+|--------------------|-------------------------|-------|
+| Title              | Text input              | Required. |
+| Equipment          | Asset search + tag list | Multi-select. Type-ahead search against `assets.csv`. |
+| Category           | Select                  | 9 options (see category reference above). |
+| Priority           | Select                  | Critical / High / Normal / Low. Default: Normal. |
+| Role               | Text input              | Optional. Role label for assignment filtering. |
+| Assigned To        | Text input              | Optional. Specific username. |
+| Description        | Textarea                | Optional. Work instructions. |
+| Skill Tags         | Multi-select dropdown   | Optional. Tags from `task_skill_tags`. |
+| Recurring          | Checkbox                | Enables interval fields when checked. |
+| Interval           | Select                  | Visible when Recurring is checked. |
+| Interval Hours     | Number input            | Visible when Interval is `CUSTOM`. |
+| Failure Mode       | Select                  | Optional. Populated from `failuremodes.json`. |
+| Failure Mechanism  | Select                  | Optional. Populated from `failuremodes.json`. |
+| Detection Method   | Select                  | Optional. Populated from `failuremodes.json`. |
 
-On submit: generates a `task_id` (UUID), determines the `code_range` from the first equipment code, writes/updates the definition file on OneDrive, then ingests into SQLite.
+On submit: generates a `task_id` (UUID), creates the creation `transition` event in `events[]`, determines the `code_range` from the first equipment code, writes/updates the definition file on OneDrive, then ingests into SQLite.
 
 ---
 
-#### Tab 4 — Manual Entry
+#### Tab 4 — Manual Entry (unchanged structure, field changes)
 
-Allows recording a completion without a pre-created task. Useful for ad-hoc work not covered by the task list.
+Allows recording a completion without a pre-created task. `failure_mode`, `failure_mechanism`, `detection_method` fields added — required for manual entries since they represent completed work with known findings. `follow_up` field removed.
 
 **Fields:**
 
-| Field        | Type           | Notes |
-|--------------|----------------|-------|
-| Title        | Text input     | Required. Work description. |
-| Equipment    | Asset search + tag list | Multi-select. Same pattern as Create Task tab. |
-| Category     | Select         | 9 options. |
-| Date         | Date input     | Defaults to today. |
-| Time         | Time input     | Defaults to current vessel local time. |
-| Hours Spent  | Number input   | Optional. |
-| Parts Used   | Text input     | Optional. |
-| Notes        | Textarea       | Optional. |
-| Follow-up    | Text input     | Optional. |
+| Field              | Type           | Notes |
+|--------------------|----------------|-------|
+| Title              | Text input     | Required. Work description. |
+| Equipment          | Asset search + tag list | Multi-select. Same pattern as Create Task tab. |
+| Category           | Select         | 9 options. |
+| Date               | Date input     | Defaults to today. |
+| Time               | Time input     | Defaults to current vessel local time. |
+| Hours Spent        | Number input   | Optional. |
+| Parts Used         | Text input     | Optional. |
+| Close Note         | Textarea       | Optional. |
+| Failure Mode       | Select         | Required. Populated from `failuremodes.json`. |
+| Failure Mechanism  | Select         | Required. Populated from `failuremodes.json`. |
+| Detection Method   | Select         | Required. Populated from `failuremodes.json`. |
 
-On submit: generates a `record_id` (UUID), sets `task_id = null`, writes the record to the equipment record file on OneDrive, then ingests into SQLite. No task status is modified.
+On submit: generates a `record_id` (UUID), sets `task_id = null`, sets `outcome = 'completed'`, writes the record to the equipment record file on OneDrive, then ingests into SQLite. No task status is modified.
 
 ---
 
@@ -4166,7 +4430,7 @@ Skill categories defined in Config → Crew Setup.
 
 ### 37.1 Overview
 
-The Factory Production module tracks daily midnight-MT production figures, capacity observations from factory equipment, and line section theoretical throughput. It is a 5-tab screen: **Overview**, **Today**, **Observations**, **OEE**, and **Setup**.
+The Factory Production module tracks daily midnight-MT production figures, capacity observations from factory equipment, and line section theoretical throughput. It is a 4-tab screen: **Overview**, **Today**, **Observations**, and **Setup**.
 
 ---
 
@@ -4177,9 +4441,8 @@ All paths are relative to `Documents/IDMS/` (the `ONEDRIVE_BASE` constant in `gr
 | File | Path | Description |
 |------|------|-------------|
 | Production state | `data/factory/production/production-state.json` | Trip-scoped daily MT entries |
-| ~~Capacity log~~ | ~~`data/factory/production/capacity-{YYYY-MM-DD}.json`~~ | **LEGACY** — read-only. Observations now written to per-user log files. |
+| Capacity log (per day) | `data/factory/production/capacity-{YYYY-MM-DD}.json` | Hourly capacity observations for one date |
 | Factory config | `config/factoryconfig.json` | Vessel config; `production` section (schema_version 2) |
-| FMEA config | `config/fmeaconfig.json` | Vessel FMEA failure mode registry |
 
 ---
 
@@ -4439,21 +4702,17 @@ CREATE TABLE IF NOT EXISTS capacity_observations (
   obs_timestamp    TEXT NOT NULL,
   section_id       TEXT NOT NULL,
   section_label    TEXT NOT NULL,
-  observed_rate    REAL,
-  rate_unit        TEXT,
-  operator         TEXT NOT NULL DEFAULT '',
+  observed_rate    REAL NOT NULL,
+  rate_unit        TEXT NOT NULL,
+  operator         TEXT NOT NULL,
   wind_speed_kt    REAL,
   sea_state_ft     REAL,
   notes            TEXT DEFAULT '',
   source           TEXT NOT NULL DEFAULT 'pwa',
-  failure_mode_id  TEXT,
-  oee_session_id   TEXT,
-  source_user      TEXT,
   ingested_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_cap_obs_date    ON capacity_observations(obs_date);
 CREATE INDEX IF NOT EXISTS idx_cap_obs_section ON capacity_observations(section_id, obs_date);
-CREATE INDEX IF NOT EXISTS idx_cap_obs_oee     ON capacity_observations(oee_session_id);
 ```
 
 #### production_config_snapshots
@@ -4481,13 +4740,9 @@ All handlers are synchronous (better-sqlite3). Registered in `main.js`.
 | `db:ingestProductionState` | `{ trip_number, daily_entries[] }` | `{ ok, count }` |
 | `db:ingestCapacityLog` | `{ obs_date, observations[] }` | `{ ok, count }` |
 | `db:getProductionEntries` | `{ trip_number }` | `production_entries[]` ordered by `entry_date ASC` |
-| `db:getCapacityObservations` | `{ obs_date?, section_id? }` | `capacity_observations[]`. Accepts additional optional filters: `source_user`, `source`, `oee_session_id`, `from_timestamp`, `to_timestamp`. |
+| `db:getCapacityObservations` | `{ obs_date?, section_id? }` | `capacity_observations[]` |
 | `db:saveProductionConfig` | `{ snapshot_date, trip_number?, config_json }` | `{ ok }` |
 | `db:getLatestProductionConfig` | — | Most recent `production_config_snapshots` row, or null |
-| `db:ingestObservationsFromLog` | `{ user, observations[] }` | `{ ok, count }` |
-| `db:saveObservationsToLog` | `{ user, observations[] }` | `{ ok, count }` |
-| `db:getOeeSessions` | `{ trip_number? }` | `oee_session[]` ordered by `session_start DESC` |
-| `db:generateRosReportPdf` | `{ report_data }` | `{ ok, path }` |
 
 **Upsert keys:**
 - `production_entries`: `(trip_number, entry_date)`
@@ -4531,12 +4786,6 @@ searchAssetsByGroup: (query, groupCode, limit) => ipcRenderer.invoke('db:searchA
 // Species baseline
 getDistinctFisheries:      ()        => ipcRenderer.invoke('db:getDistinctFisheries'),
 getProductionAvgByFishery: (fishery) => ipcRenderer.invoke('db:getProductionAvgByFishery', fishery),
-
-// Observations & OEE
-ingestObservationsFromLog: (payload) => ipcRenderer.invoke('db:ingestObservationsFromLog', payload),
-saveObservationsToLog:     (payload) => ipcRenderer.invoke('db:saveObservationsToLog', payload),
-getOeeSessions:            (opts)    => ipcRenderer.invoke('db:getOeeSessions', opts),
-generateRosReportPdf:      (payload) => ipcRenderer.invoke('db:generateRosReportPdf', payload),
 ```
 
 ---
@@ -4550,13 +4799,9 @@ Added to `src/renderer/js/graph.js`:
 | `saveDeptConfig(deptKey, cfg)` | Writes `config/{deptKey}config.json` to OneDrive |
 | `loadProductionState()` | Reads `data/factory/production/production-state.json` |
 | `saveProductionState(state)` | Writes `production-state.json` |
-| `loadCapacityLog(dateStr)` | Reads `capacity-{dateStr}.json` (legacy read) |
-| `saveCapacityLog(dateStr, data)` | Writes `capacity-{dateStr}.json` (legacy; no longer used for new observations) |
+| `loadCapacityLog(dateStr)` | Reads `capacity-{dateStr}.json` |
+| `saveCapacityLog(dateStr, data)` | Writes `capacity-{dateStr}.json` |
 | `graphMailFetch(url)` | GET request to any Graph API URL with Bearer auth; throws `err.status = 403` on Access Denied |
-| `loadUserLogFile(username, dateStr)` | Reads `data/factory/logs/report-{dateStr}-{username}.json`. Returns null on 404. |
-| `saveUserLogFile(username, dateStr, data)` | Writes `data/factory/logs/report-{dateStr}-{username}.json`. |
-| `loadFmeaConfig()` | Reads `config/fmeaconfig.json`. Returns null on 404. |
-| `saveFmeaConfig(cfg)` | Writes `config/fmeaconfig.json`. |
 
 ---
 
@@ -4616,39 +4861,25 @@ Used in the Overview tab chart (dashed green line) and stat cards.
 - Stat strip: Trip Total, Days Recorded, Last Day, Weighted Avg, Bottleneck, Trip Capacity % (if configured)
 - Canvas chart: bars = actual MT per day; dashed green line = weighted rolling average; solid purple line = cumulative total; dashed orange line = bottleneck ceiling
 - Email fetch panel (admin/standard only): inline, not modal
-- **PWA observation overlay:** PWA-sourced observations for the current date are plotted as an additive overlay on the canvas chart. Rate observations appear as orange filled circles at the correct time/rate position. Qualitative observations (no rate) appear as orange diamonds at the x-axis. Hover tooltip shows: `[PWA] {section_label} — {observed_rate} {rate_unit} — {operator} — {time}`. Legend entry: `● PWA Observation`.
 
 **Tab: Today**
 - Canvas 24-hour chart: orange background bars = theoretical ceiling per hour; blue dots = observed rates per hour bucket; solid green dashed line = daily average; orange dashed line = bottleneck/24
 - Observation list below chart
 
 **Tab: Observations**
-- Filter bar: section dropdown, date-from, date-to, source dropdown, user dropdown, clear button
-- Table: date, time, section, rate, unit, source user, notes
-- Source badges: `[PWA]` (amber) for `source: "pwa"`, `[OEE]` (blue) for `source: "oee"`, no badge for `source: "manual"`.
-- When source filter = OEE, rows are grouped by `oee_session_id` with a collapsible session header.
-- `source_user` column shows the submitting user's display name.
-- Add Observation form (admin/standard only): section, rate (optional), unit, timestamp, wind, sea state, notes
-- Submitting: uses `appendObservationsToLogFile` pattern (OneDrive read → merge → write to per-user log file) rather than writing to legacy capacity files.
-
-**Tab: OEE**
-- Batch observation entry interface for structured reliability observation studies. Users add observation rows (time, section, asset code, FMEA failure mode, rate, notes) in a dynamic table, then submit as a named session. All rows in a session share a `oee_session_id` UUID generated at submit time and immutable thereafter. Submitted sessions are listed in a session panel; selecting a session shows its observations read-only with a "Generate Report for this Session" shortcut. See §39 for full documentation.
-
-**Report generator**
-- Modal accessible from the OEE tab. Accepts a time window (from/to datetime), source filter, section filter, and incident inclusion toggle. Generates from `capacity_observations` and resolved incidents within the window. Console view includes: header block, summary stat strip, timeline (coloured markers by source, incident span bars), observations table, incidents table, section summary table with utilisation %. PDF export via puppeteer (main process only — never import puppeteer in renderer). See §39 for full documentation.
+- Filter bar: section dropdown, date-from, date-to, clear button
+- Table: date, time, section, rate, unit, operator, notes
+- Add Observation form (admin/standard only): section, rate, unit, timestamp, wind, sea state, notes
+- Submitting: writes to `capacity-{date}.json` on OneDrive, then ingests to SQLite
 
 **Tab: Setup**
 - Collapsible cards: Production Settings, Email Settings, Line Sections (one card per section)
 - **Production Settings card:** Target Species dropdown (auto-populates Species Baseline Avg MT/day from historical logs on selection), Trip Capacity, Species Baseline Avg MT/day (editable override), global Pan Specification block (Pan Volume, Gross Weight, Target Overpack %; derived Density and Net Weight displayed read-only)
 - **Line section card:** shows section type badge, current theoretical MT/day, Group / Sub-group asset scope selectors, sub-asset list with inline add/remove
-- **Sub-asset row fields:** label, asset code autocomplete, Arrangement dropdown (Series / Parallel / Series_Parallel), Order, Sub-order (visible for series_parallel only), Ranking (visible for series_parallel only), **ISO 14224 Equipment Class dropdown** (validated list — feeds the FMEA modal as a default; see §38), plus type-specific fields (see §37.5.3)
+- **Sub-asset row fields:** label, asset code autocomplete, Arrangement dropdown (Series / Parallel / Series_Parallel), Order, Sub-order (visible for series_parallel only), Ranking (visible for series_parallel only), plus type-specific fields (see §37.5.3)
 - Save button writes `factoryconfig.json` to OneDrive, recalculates theoretical MT and bottleneck, saves config snapshot to SQLite
 - Bottleneck indicator: displays limiting section label and MT/day value
 - All writes are admin-only; standard/observer see read-only view
-
-**Tab: FMEA** — see §38. Sourced from `fmeaconfig.json`; failure-mode registry is scoped to factory line sections only. FMEA card is read-only for operational data — it is an analytics view, not a data entry point.
-
-**Throughput-section MT/day calculation (revised v2.7).** For sections of `type: "throughput"`, MT/day is no longer the sum of all sub-asset throughputs. Sub-assets are grouped by `order` (each distinct `order` is a series stage); within a stage their capacities sum (parallel redundancy); across stages the section is bottlenecked by the slowest stage. Sub-assets with no `order` and `arrangement: "parallel"` share an implicit single stage; series sub-assets without `order` each become their own stage.
 
 **Error guards:**
 - If `factoryconfig.production` is absent: display "not configured" banner
@@ -4659,460 +4890,171 @@ Used in the Overview tab chart (dashed green line) and stat cards.
 
 ---
 
-## §38 — FMEA Module
+## §38 — Asset Records
 
-**Status:** Built (v2.7)
-**File:** `src/renderer/js/production.js` (FMEA card embedded in Factory Production Setup tab)
-**Screen key:** `factory-production` (Setup tab)
-**Nav group:** Factory
-**Permission gate:** `factory/production` — admin for writes, standard/observer read-only
+**Status:** New (v2.7)  
+**File:** `assets.js` (new module) or integrated into `tasks.js` (TBD at implementation)  
+**Location:** Asset history is accessed via expanded task rows and a future dedicated Asset History screen.
 
 ---
 
-### 38.1 Overview
+### Overview
 
-Level 2 Failure Mode and Effects Analysis scoped to the **factory production line only**. Not vessel-wide. The feature does not generate tasks, integrate with TM-Master, or touch any module outside Factory Production.
+Each equipment asset maintains a persistent record file on OneDrive containing its full work history, last rounds check timestamp, and oil addition history. The asset record is the longitudinal view of an asset's lifecycle — portable with the asset if it is transferred or renumbered.
 
-Each failure mode carries Severity (S), Occurrence (O), and Detection (D) ratings on the standard 1–10 scale; RPN = S × O × D. Severity and Detection are manually rated by the Chief Engineer / admin. **Occurrence is empirical** — computed from the frequency at which each mode is tagged on resolved factory incidents and completed maintenance records over a rolling window of the last N trips (default N = 5; configurable per vessel).
-
-The registry source-of-truth is `fmeaconfig.json` on OneDrive. SQLite mirrors the registry plus a derived `fmea_occurrence_events` table built from log files by the ingest poller. RPN and Occurrence are recomputed live at query time; values written into `fmeaconfig.json` are denormalised snapshots only. FMEA card is read-only for operational data — it is an analytics view, not a data entry point.
-
-ISO 14224 hybrid taxonomy: vessel-specific labels with optional ISO equipment class and failure codes. No hard deletes — use `enabled = 0`. Graceful degradation: if `fmeaconfig.json` is absent, FMEA tab renders empty state with an "Initialise FMEA Registry" button.
+Asset records are grouped by equipment code range, one JSON file per range. The console writes to asset records on task close. The rounds engine writes `last_round` on each rounds completion (out of scope for this version). Oil history is written via a dedicated oil log action (out of scope for this version).
 
 ---
 
-### 38.2 OneDrive file location
+### OneDrive file
 
-`Documents/IDMS/config/fmeaconfig.json` — independent per vessel, admin-only for writes. The PWA reads it (cached as `fw_fmeacfg`) for the failure-mode dropdown on incident resolve; the PWA never writes it.
+**Location:** `Documents/IDMS/data/assets/{codeRange}/{codeRange}-assets.json`
 
----
-
-### 38.3 fmeaconfig.json
-
-**Location:** `Documents/IDMS/config/fmeaconfig.json`
-
-**Access:** Admin-only for writes. Standard / Observer tiers see the FMEA tab read-only. The PWA reads it (cached as `fw_fmeacfg`) for the failure-mode dropdown on incident resolve; the PWA never writes it.
+**Written by:** Console (on task close; on oil log entry)  
+**Read by:** Console (asset history display; task close workflow)
 
 ```json
 {
   "schema_version": 1,
-  "vessel": "F/V Araho",
-  "occurrence_window_trips": 5,
-  "failure_modes": [
+  "code_range": "601",
+  "assets": [
     {
-      "mode_id": "uuid-v4",
-      "section_id": "3e4a5f6b-7c8d-4e0f-a1b2-000000000001",
-      "section_label": "Plate Freezers",
-      "asset_code": "310.001.001.001",
-      "label": "Hydraulic seal leak",
-      "effects": "Freezer pressure loss; section throughput reduced or halted.",
-      "current_controls": "Daily visual inspection during rounds.",
-      "severity": 7,
-      "occurrence": null,
-      "detection": 5,
-      "rpn": null,
-      "occurrence_override": null,
-      "occurrence_override_note": "",
-      "avg_duration_seconds": null,
-      "avg_mt_impact_per_event": null,
-      "iso14224_equipment_class": "HE",
-      "iso14224_failure_code": "ELP",
-      "enabled": true,
-      "created_at": "2026-04-30T10:00:00.000Z",
-      "updated_at": "2026-04-30T10:00:00.000Z"
+      "item_id":    "uuid-v4-stable-permanent",
+      "asset_no":   "601.001.001.001",
+      "asset_name": "Main Engine",
+      "last_round": "2026-05-03T08:15:00.000Z",
+
+      "event_history": [
+        {
+          "task_id":    "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
+          "title":      "Investigate main engine oil pressure drop",
+          "category":   "REP",
+          "outcome":    "completed",
+          "opened_at":  "2026-05-03T08:00:00.000Z",
+          "closed_at":  "2026-05-03T14:00:00.000Z",
+          "closed_by":  "tploch",
+          "failure_mode":       "LOO",
+          "failure_mechanism":  "WEA",
+          "detection_method":   "ALM"
+        }
+      ],
+
+      "oil_history": [
+        {
+          "added_at":  "2026-05-01T08:30:00.000Z",
+          "amount_l":  20.5,
+          "oil_type":  "Mobilgard 410 NC",
+          "hours":     14250
+        }
+      ]
     }
-  ],
-  "changelog": [
-    { "version": 1, "date": "2026-04-30", "note": "Initial FMEA registry." }
-  ],
-  "last_saved_at": "2026-05-01T18:42:00.000Z"
+  ]
 }
 ```
 
-#### Top-level fields
+#### Asset object fields
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `schema_version` | integer | Increment when the structure changes. Currently `1`. |
-| `vessel` | string | Vessel display name. |
-| `occurrence_window_trips` | integer | Number of most-recent trips used for Occurrence calculation. Default `5`. Configurable per vessel. |
-| `failure_modes` | array | All failure-mode entries for this vessel's production line. |
-| `changelog` | array | Free-form change history for the registry. |
-| `last_saved_at` | string | ISO 8601 UTC timestamp of the last save. Written by the console on save. |
+| Field           | Type   | Required | Notes |
+|-----------------|--------|----------|-------|
+| `item_id`       | string | yes      | UUID v4. Stable permanent identifier. Never changes even if `asset_no` or `asset_name` changes. Generated at first record creation. |
+| `asset_no`      | string | yes      | TM-Master asset code. E.g. `"601.001.001.001"`. Matches `assets.csv`. |
+| `asset_name`    | string | yes      | Display name. Copied from `assets.csv` at record creation. |
+| `last_round`    | string | no       | ISO 8601 UTC. Timestamp of the most recent rounds check for this asset. Overwritten on each check; full history in rounds logs. |
+| `event_history` | array  | yes      | Append-only. One entry per closed task that references this asset. |
+| `oil_history`   | array  | yes      | Append-only. One entry per oil addition. |
 
-#### Failure-mode object fields
+#### Event history entry fields
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `mode_id` | string (UUID v4) | Stable identifier. Generated by the console; never changes once created. |
-| `section_id` | string (UUID) | References a `section_id` in `factoryconfig.json → production.line_sections`. Must match one of the 7 pre-configured Araho UUIDs. |
-| `section_label` | string | Denormalised label for display without joining to factoryconfig. |
-| `asset_code` | string \| null | Asset register code. Primary linkage between failure modes, incident logs, and maintenance records. May be null when the mode applies to the section as a whole rather than a specific asset. |
-| `label` | string | Human-readable failure-mode name. Vessel-specific. Max 100 chars. E.g. `"Hydraulic seal leak"`. |
-| `effects` | string | Description of what happens when the mode occurs. Free text. |
-| `current_controls` | string | Existing detection / prevention controls. Free text. |
-| `severity` | integer \| null | Manual rating 1–10. |
-| `occurrence` | integer \| null | **Computed, not authoritative.** Derived from incident + maintenance event frequency over `occurrence_window_trips`. Written to this field on each save for reference but always recomputed fresh from SQLite when displayed. |
-| `detection` | integer \| null | Manual rating 1–10. |
-| `rpn` | integer \| null | Computed: `severity × occurrence × detection`. Null if any input is null. Written on save only. |
-| `occurrence_override` | integer \| null | If non-null, this value is used as Occurrence instead of the computed value. Admin only. |
-| `occurrence_override_note` | string | Required when `occurrence_override` is set. Documents why the override was applied. |
-| `avg_duration_seconds` | number \| null | **Computed, not authoritative.** Average duration of tagged incidents over the occurrence window. Written on save; always recomputed at query time. Null for modes with no events or when no duration data is available. |
-| `avg_mt_impact_per_event` | number \| null | **Computed, not authoritative.** `avg_duration_seconds / 86400 × theoretical_mt_per_day`. Null for header/belt/packing sections (no formula) or when avg_duration_seconds is null. Written on save. |
-| `iso14224_equipment_class` | string \| null | ISO 14224 equipment class code (validated dropdown — see §38.9). |
-| `iso14224_failure_code` | string \| null | ISO 14224 failure mode code (validated dropdown — see §38.9). |
-| `enabled` | boolean | If false, mode is excluded from RPN rankings and Occurrence calculations. Disabled (soft-deleted) modes are retained in the file. |
-| `created_at` | string | ISO 8601 UTC. |
-| `updated_at` | string | ISO 8601 UTC. Updated on every save. |
+| Field              | Type   | Required | Notes |
+|--------------------|--------|----------|-------|
+| `task_id`          | string | yes      | UUID of the originating task. Join key to `task_records`. |
+| `title`            | string | yes      | Task title at time of close. |
+| `category`         | string | yes      | Category code. |
+| `outcome`          | string | yes      | `completed` or `cancelled`. |
+| `opened_at`        | string | yes      | ISO 8601 UTC. `created_at` from the task. |
+| `closed_at`        | string | yes      | ISO 8601 UTC. |
+| `closed_by`        | string | yes      | Username of the closing user. |
+| `failure_mode`     | string | no       | ISO 14224 code. Omitted on cancelled tasks. |
+| `failure_mechanism`| string | no       | ISO 14224 code. Omitted on cancelled tasks. |
+| `detection_method` | string | no       | ISO 14224 code. Omitted on cancelled tasks. |
 
----
+#### Oil history entry fields
 
-### 38.4 SQLite tables
-
-```sql
-CREATE TABLE IF NOT EXISTS fmea_failure_modes (
-  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-  mode_id                  TEXT NOT NULL UNIQUE,
-  section_id               TEXT NOT NULL,
-  section_label            TEXT NOT NULL,
-  asset_code               TEXT,
-  label                    TEXT NOT NULL,
-  effects                  TEXT NOT NULL DEFAULT '',
-  current_controls         TEXT NOT NULL DEFAULT '',
-  severity                 INTEGER,
-  detection                INTEGER,
-  occurrence_override      INTEGER,
-  occurrence_override_note TEXT NOT NULL DEFAULT '',
-  avg_duration_seconds     REAL,
-  avg_mt_impact_per_event  REAL,
-  iso14224_equipment_class TEXT,
-  iso14224_failure_code    TEXT,
-  enabled                  INTEGER NOT NULL DEFAULT 1,
-  created_at               TEXT NOT NULL,
-  updated_at               TEXT NOT NULL,
-  ingested_at              TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_fmea_modes_section  ON fmea_failure_modes(section_id);
-CREATE INDEX IF NOT EXISTS idx_fmea_modes_asset    ON fmea_failure_modes(asset_code);
-
-CREATE TABLE IF NOT EXISTS fmea_occurrence_events (
-  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id                 TEXT NOT NULL UNIQUE,
-  source                   TEXT NOT NULL,    -- 'incident' | 'maintenance'
-  mode_id                  TEXT,
-  asset_code               TEXT,
-  failure_mode_other_notes TEXT NOT NULL DEFAULT '',
-  duration_seconds         REAL,
-  trip_number              INTEGER,
-  event_date               TEXT NOT NULL,    -- YYYY-MM-DD
-  ingested_at              TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_fmea_events_mode   ON fmea_occurrence_events(mode_id);
-CREATE INDEX IF NOT EXISTS idx_fmea_events_asset  ON fmea_occurrence_events(asset_code);
-CREATE INDEX IF NOT EXISTS idx_fmea_events_trip   ON fmea_occurrence_events(trip_number);
-
-CREATE TABLE IF NOT EXISTS fmea_config_snapshots (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  snapshot_date TEXT NOT NULL,
-  trip_number   INTEGER,
-  config_json   TEXT NOT NULL,
-  saved_at      TEXT NOT NULL DEFAULT (datetime('now'))
-);
-```
-
-`occurrence` and `rpn` are **never stored** in `fmea_failure_modes` — they are always computed at query time. The values stored in `fmeaconfig.json` are denormalised snapshots for reference only.
-
-**`fmea_occurrence_events.event_id` derivation:**
-
-| Source | Pattern |
-|--------|---------|
-| Resolved incident | `{log_filename}:{incident_id}` |
-| Completed maintenance record | `{task_id}:{completed_at}` |
-
-Used as the upsert key — re-ingestion of the same source row updates the existing event.
-
-### 38.5 IPC handlers (main process)
-
-All handlers are synchronous (`better-sqlite3`).
-
-| Handler | Payload | Returns |
-|---------|---------|---------|
-| `db:ingestFmeaConfig` | `{ failure_modes[] }` | `{ ok, count }` |
-| `db:saveFmeaConfigSnapshot` | `{ snapshot_date, trip_number?, config_json }` | `{ ok }` |
-| `db:getFmeaFailureModes` | `{ section_id? }` | array of rows from `fmea_failure_modes` where `enabled = 1`, ordered by `section_id ASC, label ASC` |
-| `db:getFmeaOccurrence` | `{ mode_id, window_trips?, theoretical_mt_per_day? }` | `{ occurrence_rating, raw_count, window_trips, trips_with_data, avg_duration_seconds, avg_mt_impact }` |
-| `db:ingestFmeaOccurrenceEvents` | `{ events[] }` — each event may include `duration_seconds` | `{ ok, count }` |
-| `db:getFmeaRpnSummary` | `{ section_id?, section_theoretical_rates? }` where `section_theoretical_rates` is `{ [section_id]: mt_per_day }` | array of `{ mode_id, section_id, section_label, label, asset_code, severity, occurrence, detection, rpn, raw_count, window_trips, trips_with_data, occurrence_override, occurrence_override_note, avg_duration_seconds, avg_mt_impact, iso14224_equipment_class, iso14224_failure_code, effects, current_controls }` sorted by RPN desc |
-| `db:upsertFmeaFailureMode` | failure-mode object (without `mode_id` for new entries) | `{ ok, mode_id }` — generates a UUID v4 if absent |
-
-**Behaviour notes:**
-- `db:ingestFmeaConfig` upserts on `mode_id`. **Does not delete** rows absent from the payload — soft-removal is via `enabled = 0`.
-- `db:ingestFmeaOccurrenceEvents` looks up `trip_number` from the `trips` table by `event_date` if not supplied on the payload.
-- Occurrence computation uses the relative-decile algorithm with a fixed-scale fallback when fewer than 3 modes have any events (see §38.9).
-- **CRITICAL — `db:upsertFmeaFailureMode`:** this handler writes registry configuration only (label, effects, severity, detection, etc.). It **never** writes to `fmea_occurrence_events`. Occurrence events are ingested exclusively via `db:ingestFmeaOccurrenceEvents`.
-- `theoretical_mt_per_day` for `db:getFmeaOccurrence` and `section_theoretical_rates` for `db:getFmeaRpnSummary` are **passed from the renderer** using `factoryconfig.production.line_sections` values. The handler never looks them up internally.
+| Field      | Type   | Required | Notes |
+|------------|--------|----------|-------|
+| `added_at` | string | yes      | ISO 8601 UTC. |
+| `amount_l` | number | yes      | Volume added in litres. |
+| `oil_type` | string | yes      | Free text. E.g. `"Mobilgard 410 NC"`. |
+| `hours`    | number | no       | Asset hours meter reading at time of addition. Omitted if asset has no hours meter. |
 
 ---
 
-### 38.6 preload.js bindings
+### SQLite tables
 
-Exposed under `window.idms.db`:
+See §18 for the full DDL. Tables added via `CREATE TABLE IF NOT EXISTS` on console startup.
+
+#### `asset_records`
+
+One row per asset. Upserted on every ingest of the asset file.
+
+| Column       | Type | Constraints  | Notes |
+|--------------|------|--------------|-------|
+| `item_id`    | TEXT | PRIMARY KEY  | Stable UUID. |
+| `asset_no`   | TEXT | NOT NULL     | TM-Master code. |
+| `asset_name` | TEXT | NOT NULL     | Display name. |
+| `last_round` | TEXT | nullable     | ISO 8601 UTC. |
+| `code_range` | TEXT | NOT NULL     | 3-digit range prefix. |
+| `ingested_at`| TEXT | NOT NULL     | ISO 8601 UTC. |
+
+#### `asset_event_history`
+
+One row per event history entry. Replaced in full for each `item_id` on ingest.
+
+| Column             | Type    | Constraints               | Notes |
+|--------------------|---------|---------------------------|-------|
+| `id`               | INTEGER | PRIMARY KEY AUTOINCREMENT | |
+| `item_id`          | TEXT    | NOT NULL                  | FK to `asset_records`. |
+| `task_id`          | TEXT    | NOT NULL                  | |
+| `title`            | TEXT    | NOT NULL                  | |
+| `category`         | TEXT    | NOT NULL                  | |
+| `outcome`          | TEXT    | NOT NULL                  | |
+| `opened_at`        | TEXT    | NOT NULL                  | |
+| `closed_at`        | TEXT    | NOT NULL                  | |
+| `closed_by`        | TEXT    | NOT NULL                  | |
+| `failure_mode`     | TEXT    | nullable                  | |
+| `failure_mechanism`| TEXT    | nullable                  | |
+| `detection_method` | TEXT    | nullable                  | |
+| `ingested_at`      | TEXT    | NOT NULL                  | |
+
+**Note:** `oil_history` is not given its own SQLite table in this version — oil entries are low-frequency and the asset file is the source of truth. A dedicated `asset_oil_history` table can be added when the oil log module is built.
+
+---
+
+### IPC Handlers
+
+| Handler | Direction | Description |
+|---------|-----------|-------------|
+| `db:ingestAssetRecords` | renderer → main | Accepts `{ assets[] }` from a loaded asset file. Upserts `asset_records` rows; replaces `asset_event_history` rows for each `item_id` present in the payload. Returns `{ ok, upserted }`. |
+| `db:getAssetRecord` | renderer → main | Accepts `{ item_id }`. Returns the asset record row plus all event history rows for that asset, ordered by `closed_at` ASC. |
+| `db:getAssetByCode` | renderer → main | Accepts `{ asset_no }`. Returns the matching asset record. Useful for lookups from task equipment tags. |
+| `db:appendAssetEvent` | renderer → main | Accepts `{ item_id, event }`. Appends one event history row. Called as part of the close task sequence. Returns `{ ok }`. |
+
+---
+
+### graph.js helpers
 
 ```javascript
-ingestFmeaConfig:           (payload) => ipcRenderer.invoke('db:ingestFmeaConfig', payload),
-saveFmeaConfigSnapshot:     (payload) => ipcRenderer.invoke('db:saveFmeaConfigSnapshot', payload),
-getFmeaFailureModes:        (opts)    => ipcRenderer.invoke('db:getFmeaFailureModes', opts),
-getFmeaOccurrence:          (opts)    => ipcRenderer.invoke('db:getFmeaOccurrence', opts),
-ingestFmeaOccurrenceEvents: (payload) => ipcRenderer.invoke('db:ingestFmeaOccurrenceEvents', payload),
-getFmeaRpnSummary:          (opts)    => ipcRenderer.invoke('db:getFmeaRpnSummary', opts),
-upsertFmeaFailureMode:      (payload) => ipcRenderer.invoke('db:upsertFmeaFailureMode', payload),
+async function loadAssetFile(codeRange)           // GET  data/assets/{codeRange}/{codeRange}-assets.json
+async function saveAssetFile(codeRange, data)     // PUT  data/assets/{codeRange}/{codeRange}-assets.json
+async function appendAssetEvent(codeRange, itemId, eventEntry)
+  // Fetch-append-write: loads asset file, finds asset by item_id,
+  // appends to event_history[], writes back. Called on task close.
 ```
 
 ---
 
-### 38.7 graph.js helpers
+### Asset record initialisation
 
-| Function | Description |
-|----------|-------------|
-| `loadFmeaConfig()` | Reads `config/fmeaconfig.json` from OneDrive. Returns parsed object or null on 404. |
-| `saveFmeaConfig(cfg)` | Writes `config/fmeaconfig.json` to OneDrive. |
+Asset records are created lazily — a `{codeRange}-assets.json` file is created the first time a task for that code range is closed. The `item_id` for each asset is generated at first record creation and must remain stable. If an asset file already exists for that code range, the close workflow fetches it, finds the matching asset by `asset_no`, and appends to its `event_history`. If no matching asset exists in the file, a new asset object is added.
 
----
-
-### 38.8 Ingest poller additions
-
-`pollFmeaOccurrenceEvents()` runs as a separate pass during each `pollNow()` cycle in `ingest.js`, after the production data poll. Independent of the existing factory incident ingest (does not modify it).
-
-1. Call `loadFmeaConfig()`. If null (file absent or fetch error), skip silently.
-2. Build an `asset_code → mode_id` map from the loaded config (enabled modes only) for maintenance fallback lookup.
-3. **Pass 1 — factory incident logs.** Scan today's factory log files (using `listLogFilesForDate('factory', date)` + `loadLogFile` helpers). For each resolved incident where `failure_mode_id` is non-null, build an event row. `"other"` selections are recorded with `mode_id = null` and `failure_mode_other_notes` preserved. Untagged incidents are skipped.
-   - **Duration normalisation:** `duration_seconds = inc.duration_seconds ?? inc.duration ?? null`
-4. **Pass 2 — completed maintenance records.** Scan the current year's task record files. For each completed record where `equipment_ids` contains a code present in the asset→mode map, build an event with `source = "maintenance"`. When no `failure_mode_id` is present, `category + title` are concatenated into `failure_mode_other_notes`.
-5. Upsert all events via `db:ingestFmeaOccurrenceEvents`. The handler derives `trip_number` from the `trips` table by `event_date` when not supplied.
-
----
-
-### 38.9 Occurrence scale algorithm
-
-The Occurrence rating uses a **relative scale** — each mode's raw event count is ranked against all other enabled failure modes on the same vessel over the same window.
-
-1. Compute raw event counts for all enabled modes over the last N trips.
-2. Rank by count (ascending). Assign ratings 1–10 by percentile bucket:
-   - 0 events → `1` (always, regardless of percentile).
-   - Top 10% by count → `10`.
-   - Bottom decile (excluding 0-event modes) → `2`.
-   - Linear interpolation across deciles 2–9 for the rest.
-3. **Fixed-scale fallback** when fewer than 3 modes have any events:
-   - 0 events → `1`
-   - 1 event → `3`
-   - 2–3 events → `5`
-   - 4–6 events → `7`
-   - 7+ events → `9`
-
-   This prevents a single event making a mode appear as "10" by percentile alone in a sparse dataset.
-4. If `occurrence_override` is set for a mode, the override value is returned directly — no computation.
-
-Occurrence ratings shift between trips as the window slides; this is by design. Confidence indicators:
-- `trips_with_data < 2`: grey `(low data)` tag — "Fewer than 2 trips have occurrence data. This rating may not be stable."
-- `raw_count = 0`: display `O: 1` with dash indicator — no badge, no count shown.
-- `occurrence_override` set: display override value in amber with lock icon; tooltip shows override note.
-- Otherwise: rating followed by `(n=X, NT)` where N = raw count and T = window size in trips.
-
-**ISO 14224 reference codes** — fixed validated dropdown (subset of ISO 14224). Equipment classes: CE, COM, CR, EL, HE, HYD, INS, PI, PU, REF, TUR, VAL, VES, CON, FRZ, SEP, FIL. Failure codes: AIR, BRD, ELP, ELU, ERO, FCO, FOF, FOD, HIO, INL, LOO, NOI, OHE, PDE, PLU, SER, STD, UST, VIB, CON, LCP, OTH. Each option rendered as `{code} — {full designation}`; stored value is code only.
-
----
-
-### 38.10 Avg duration and MT impact
-
-`db:getFmeaOccurrence` and `db:getFmeaRpnSummary` compute average event duration and production impact alongside occurrence ratings.
-
-**avg_duration_seconds** — mean of `duration_seconds` across all occurrence events for the mode within the window, excluding null values. Null if no events have duration data.
-
-**avg_mt_impact** formula (for `plate_freezer` and `throughput` sections):
-```
-avg_mt_impact = avg_duration_seconds / 86400 × theoretical_mt_per_day
-```
-Null for `header`, `belt`, and `packing` sections (no theoretical MT formula). Also null if `avg_duration_seconds` is null or `theoretical_mt_per_day` is null.
-
-**`theoretical_mt_per_day` is always passed from the renderer** — it is read from `factoryconfig.production.line_sections` by `production.js` and passed in the IPC payload. The IPC handler never looks it up independently. The renderer builds `section_theoretical_rates: { [section_id]: theoretical_mt_per_day }` from the loaded factory config before calling `db:getFmeaRpnSummary`.
-
-On "Save FMEA Config", the console fetches `avg_duration_seconds` and `avg_mt_impact_per_event` for each mode from the current SQLite state and writes them as denormalised snapshots into `fmeaconfig.json` failure mode objects. They are always recomputed at display time.
-
----
-
-### 38.11 UI behaviour
-
-**FMEA tab** (Factory Production module: Overview · Today · Observations · OEE · **FMEA** · Setup)
-
-- **Section filter bar** — dropdown filtering by line section (default "All sections"); `+ Add failure mode` button (admin only) opens the modal.
-- **Failure-mode table columns:** Section · Asset Code · Label · Effects (truncated) · S · O · D · RPN · Avg Duration · Avg MT Impact · ISO Class · ISO Code · Actions (admin only).
-- **O column** — computed Occurrence with grey badge `(n=X, NT)`. Override: amber value with lock icon and override note tooltip.
-- **RPN column** — ≥ 200 red, 100–199 amber, < 100 green, null grey dash.
-- **Avg Duration** — formatted as `Xh Ym` or `Ym Zs`. Null displays as `—`.
-- **Avg MT Impact** — formatted as `X.X MT`. Null displays as `—`. Tooltip shows formula inputs.
-- **Actions:** edit (pencil) opens modal; eye icon toggles enabled/disabled with confirmation. No hard delete.
-- **Stat strip** (below table): Highest RPN mode (label + value), count of modes with RPN ≥ 200, current window in trips.
-- **Save FMEA Config button** (admin only): rebuilds `fmeaconfig.json` from SQLite (including `avg_duration_seconds` and `avg_mt_impact_per_event`), writes to OneDrive, saves snapshot, re-ingests, refreshes table.
-
-**Add / Edit modal fields:** Section (required), Asset (filtered to selected section's sub-assets), Label (required, max 100 chars), Effects, Current controls, Severity 1–10 (required), Detection 1–10 (required), ISO 14224 Equipment Class, ISO 14224 Failure Code, Occurrence override (admin only), Override note (required when override set), Enabled toggle.
-
-Modal saves go through `db:upsertFmeaFailureMode` immediately. **OneDrive is only written on the explicit "Save FMEA Config" action.**
-
-**Overview tab** — read-only **FMEA — Top Risks** widget: top 5 modes by RPN with S/O/D/RPN, header chip showing total mode count and count ≥ 200. Empty state links to FMEA tab.
-
-**PWA (factory only)** — `fmeaconfig.json` cached as `fw_fmeacfg`. On incident resolve, failure-mode dropdown appears (filtered by equipment `asset_code`; falls back to all enabled modes for the section). Always includes `Other / unsure`. Selecting `Other / unsure` reveals a required brief description field. `failure_mode_id` and `failure_mode_other_notes` written into the resolved incident object (§11). If `fmeaconfig.json` is unavailable, dropdown is skipped — incident resolution must never be blocked by FMEA unavailability.
-
----
-
-## §39 — Overall Equipment Effectiveness (OEE)
-
-**Status:** Built (v2.8)
-**File:** `src/renderer/js/production.js` (OEE tab embedded in Factory Production)
-**Screen key:** `factory-production` (OEE tab)
-**Nav group:** Factory
-**Permission gate:** `factory/production` — admin/standard for entry and report generation, observer read-only
-
----
-
-### 39.1 Overview
-
-A **Overall Equipment Effectiveness (OEE)** is a bounded time window of direct observation producing a reliability snapshot of the factory production line. Purpose: captures unreported failures and efficiency losses; compares structured observation against the continuous log baseline; enables time-bounded report generation. "Overall Equipment Effectiveness" (OEE) is the preferred term of art.
-
----
-
-### 39.2 Data storage
-
-Observations are stored in the `observations[]` array in per-user factory log files (schema_version 2). `capacity-{date}.json` is retired as a write target; legacy files remain readable. All observations are aggregated into `capacity_observations` SQLite via the ingest poller. OneDrive read → merge → write pattern is required — never overwrite a log file from local state alone.
-
----
-
-### 39.3 Observation object
-
-Full field reference: see §11 (Observation object fields).
-
-Key fields specific to OEE:
-- `source: "oee"` — all rows in a OEE session carry this value.
-- `oee_session_id` — UUID grouping all observations from one OEE submission. Null for non-OEE sources.
-- `failure_mode_id` — optional link to FMEA failure mode (§38).
-
----
-
-### 39.4 OEE session
-
-A OEE session is a batch of observations sharing a `oee_session_id` UUID. The UUID is generated at submit time and is immutable after submission. All rows in the session carry `source: "oee"`. Session metadata (start/end timestamps, section count, observation count) is derived from the observations themselves — there is no separate session header record.
-
-Sessions returned by `db:getOeeSessions` include:
-- `oee_session_id` — UUID
-- `session_start` — earliest `obs_timestamp` in the session
-- `session_end` — latest `obs_timestamp` in the session
-- `observation_count` — count of rows
-- `sections` — array of `section_label` values (from GROUP_CONCAT)
-
----
-
-### 39.5 PWA observation push
-
-**Factory department only** — Engine Room and Deck users see no change.
-
-- **"Log Observation" action** on the factory department home screen (icon button in topbar, hidden for non-factory departments).
-- **Form fields:** Section (dropdown from `factoryconfig.production.line_sections`), Rate (number, optional), Rate unit (conditional — hidden when no rate entered), Notes (textarea), Wind speed (knots, optional), Sea state (feet, optional).
-- **Submit:** builds observation object with `source: "pwa"`, `oee_session_id: null`, UUID generated locally.
-- **Online path:** `pushObservationToOneDrive` — loads remote log file (with localStorage cache fallback), initialises at schema_version 2 if absent, upserts by `obs_id`, writes back, updates cache.
-- **Offline queue:** on push failure, observation is appended to `fw_obs_queue_{username}` in localStorage. Queue is flushed on next successful write via `flushObservationQueue(username)`.
-- **Cache key:** `fw_log_{username}_{date}` for the local log file mirror.
-
----
-
-### 39.6 `capacity_observations` additions
-
-Columns added in v2.8 (safe migration via ALTER TABLE when absent; table rebuild if `observed_rate` has NOT NULL constraint):
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `failure_mode_id` | TEXT | Optional FMEA failure mode link. |
-| `oee_session_id` | TEXT | UUID grouping a OEE session. Null for non-OEE. |
-| `source_user` | TEXT | Username of the submitting user. |
-
-Index added: `CREATE INDEX IF NOT EXISTS idx_cap_obs_oee ON capacity_observations(oee_session_id);`
-
-`observed_rate` and `rate_unit` changed from NOT NULL to nullable to support qualitative (rate-free) observations.
-
----
-
-### 39.7 IPC handlers
-
-| Channel | Payload / args | Returns |
-|---------|---------------|---------|
-| `db:ingestObservationsFromLog` | `{ user, observations[] }` | `{ ok, count }` — upserts by `obs_id`; derives `obs_date` from `obs_timestamp` when absent |
-| `db:saveObservationsToLog` | `{ user, observations[] }` | `{ ok, count }` — alias for `ingestObservationsFromLog` |
-| `db:getCapacityObservations` | `{ obs_date?, section_id?, source_user?, source?, oee_session_id?, from_timestamp?, to_timestamp? }` | `capacity_observations[]` — dynamic WHERE clause |
-| `db:getOeeSessions` | `{ trip_number? }` | `oee_session[]` ordered by `session_start DESC` |
-| `db:generateRosReportPdf` | `{ report_data }` | `{ ok, path }` — main process only; lazy require puppeteer; Save dialog for final path |
-
----
-
-### 39.8 graph.js helpers
-
-| Function | Description |
-|----------|-------------|
-| `loadUserLogFile(username, dateStr)` | Reads `data/factory/logs/report-{dateStr}-{username}.json`. Returns null on 404. |
-| `saveUserLogFile(username, dateStr, data)` | Writes `data/factory/logs/report-{dateStr}-{username}.json`. |
-
----
-
-### 39.9 Report generator
-
-**Modal** accessible from the OEE tab and via "Generate Report for this Session" on a read-only session view.
-
-**Modal fields:** Time window (from/to datetime), source filter (`pwa` | `oee` | `manual` | all), section filter, incident inclusion toggle.
-
-**Data assembly:**
-1. Query `capacity_observations` within the window (filtered by source and section).
-2. If incident inclusion enabled: fetch all factory events (`db:getEvents({ dept: 'Factory', limit: 2000 })`), filter client-side by timestamp range.
-3. Compute section theoretical rates from `factoryconfig.production.line_sections`.
-4. Utilisation % per section: `sum(observed_rate × window_hours) / (theoretical_mt_per_day × report_window_hours) × 100`. Null for header/belt/packing sections.
-
-**Console report sections:**
-- Header block: vessel, date range, report generated-at, source filter applied.
-- Summary stat strip: total observations, OEE sessions, incidents included, avg observed rate.
-- Timeline: sorted by timestamp; coloured markers by source (orange=PWA, blue=OEE, grey=manual); incident span bars.
-- Observations table: timestamp, section, rate, unit, source badge, user, notes.
-- Incidents table: start, end, duration, equipment, category, FMEA mode, notes.
-- Section summary table: section, theoretical MT/day, observation count, avg observed rate, utilisation %.
-
-**PDF export:**
-- Main process only — never `require('puppeteer')` in the renderer.
-- Lazy `require('puppeteer')` with graceful error if not installed.
-- `puppeteer.launch({ headless: 'new' })`, `page.setContent(html)`, `page.pdf({ format: 'A4', printBackground: false, displayHeaderFooter: true })`.
-- PDF layout: white/print background; header/footer every page; timeline rendered as sorted table.
-- Temp file in `os.tmpdir()`, then `dialog.showSaveDialog` for final path; temp cleaned up after copy.
-
----
-
-### 39.10 UI behaviour
-
-**OEE tab layout:**
-- Left panel: session list (ordered by `session_start DESC`). Each row: date, time window, observation count, sections covered. Clicking selects the session.
-- Right panel: draft entry table (when no session selected) or read-only session view.
-
-**Draft entry table:**
-- Dynamic table of observation rows. Each row: timestamp (default now), section dropdown, asset code (optional free text), FMEA failure mode dropdown (optional, filtered by section), rate (optional), rate unit (conditional), notes.
-- `+ Add Row` button appends empty row. Rows can be removed individually.
-- **Submit:** validates at least one row; generates `oee_session_id` UUID; sets `source: "oee"` on all rows; calls `appendObservationsToLogFile` for the current user and date; ingests to SQLite via `db:ingestObservationsFromLog`; reloads session list; shows newly submitted session.
-
-**Read-only session view:**
-- Non-editable table of all observations in the session.
-- "Generate Report for this Session" pre-populates the report modal with `from = session_start`, `to = session_end`, `oee_session_id` filter.
-
-**Overview tab PWA observation overlay:**
-- Rate observations: orange filled circles at the correct time/rate position.
-- Qualitative observations (no rate): orange diamonds at the x-axis.
-- Hover tooltip: `[PWA] {section_label} — {observed_rate} {rate_unit} — {source_user} — {time}`.
-- Legend entry: `● PWA Observation`.
-
-**Observations tab enhancements:**
-- Source badges: `[PWA]` (amber) for `source: "pwa"`, `[OEE]` (blue) for `source: "oee"`, no badge for `source: "manual"`.
-- Filter bar gains source and user dropdowns.
-- When source filter = `oee`, rows are grouped by `oee_session_id` with a collapsible session header.
-- `source_user` column shows the submitting user's display name.
-- Manual console submissions use `appendObservationsToLogFile` pattern (OneDrive read → merge → write) rather than writing directly to legacy capacity files.
+The `item_id` is distinct from `asset_no` — if TM-Master renumbers an asset, the `item_id` remains the same (manual reconciliation required via console if a renumber occurs).

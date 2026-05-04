@@ -1,11 +1,5 @@
 # IDMS Schema Specification
-**Version 2.8 — F/V Araho**  
-v2.8 — OEE (Overall Equipment Effectiveness) module added (§39). Per-user factory log file gains `observations` array (schema_version 2). `capacity-{YYYY-MM-DD}.json` retired as a write target (legacy read retained). `capacity_observations` SQLite table gains `failure_mode_id`, `oee_session_id`, `source_user` columns. New IPC handlers: `db:ingestObservationsFromLog`, `db:saveObservationsToLog`, `db:getOeeSessions`, `db:generateRosReportPdf`. Factory Production gains OEE tab (§39) and report generator. PWA gains observation push for factory users. Overview tab gains PWA observation overlay.
-
-v2.7 — FMEA module added (§38). `fmeaconfig.json` introduced at `config/fmeaconfig.json`. Resolved incident object (§11) gains optional `failure_mode_id` and `failure_mode_other_notes` fields (Factory department only on the PWA). Three new SQLite tables: `fmea_failure_modes`, `fmea_occurrence_events`, `fmea_config_snapshots`. Seven new IPC handlers: `db:ingestFmeaConfig`, `db:saveFmeaConfigSnapshot`, `db:getFmeaFailureModes`, `db:getFmeaOccurrence`, `db:ingestFmeaOccurrenceEvents`, `db:getFmeaRpnSummary`, `db:upsertFmeaFailureMode`. graph.js helpers `loadFmeaConfig` / `saveFmeaConfig`. New `pollFmeaOccurrenceEvents()` pass in ingest.js (factory incidents + completed maintenance records). Factory Production gains a dedicated **FMEA tab** with a failure-mode registry, RPN display, occurrence-confidence indicators, and an add/edit modal whose Asset dropdown is filtered to the selected section's sub-assets. Sub-asset objects (§37) gain an `iso14224_equipment_class` field, settable in Setup and auto-populated into the FMEA modal on asset selection. Throughput-section MT/day calculation revised to bottleneck across series stages and sum within parallel stages (grouped by sub-asset `order`) instead of summing all sub-assets.
-
-v2.6 — Factory Production module §37 revised. `factoryconfig.json` production section restructured: pan specification (`pan_volume_l`, `pan_gross_weight_kg`, `pan_target_overpack_pct`) moved to production top-level (global, replaces per-section `pan_net_weight_kg`); `target_species` field added; line sections consolidated to 7 (removed Check Weigher, Label Applicator, Welding Machine; renamed Pan Ejectors → Pan Breaking, Bag Applicator → Case-Up, added Headers as distinct `header` type). Sub-assets gain arrangement topology fields (`arrangement`, `order`, `sub_order`, `ranking`). Type-specific sub-asset fields added per section type (plate_freezer: ops params; throughput: `pans_per_minute` per sub-asset; header: `belt_speed_ms`, `fish_per_minute` at section level; belt: `belt_speed_ms` per sub-asset; packing: `minutes_per_pan` per sub-asset). Three new IPC handlers: `db:getEquipmentGroups`, `db:getAssetChildren`, `db:searchAssetsByGroup`, `db:getDistinctFisheries`, `db:getProductionAvgByFishery`. Equipment list in `factoryconfig.json` updated (Breaking Station 1/2, Case Up, Conveyor Belts, Packing Stations).
-
+**Version 2.5 — F/V Araho**  
 v2.5 (update 2) — Factory Production module built (§37). New `production` section added to `factoryconfig.json` (schema_version 2) with 10 line sections for F/V Araho. Three new SQLite tables (`production_entries`, `capacity_observations`, `production_config_snapshots`), six new IPC handlers, OneDrive file paths `data/factory/production/production-state.json` and `data/factory/production/capacity-{date}.json`, graph.js helpers (`saveDeptConfig`, `loadProductionState`, `saveProductionState`, `loadCapacityLog`, `saveCapacityLog`, `graphMailFetch`), and production polling block in `ingest.js`. `production.js` status updated to Built in module table (§18).
 
 v2.5 — Equipment Setup screen split into two tabs: **Department Assignment** and **Group Assignment** (§10, §18). `equipmentconfig.json` gains an `order` field per department (highest order wins when an asset matches multiple departments, replacing comma-separated multi-assignment). A new `groups` array stores code-range section headers with auto-populated labels from `assets.csv` and resolved department tags; groups are displayed grouped by department with up/down/delete controls. SQLite gains an `equipment_groups` table; `equipment_assignments` gains a `dept_order` column. `equipment.js` updated to 2-tab layout in module table (§18).
@@ -58,8 +52,6 @@ v2.1 — Navigation restructure. Sidebar groups renamed and reorganised. Stabili
 34. [Messages](#34-messages)
 35. [KSA Profiles](#35-ksa-profiles)
 36. [Navigation & Weather](#36-navigation--weather)
-38. [FMEA Module](#38-fmea-module)
-39. [OEE Module](#39-oee-module)
 
 ---
 
@@ -84,7 +76,6 @@ Documents/IDMS/
 │   ├── crewconfig.json             ← Vessel crew registry (personnel, contact info, vessel assignment)
 │   ├── scheduleconfig.json         ← Approved crew rotation schedule (current year)
 │   ├── schedule_draft.json         ← Working draft schedule (editable, not crew-visible)
-│   ├── fmeaconfig.json             ← Factory production FMEA failure mode registry
 │   └── shells/
 │       ├── factoryshell.json       ← Factory module behaviour
 │       ├── engineshell.json        ← Engine Room module behaviour
@@ -93,10 +84,7 @@ Documents/IDMS/
 ├── data/
 │   ├── factory/
 │   │   ├── logs/                   ← report-{date}-{username}.json
-│   │   ├── reports/                ← report-factory-{YYYY-MM-DD}.json
-│   │   └── production/
-│   │       ├── production-state.json
-│   │       └── capacity-{YYYY-MM-DD}.json  ← LEGACY — read-only. Superseded by observations[] in per-user log files.
+│   │   └── reports/                ← report-factory-{YYYY-MM-DD}.json
 │   ├── engine/
 │   │   ├── logs/
 │   │   └── reports/
@@ -795,51 +783,32 @@ On every ingest triggered by Refresh or Save:
 **Written by:** Field PWA (on resolve and on 5-minute autosave)
 **Read by:** Field PWA (own file only); Console (all files, during ingestion)
 
-> **schema_version 2** (factory only) adds the `observations` array. schema_version 1 files (no `observations` field) remain valid — the console treats missing `observations` as an empty array. Engine Room and Deck log files remain at schema_version 1.
-
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "vessel": "F/V Araho",
-  "department": "Factory",
+  "department": "Engine Room",
   "user": "tploch",
   "user_id": "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
   "displayName": "Tyler Ploch",
   "role": "Chief Engineer",
-  "date": "2026-04-30",
-  "generated": "2026-04-30T14:32:00.000Z",
+  "date": "2026-04-20",
+  "generated": "2026-04-20T14:32:00.000Z",
+
   "active": [],
+
   "resolved": [
     {
       "id": 1713620000000,
-      "equipment": "Plate Freezer #1",
+      "equipment": "Main Engine",
       "category": "Mechanical fault",
-      "startTime": "2026-04-30T09:15:00.000Z",
-      "endTime":   "2026-04-30T09:44:00.000Z",
-      "duration":  1740,
+      "startTime": "2026-04-20T12:15:00.000Z",
+      "endTime": "2026-04-20T12:44:00.000Z",
+      "duration": 1740,
       "durationLabel": "29m 00s",
-      "notes": "Hydraulic pressure low. Topped up fluid, pressure restored.",
+      "notes": "Investigated oil pressure alarm. Topped up lube oil, alarm cleared.",
       "user": "tploch",
-      "displayName": "Tyler Ploch",
-      "failure_mode_id": "uuid-of-fmea-mode",
-      "failure_mode_other_notes": ""
-    }
-  ],
-  "observations": [
-    {
-      "obs_id":          "uuid-v4",
-      "obs_timestamp":   "2026-04-30T09:42:00.000Z",
-      "section_id":      "3e4a5f6b-7c8d-4e0f-a1b2-000000000001",
-      "section_label":   "Plate Freezers",
-      "asset_code":      null,
-      "observed_rate":   48.5,
-      "rate_unit":       "mt/day",
-      "failure_mode_id": null,
-      "notes":           "",
-      "source":          "pwa",
-      "oee_session_id":  null,
-      "wind_speed_kt":   null,
-      "sea_state_ft":    null
+      "displayName": "Tyler Ploch"
     }
   ]
 }
@@ -859,28 +828,6 @@ On every ingest triggered by Refresh or Save:
 | `notes`         | string  | Free text. May be empty string.                                  |
 | `user`          | string  | Username of the logging user.                                    |
 | `displayName`   | string  | Display name at time of logging.                                 |
-| `failure_mode_id`         | string \| null | Optional. UUID of selected FMEA mode. `"other"` if "Other / unsure" selected. Absent in schema_version 1 files — treat as null. Factory only. |
-| `failure_mode_other_notes`| string         | Notes entered when `failure_mode_id === "other"`. Empty string otherwise. Absent in schema_version 1 files — treat as empty string. Factory only. |
-
-### Observation object fields
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `obs_id` | string (UUID v4) | Upsert key on ingest. |
-| `obs_timestamp` | string | ISO 8601 UTC. When the observation was made. |
-| `section_id` | string | References `section_id` in `factoryconfig.production.line_sections`. |
-| `section_label` | string | Denormalised for display. |
-| `asset_code` | string \| null | Optional. Asset register code if scoped to a specific asset. |
-| `observed_rate` | number \| null | Null for qualitative-only observations. |
-| `rate_unit` | string \| null | `"mt/day"` \| `"pans/min"` \| `"cases/hr"`. Null if no rate. |
-| `failure_mode_id` | string \| null | Optional link to FMEA failure mode. |
-| `notes` | string | Free text. |
-| `source` | string | `"pwa"` \| `"manual"` \| `"oee"` |
-| `oee_session_id` | string \| null | UUID grouping all observations from one OEE submission. Null for non-OEE. |
-| `wind_speed_kt` | number \| null | Optional. |
-| `sea_state_ft` | number \| null | Optional. |
-
-> **Factory only.** The `observations` array is present only in factory department log files.
 
 **Note on field naming:** Production log files use camelCase (`startTime`, `endTime`, `duration`, `durationLabel`, `displayName`). The console ingestion layer normalises both camelCase and snake_case forms — both are accepted. New tooling should write camelCase to remain consistent with the PWA.
 
@@ -4156,7 +4103,7 @@ Skill categories defined in Config → Crew Setup.
 
 ## §37 — Factory Production Module
 
-**Status:** Built (v2.6)  
+**Status:** Built (v2.5)  
 **File:** `src/renderer/js/production.js`  
 **Screen key:** `factory-production`  
 **Nav group:** Factory  
@@ -4166,7 +4113,7 @@ Skill categories defined in Config → Crew Setup.
 
 ### 37.1 Overview
 
-The Factory Production module tracks daily midnight-MT production figures, capacity observations from factory equipment, and line section theoretical throughput. It is a 5-tab screen: **Overview**, **Today**, **Observations**, **OEE**, and **Setup**.
+The Factory Production module tracks daily midnight-MT production figures, capacity observations from factory equipment, and line section theoretical throughput. It is a 4-tab screen: **Overview**, **Today**, **Observations**, and **Setup**.
 
 ---
 
@@ -4177,9 +4124,8 @@ All paths are relative to `Documents/IDMS/` (the `ONEDRIVE_BASE` constant in `gr
 | File | Path | Description |
 |------|------|-------------|
 | Production state | `data/factory/production/production-state.json` | Trip-scoped daily MT entries |
-| ~~Capacity log~~ | ~~`data/factory/production/capacity-{YYYY-MM-DD}.json`~~ | **LEGACY** — read-only. Observations now written to per-user log files. |
-| Factory config | `config/factoryconfig.json` | Vessel config; `production` section (schema_version 2) |
-| FMEA config | `config/fmeaconfig.json` | Vessel FMEA failure mode registry |
+| Capacity log (per day) | `data/factory/production/capacity-{YYYY-MM-DD}.json` | Hourly capacity observations for one date |
+| Factory config | `config/factoryconfig.json` | Vessel config; gains `production` section (schema_version 2) |
 
 ---
 
@@ -4242,171 +4188,59 @@ All paths are relative to `Documents/IDMS/` (the `ONEDRIVE_BASE` constant in `gr
 
 ### 37.5 factoryconfig.json — production section (schema_version 2)
 
-The `production` block lives inside `factoryconfig.json` alongside the `equipment` and `categories` arrays. The outer `schema_version` (integer 2) governs the overall factoryconfig structure.
-
-#### 37.5.1 Top-level production fields
-
 ```json
 {
+  "schema_version": 2,
   "production": {
     "reset_time":              "00:00",
-    "target_species":          null,
     "trip_capacity_mt":        null,
     "species_baseline_avg_mt": null,
-    "pan_volume_l":            null,
-    "pan_gross_weight_kg":     null,
-    "pan_target_overpack_pct": null,
     "email_subject_filter":    "Daily Production Report",
     "email_source_address":    null,
     "bottleneck_mt_per_day":   null,
-    "line_sections":           []
+    "pan_net_weight_kg_ref":   null,
+    "line_sections": [
+      {
+        "section_id":              "3e4a5f6b-7c8d-4e0f-a1b2-000000000001",
+        "label":                   "Plate Freezers",
+        "type":                    "plate_freezer",
+        "asset_codes":             [],
+        "enabled":                 true,
+        "freeze_cycle_minutes":    null,
+        "pans_per_freeze":         null,
+        "pan_net_weight_kg":       null,
+        "theoretical_mt_per_day":  null
+      }
+    ]
   }
 }
 ```
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `reset_time` | string `"HH:MM"` | Daily midnight reset time (local vessel time). |
-| `target_species` | string \| null | Selected fishery/species for baseline comparison. Populated from distinct `fishery_target` values in the `trips` table. |
-| `trip_capacity_mt` | number \| null | Full trip hold capacity in metric tonnes. Used for Trip Capacity % stat. |
-| `species_baseline_avg_mt` | number \| null | Manually confirmed or auto-populated average daily production (MT) for the selected species, drawn from historical daily logs. |
-| `pan_volume_l` | number \| null | Pan internal volume in litres. Used to derive density. |
-| `pan_gross_weight_kg` | number \| null | Pan gross fill weight in kg (pan + ice + product at full fill). |
-| `pan_target_overpack_pct` | number \| null | Percentage of gross weight that is overpack. Net weight = gross × (1 − overpack/100). |
-| `email_subject_filter` | string | Substring matched against email subjects when fetching DPR emails. |
-| `email_source_address` | string \| null | Shared mailbox address for DPR email ingestion. |
-| `bottleneck_mt_per_day` | number \| null | Auto-calculated: minimum `theoretical_mt_per_day` across all enabled sections (null sections excluded). Written back on each Setup save. |
+**Section types:**
 
-**Pan derived values (computed in UI, not stored):**
+| type | Theoretical formula | Fields required |
+|------|---------------------|-----------------|
+| `plate_freezer` | `(1440 / cycle_min) × pans_per_freeze × pan_kg / 1000` | `freeze_cycle_minutes`, `pans_per_freeze`, `pan_net_weight_kg` (or `pan_net_weight_kg_ref`) |
+| `throughput` | `pans_per_minute × 1440 × pan_kg / 1000` | `pans_per_minute`, `pan_net_weight_kg` (or ref) |
+| `belt` | null (no formula) | — |
+| `packing` | null (no formula) | — |
 
-| Derived value | Formula |
-|---------------|---------|
-| Density (kg/L) | `pan_gross_weight_kg / pan_volume_l` |
-| Net weight (kg) | `pan_gross_weight_kg × (1 − pan_target_overpack_pct / 100)` |
+**Bottleneck:** minimum `theoretical_mt_per_day` across all sections; null values excluded from the minimum. Stored in `production.bottleneck_mt_per_day` and written back to OneDrive on each Setup save.
 
----
-
-#### 37.5.2 Line section object
-
-```json
-{
-  "section_id":              "3e4a5f6b-7c8d-4e0f-a1b2-000000000001",
-  "label":                   "Plate Freezers",
-  "type":                    "plate_freezer",
-  "equipment_group_code":    null,
-  "equipment_subgroup_code": null,
-  "sub_assets":              [],
-  "enabled":                 true,
-  "theoretical_mt_per_day":  null
-}
-```
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `section_id` | string (UUID) | Stable identifier. Never changes once created. |
-| `label` | string | Display name shown in Setup and Observations. |
-| `type` | string | One of: `plate_freezer`, `header`, `throughput`, `belt`, `packing`. |
-| `equipment_group_code` | string \| null | Asset register group code. Scopes asset search for sub-asset assignment. |
-| `equipment_subgroup_code` | string \| null | Sub-group code within the group. Further scopes asset search. |
-| `sub_assets` | array | Sub-asset objects (see §37.5.3). Empty until configured. |
-| `enabled` | boolean | If false, section is excluded from bottleneck calculation and UI display. |
-| `theoretical_mt_per_day` | number \| null | Auto-calculated and stored on each Setup save. null for belt/packing sections. |
-
-**Type-specific section-level fields (additional, only present on the relevant type):**
-
-| Type | Extra field | Type | Notes |
-|------|-------------|------|-------|
-| `header` | `belt_speed_ms` | number \| null | Belt speed in metres per second (section level). |
-| `header` | `fish_per_minute` | number \| null | Fish processing rate (section level). |
-
----
-
-#### 37.5.3 Sub-asset object
-
-Every sub-asset carries a common base set of fields regardless of section type. Type-specific fields are additional.
-
-**Base fields (all types):**
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | string (UUID) | Stable identifier generated on add. |
-| `label` | string | Free-text name (e.g. "PF #1", "Station A"). |
-| `asset_code` | string \| null | Asset register code from `assets.csv`. |
-| `asset_name` | string \| null | Asset display name from `assets.csv`. |
-| `arrangement` | string | One of: `"series"`, `"parallel"`, `"series_parallel"`. |
-| `order` | integer \| null | Position in the section's processing sequence. |
-| `sub_order` | integer \| null | Series/Parallel group number. Only used when `arrangement = "series_parallel"`. Groups with the same `sub_order` run in parallel; groups run in series by ascending `sub_order`. |
-| `ranking` | integer \| null | Priority rank within a `sub_order` group. Only used when `arrangement = "series_parallel"`. Lower rank = higher priority within the group. |
-
-**Arrangement topology rules:**
-
-| Arrangement | Behaviour on failure |
-|-------------|----------------------|
-| `series` | All units in the section halt. Full theoretical MT loss. |
-| `parallel` | Only the failed unit's share of theoretical MT is deducted. Other units continue. |
-| `series_parallel` | Units sharing a `sub_order` are parallel; `sub_order` groups are in series. A failure in any unit in a group halts that group. Loss = that group's share. |
-
-**Type-specific sub-asset fields:**
-
-| Section type | Field | Type | Notes |
-|--------------|-------|------|-------|
-| `plate_freezer` | `no_of_plates` | integer \| null | Number of plates in the freezer. |
-| `plate_freezer` | `pans_per_plate` | number \| null | Pans per plate per freeze cycle. |
-| `plate_freezer` | `freeze_cycle_minutes` | number \| null | Duration of one freeze cycle in minutes. |
-| `plate_freezer` | `defrost_minutes` | number \| null | Duration of defrost cycle in minutes (optional). |
-| `plate_freezer` | `time_between_defrosts_hours` | number \| null | Hours of run time between defrosts (optional). |
-| `throughput` | `pans_per_minute` | number \| null | Processing rate in pans per minute. |
-| `belt` | `belt_speed_ms` | number \| null | Belt speed in metres per second. |
-| `packing` | `minutes_per_pan` | string \| null | Free-text packing rate, e.g. `"4–6 min"`. |
-
----
-
-#### 37.5.4 Section types and theoretical MT formulae
-
-| Type | Theoretical formula | Notes |
-|------|---------------------|-------|
-| `plate_freezer` | Sum across sub-assets: `cyclesPerDay × no_of_plates × pans_per_plate × netKg / 1000` | `cyclesPerDay` = `1440 / freeze_cycle_minutes` (simple) or, when defrost is configured: `floor(runMin / freeze_cycle_minutes) × (1440 / (runMin + defrost_minutes))` where `runMin = time_between_defrosts_hours × 60`. `netKg` = global pan net weight. |
-| `throughput` | Sum across sub-assets: `pans_per_minute × 1440 × netKg / 1000` | `netKg` = global pan net weight. |
-| `header` | null (no formula) | Belt speed and fish/min are informational only. |
-| `belt` | null (no formula) | Belt speed per sub-asset is informational only. |
-| `packing` | null (no formula) | Minutes per pan is informational only. |
-
-**Global pan net weight:** `netKg = pan_gross_weight_kg × (1 − pan_target_overpack_pct / 100)`. Null if either input is null.
-
-**Bottleneck:** minimum `theoretical_mt_per_day` across all enabled sections where the value is not null. Stored in `production.bottleneck_mt_per_day` on each Setup save.
-
----
-
-#### 37.5.5 Pre-configured section UUIDs for F/V Araho
+**Pre-configured section UUIDs for F/V Araho:**
 
 | section_id | label | type |
-|------------|-------|------|
-| `3e4a5f6b-7c8d-4e0f-a1b2-000000000001` | Plate Freezers | `plate_freezer` |
-| `3e4a5f6b-7c8d-4e0f-a1b2-000000000002` | Headers | `header` |
-| `3e4a5f6b-7c8d-4e0f-a1b2-000000000003` | Pan Breaking | `throughput` |
-| `3e4a5f6b-7c8d-4e0f-a1b2-000000000004` | Case-Up | `throughput` |
-| `3e4a5f6b-7c8d-4e0f-a1b2-000000000005` | Conveyor Belts | `belt` |
-| `3e4a5f6b-7c8d-4e0f-a1b2-000000000006` | Packing Station | `packing` |
-| `3e4a5f6b-7c8d-4e0f-a1b2-000000000007` | Back Line | `belt` |
-
----
-
-#### 37.5.6 factoryconfig.json — equipment list (F/V Araho)
-
-```json
-{
-  "equipment": [
-    { "group": "Freezing",            "items": ["Plate Freezer #1", "Plate Freezer #2", "Plate Freezer #3", "Plate Freezer #4", "Plate Freezer #5"] },
-    { "group": "Breaking & Case Up",  "items": ["Breaking Station 1", "Breaking Station 2", "Case Up"] },
-    { "group": "Back Line & Packing", "items": ["Back Line", "Header #1", "Header #2", "Packing Stations"] },
-    { "group": "General",             "items": ["Conveyor Belts", "Air Compressor", "Forklift"] }
-  ],
-  "presets_default": [
-    { "equipment": "Plate Freezer #1",   "category": "Mechanical jam", "label": "PLATE FREEZER JAM"   },
-    { "equipment": "Breaking Station 1", "category": "Mechanical jam", "label": "BREAKING STATION JAM" }
-  ]
-}
-```
+|-----------|-------|------|
+| `3e4a5f6b-7c8d-4e0f-a1b2-000000000001` | Plate Freezers | plate_freezer |
+| `3e4a5f6b-7c8d-4e0f-a1b2-000000000002` | Headers | throughput |
+| `3e4a5f6b-7c8d-4e0f-a1b2-000000000003` | Pan Ejectors | throughput |
+| `3e4a5f6b-7c8d-4e0f-a1b2-000000000004` | Bag Applicator | throughput |
+| `3e4a5f6b-7c8d-4e0f-a1b2-000000000005` | Check Weigher | throughput |
+| `3e4a5f6b-7c8d-4e0f-a1b2-000000000006` | Label Applicator | throughput |
+| `3e4a5f6b-7c8d-4e0f-a1b2-000000000007` | Welding Machine | throughput |
+| `3e4a5f6b-7c8d-4e0f-a1b2-000000000008` | Conveyor Belt | belt |
+| `3e4a5f6b-7c8d-4e0f-a1b2-000000000009` | Packing Station | packing |
+| `3e4a5f6b-7c8d-4e0f-a1b2-00000000000a` | Back Line | belt |
 
 ---
 
@@ -4439,21 +4273,17 @@ CREATE TABLE IF NOT EXISTS capacity_observations (
   obs_timestamp    TEXT NOT NULL,
   section_id       TEXT NOT NULL,
   section_label    TEXT NOT NULL,
-  observed_rate    REAL,
-  rate_unit        TEXT,
-  operator         TEXT NOT NULL DEFAULT '',
+  observed_rate    REAL NOT NULL,
+  rate_unit        TEXT NOT NULL,
+  operator         TEXT NOT NULL,
   wind_speed_kt    REAL,
   sea_state_ft     REAL,
   notes            TEXT DEFAULT '',
   source           TEXT NOT NULL DEFAULT 'pwa',
-  failure_mode_id  TEXT,
-  oee_session_id   TEXT,
-  source_user      TEXT,
   ingested_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_cap_obs_date    ON capacity_observations(obs_date);
 CREATE INDEX IF NOT EXISTS idx_cap_obs_section ON capacity_observations(section_id, obs_date);
-CREATE INDEX IF NOT EXISTS idx_cap_obs_oee     ON capacity_observations(oee_session_id);
 ```
 
 #### production_config_snapshots
@@ -4474,74 +4304,22 @@ CREATE TABLE IF NOT EXISTS production_config_snapshots (
 
 All handlers are synchronous (better-sqlite3). Registered in `main.js`.
 
-#### Core production handlers
-
 | Channel | Payload / args | Returns |
 |---------|---------------|---------|
 | `db:ingestProductionState` | `{ trip_number, daily_entries[] }` | `{ ok, count }` |
 | `db:ingestCapacityLog` | `{ obs_date, observations[] }` | `{ ok, count }` |
 | `db:getProductionEntries` | `{ trip_number }` | `production_entries[]` ordered by `entry_date ASC` |
-| `db:getCapacityObservations` | `{ obs_date?, section_id? }` | `capacity_observations[]`. Accepts additional optional filters: `source_user`, `source`, `oee_session_id`, `from_timestamp`, `to_timestamp`. |
+| `db:getCapacityObservations` | `{ obs_date?, section_id? }` | `capacity_observations[]` |
 | `db:saveProductionConfig` | `{ snapshot_date, trip_number?, config_json }` | `{ ok }` |
 | `db:getLatestProductionConfig` | — | Most recent `production_config_snapshots` row, or null |
-| `db:ingestObservationsFromLog` | `{ user, observations[] }` | `{ ok, count }` |
-| `db:saveObservationsToLog` | `{ user, observations[] }` | `{ ok, count }` |
-| `db:getOeeSessions` | `{ trip_number? }` | `oee_session[]` ordered by `session_start DESC` |
-| `db:generateRosReportPdf` | `{ report_data }` | `{ ok, path }` |
 
 **Upsert keys:**
 - `production_entries`: `(trip_number, entry_date)`
 - `capacity_observations`: `obs_id`
 
-#### Asset group / sub-asset lookup handlers
-
-| Channel | Payload / args | Returns |
-|---------|---------------|---------|
-| `db:getEquipmentGroups` | `{ dept? }` (optional department filter) | `equipment_groups[]` — each row: `{ code, label, dept, … }` |
-| `db:getAssetChildren` | `parentCode` (string) | Array of child group objects `{ code, name }` for the given parent group code |
-| `db:searchAssetsByGroup` | `query` (string), `groupCode` (string), `limit` (integer, default 30) | `assets[]` matching the query within the specified group scope |
-
-#### Species baseline handlers
-
-| Channel | Payload / args | Returns |
-|---------|---------------|---------|
-| `db:getDistinctFisheries` | — | `string[]` — distinct `fishery_target` values from `trips` table, alphabetically sorted, excluding null/empty |
-| `db:getProductionAvgByFishery` | `fishery` (string) | `number \| null` — average daily production (MT/day) across all closed trips with the matching `fishery_target`. Seed-import trips use `prod_avg_day_mt` from the notes field (or `total_prod_mt / days_at_sea` as fallback). Live trips use `total_prod_mt / log_days`. Returns null if no usable data. |
-
 ---
 
-### 37.8 preload.js bindings
-
-All production-related bindings exposed via `contextBridge` under `window.idms.db`:
-
-```javascript
-// Core production
-ingestProductionState:     (payload) => ipcRenderer.invoke('db:ingestProductionState', payload),
-ingestCapacityLog:         (payload) => ipcRenderer.invoke('db:ingestCapacityLog', payload),
-getProductionEntries:      (opts)    => ipcRenderer.invoke('db:getProductionEntries', opts),
-getCapacityObservations:   (opts)    => ipcRenderer.invoke('db:getCapacityObservations', opts),
-saveProductionConfig:      (payload) => ipcRenderer.invoke('db:saveProductionConfig', payload),
-getLatestProductionConfig: ()        => ipcRenderer.invoke('db:getLatestProductionConfig'),
-
-// Asset group lookups
-getEquipmentGroups:  (opts)                    => ipcRenderer.invoke('db:getEquipmentGroups', opts),
-getAssetChildren:    (parentCode)              => ipcRenderer.invoke('db:getAssetChildren', parentCode),
-searchAssetsByGroup: (query, groupCode, limit) => ipcRenderer.invoke('db:searchAssetsByGroup', query, groupCode, limit),
-
-// Species baseline
-getDistinctFisheries:      ()        => ipcRenderer.invoke('db:getDistinctFisheries'),
-getProductionAvgByFishery: (fishery) => ipcRenderer.invoke('db:getProductionAvgByFishery', fishery),
-
-// Observations & OEE
-ingestObservationsFromLog: (payload) => ipcRenderer.invoke('db:ingestObservationsFromLog', payload),
-saveObservationsToLog:     (payload) => ipcRenderer.invoke('db:saveObservationsToLog', payload),
-getOeeSessions:            (opts)    => ipcRenderer.invoke('db:getOeeSessions', opts),
-generateRosReportPdf:      (payload) => ipcRenderer.invoke('db:generateRosReportPdf', payload),
-```
-
----
-
-### 37.9 graph.js helpers
+### 37.8 graph.js helpers
 
 Added to `src/renderer/js/graph.js`:
 
@@ -4550,17 +4328,13 @@ Added to `src/renderer/js/graph.js`:
 | `saveDeptConfig(deptKey, cfg)` | Writes `config/{deptKey}config.json` to OneDrive |
 | `loadProductionState()` | Reads `data/factory/production/production-state.json` |
 | `saveProductionState(state)` | Writes `production-state.json` |
-| `loadCapacityLog(dateStr)` | Reads `capacity-{dateStr}.json` (legacy read) |
-| `saveCapacityLog(dateStr, data)` | Writes `capacity-{dateStr}.json` (legacy; no longer used for new observations) |
+| `loadCapacityLog(dateStr)` | Reads `capacity-{dateStr}.json` |
+| `saveCapacityLog(dateStr, data)` | Writes `capacity-{dateStr}.json` |
 | `graphMailFetch(url)` | GET request to any Graph API URL with Bearer auth; throws `err.status = 403` on Access Denied |
-| `loadUserLogFile(username, dateStr)` | Reads `data/factory/logs/report-{dateStr}-{username}.json`. Returns null on 404. |
-| `saveUserLogFile(username, dateStr, data)` | Writes `data/factory/logs/report-{dateStr}-{username}.json`. |
-| `loadFmeaConfig()` | Reads `config/fmeaconfig.json`. Returns null on 404. |
-| `saveFmeaConfig(cfg)` | Writes `config/fmeaconfig.json`. |
 
 ---
 
-### 37.10 Ingest poller additions
+### 37.9 Ingest poller additions
 
 `pollNow()` in `ingest.js` calls `pollProductionData(todayStr)` each cycle.
 
@@ -4571,7 +4345,7 @@ Added to `src/renderer/js/graph.js`:
 
 ---
 
-### 37.11 Email ingestion
+### 37.10 Email ingestion
 
 On the Overview tab, admin/standard users see a **Fetch from DPR Email** panel.
 
@@ -4599,520 +4373,43 @@ GET https://graph.microsoft.com/v1.0/users/{email_source_address}/mailFolders/in
 
 ---
 
-### 37.12 Weighted rolling average
+### 37.11 Weighted rolling average
 
 Used in the Overview tab chart (dashed green line) and stat cards.
 
 - **Day 1:** `(species_baseline_avg_mt × 10 + actual_mt) / 11`
 - **Day N > 1:** mean of all entries for the trip
 
-`species_baseline_avg_mt` is configured in Setup → Production Settings. It is auto-populated when the user selects a Target Species — the console fetches the historical average via `db:getProductionAvgByFishery` and writes it into the baseline field. The user can then confirm or override the value before saving.
+`species_baseline_avg_mt` is configured in Setup → Production Settings.
 
 ---
 
-### 37.13 UI behaviour
+### 37.12 UI behaviour
 
 **Tab: Overview**
 - Stat strip: Trip Total, Days Recorded, Last Day, Weighted Avg, Bottleneck, Trip Capacity % (if configured)
 - Canvas chart: bars = actual MT per day; dashed green line = weighted rolling average; solid purple line = cumulative total; dashed orange line = bottleneck ceiling
 - Email fetch panel (admin/standard only): inline, not modal
-- **PWA observation overlay:** PWA-sourced observations for the current date are plotted as an additive overlay on the canvas chart. Rate observations appear as orange filled circles at the correct time/rate position. Qualitative observations (no rate) appear as orange diamonds at the x-axis. Hover tooltip shows: `[PWA] {section_label} — {observed_rate} {rate_unit} — {operator} — {time}`. Legend entry: `● PWA Observation`.
 
 **Tab: Today**
 - Canvas 24-hour chart: orange background bars = theoretical ceiling per hour; blue dots = observed rates per hour bucket; solid green dashed line = daily average; orange dashed line = bottleneck/24
 - Observation list below chart
 
 **Tab: Observations**
-- Filter bar: section dropdown, date-from, date-to, source dropdown, user dropdown, clear button
-- Table: date, time, section, rate, unit, source user, notes
-- Source badges: `[PWA]` (amber) for `source: "pwa"`, `[OEE]` (blue) for `source: "oee"`, no badge for `source: "manual"`.
-- When source filter = OEE, rows are grouped by `oee_session_id` with a collapsible session header.
-- `source_user` column shows the submitting user's display name.
-- Add Observation form (admin/standard only): section, rate (optional), unit, timestamp, wind, sea state, notes
-- Submitting: uses `appendObservationsToLogFile` pattern (OneDrive read → merge → write to per-user log file) rather than writing to legacy capacity files.
-
-**Tab: OEE**
-- Batch observation entry interface for structured reliability observation studies. Users add observation rows (time, section, asset code, FMEA failure mode, rate, notes) in a dynamic table, then submit as a named session. All rows in a session share a `oee_session_id` UUID generated at submit time and immutable thereafter. Submitted sessions are listed in a session panel; selecting a session shows its observations read-only with a "Generate Report for this Session" shortcut. See §39 for full documentation.
-
-**Report generator**
-- Modal accessible from the OEE tab. Accepts a time window (from/to datetime), source filter, section filter, and incident inclusion toggle. Generates from `capacity_observations` and resolved incidents within the window. Console view includes: header block, summary stat strip, timeline (coloured markers by source, incident span bars), observations table, incidents table, section summary table with utilisation %. PDF export via puppeteer (main process only — never import puppeteer in renderer). See §39 for full documentation.
+- Filter bar: section dropdown, date-from, date-to, clear button
+- Table: date, time, section, rate, unit, operator, notes
+- Add Observation form (admin/standard only): section, rate, unit, timestamp, wind, sea state, notes
+- Submitting: writes to `capacity-{date}.json` on OneDrive, then ingests to SQLite
 
 **Tab: Setup**
-- Collapsible cards: Production Settings, Email Settings, Line Sections (one card per section)
-- **Production Settings card:** Target Species dropdown (auto-populates Species Baseline Avg MT/day from historical logs on selection), Trip Capacity, Species Baseline Avg MT/day (editable override), global Pan Specification block (Pan Volume, Gross Weight, Target Overpack %; derived Density and Net Weight displayed read-only)
-- **Line section card:** shows section type badge, current theoretical MT/day, Group / Sub-group asset scope selectors, sub-asset list with inline add/remove
-- **Sub-asset row fields:** label, asset code autocomplete, Arrangement dropdown (Series / Parallel / Series_Parallel), Order, Sub-order (visible for series_parallel only), Ranking (visible for series_parallel only), **ISO 14224 Equipment Class dropdown** (validated list — feeds the FMEA modal as a default; see §38), plus type-specific fields (see §37.5.3)
-- Save button writes `factoryconfig.json` to OneDrive, recalculates theoretical MT and bottleneck, saves config snapshot to SQLite
+- Three collapsible cards: Production Settings, Email Settings, Line Sections
+- Each line section card shows type, current theoretical MT/day, input fields (type-dependent), asset tag list
+- Save button per section: recalculates theoretical MT, recalculates bottleneck, writes `factoryconfig.json` to OneDrive, saves config snapshot to SQLite
 - Bottleneck indicator: displays limiting section label and MT/day value
 - All writes are admin-only; standard/observer see read-only view
-
-**Tab: FMEA** — see §38. Sourced from `fmeaconfig.json`; failure-mode registry is scoped to factory line sections only. FMEA card is read-only for operational data — it is an analytics view, not a data entry point.
-
-**Throughput-section MT/day calculation (revised v2.7).** For sections of `type: "throughput"`, MT/day is no longer the sum of all sub-asset throughputs. Sub-assets are grouped by `order` (each distinct `order` is a series stage); within a stage their capacities sum (parallel redundancy); across stages the section is bottlenecked by the slowest stage. Sub-assets with no `order` and `arrangement: "parallel"` share an implicit single stage; series sub-assets without `order` each become their own stage.
 
 **Error guards:**
 - If `factoryconfig.production` is absent: display "not configured" banner
 - If 403 on mail API: display specific "Access denied" message
 - Null `bottleneck_mt_per_day`: display `—`
-- Null `theoretical_mt_per_day` for header/belt/packing sections: display `—`, excluded from bottleneck calculation
-- Autocomplete dropdowns: `position: absolute` — ancestor elements must not carry `overflow: hidden` (would clip the dropdown regardless of z-index)
-
----
-
-## §38 — FMEA Module
-
-**Status:** Built (v2.7)
-**File:** `src/renderer/js/production.js` (FMEA card embedded in Factory Production Setup tab)
-**Screen key:** `factory-production` (Setup tab)
-**Nav group:** Factory
-**Permission gate:** `factory/production` — admin for writes, standard/observer read-only
-
----
-
-### 38.1 Overview
-
-Level 2 Failure Mode and Effects Analysis scoped to the **factory production line only**. Not vessel-wide. The feature does not generate tasks, integrate with TM-Master, or touch any module outside Factory Production.
-
-Each failure mode carries Severity (S), Occurrence (O), and Detection (D) ratings on the standard 1–10 scale; RPN = S × O × D. Severity and Detection are manually rated by the Chief Engineer / admin. **Occurrence is empirical** — computed from the frequency at which each mode is tagged on resolved factory incidents and completed maintenance records over a rolling window of the last N trips (default N = 5; configurable per vessel).
-
-The registry source-of-truth is `fmeaconfig.json` on OneDrive. SQLite mirrors the registry plus a derived `fmea_occurrence_events` table built from log files by the ingest poller. RPN and Occurrence are recomputed live at query time; values written into `fmeaconfig.json` are denormalised snapshots only. FMEA card is read-only for operational data — it is an analytics view, not a data entry point.
-
-ISO 14224 hybrid taxonomy: vessel-specific labels with optional ISO equipment class and failure codes. No hard deletes — use `enabled = 0`. Graceful degradation: if `fmeaconfig.json` is absent, FMEA tab renders empty state with an "Initialise FMEA Registry" button.
-
----
-
-### 38.2 OneDrive file location
-
-`Documents/IDMS/config/fmeaconfig.json` — independent per vessel, admin-only for writes. The PWA reads it (cached as `fw_fmeacfg`) for the failure-mode dropdown on incident resolve; the PWA never writes it.
-
----
-
-### 38.3 fmeaconfig.json
-
-**Location:** `Documents/IDMS/config/fmeaconfig.json`
-
-**Access:** Admin-only for writes. Standard / Observer tiers see the FMEA tab read-only. The PWA reads it (cached as `fw_fmeacfg`) for the failure-mode dropdown on incident resolve; the PWA never writes it.
-
-```json
-{
-  "schema_version": 1,
-  "vessel": "F/V Araho",
-  "occurrence_window_trips": 5,
-  "failure_modes": [
-    {
-      "mode_id": "uuid-v4",
-      "section_id": "3e4a5f6b-7c8d-4e0f-a1b2-000000000001",
-      "section_label": "Plate Freezers",
-      "asset_code": "310.001.001.001",
-      "label": "Hydraulic seal leak",
-      "effects": "Freezer pressure loss; section throughput reduced or halted.",
-      "current_controls": "Daily visual inspection during rounds.",
-      "severity": 7,
-      "occurrence": null,
-      "detection": 5,
-      "rpn": null,
-      "occurrence_override": null,
-      "occurrence_override_note": "",
-      "avg_duration_seconds": null,
-      "avg_mt_impact_per_event": null,
-      "iso14224_equipment_class": "HE",
-      "iso14224_failure_code": "ELP",
-      "enabled": true,
-      "created_at": "2026-04-30T10:00:00.000Z",
-      "updated_at": "2026-04-30T10:00:00.000Z"
-    }
-  ],
-  "changelog": [
-    { "version": 1, "date": "2026-04-30", "note": "Initial FMEA registry." }
-  ],
-  "last_saved_at": "2026-05-01T18:42:00.000Z"
-}
-```
-
-#### Top-level fields
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `schema_version` | integer | Increment when the structure changes. Currently `1`. |
-| `vessel` | string | Vessel display name. |
-| `occurrence_window_trips` | integer | Number of most-recent trips used for Occurrence calculation. Default `5`. Configurable per vessel. |
-| `failure_modes` | array | All failure-mode entries for this vessel's production line. |
-| `changelog` | array | Free-form change history for the registry. |
-| `last_saved_at` | string | ISO 8601 UTC timestamp of the last save. Written by the console on save. |
-
-#### Failure-mode object fields
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `mode_id` | string (UUID v4) | Stable identifier. Generated by the console; never changes once created. |
-| `section_id` | string (UUID) | References a `section_id` in `factoryconfig.json → production.line_sections`. Must match one of the 7 pre-configured Araho UUIDs. |
-| `section_label` | string | Denormalised label for display without joining to factoryconfig. |
-| `asset_code` | string \| null | Asset register code. Primary linkage between failure modes, incident logs, and maintenance records. May be null when the mode applies to the section as a whole rather than a specific asset. |
-| `label` | string | Human-readable failure-mode name. Vessel-specific. Max 100 chars. E.g. `"Hydraulic seal leak"`. |
-| `effects` | string | Description of what happens when the mode occurs. Free text. |
-| `current_controls` | string | Existing detection / prevention controls. Free text. |
-| `severity` | integer \| null | Manual rating 1–10. |
-| `occurrence` | integer \| null | **Computed, not authoritative.** Derived from incident + maintenance event frequency over `occurrence_window_trips`. Written to this field on each save for reference but always recomputed fresh from SQLite when displayed. |
-| `detection` | integer \| null | Manual rating 1–10. |
-| `rpn` | integer \| null | Computed: `severity × occurrence × detection`. Null if any input is null. Written on save only. |
-| `occurrence_override` | integer \| null | If non-null, this value is used as Occurrence instead of the computed value. Admin only. |
-| `occurrence_override_note` | string | Required when `occurrence_override` is set. Documents why the override was applied. |
-| `avg_duration_seconds` | number \| null | **Computed, not authoritative.** Average duration of tagged incidents over the occurrence window. Written on save; always recomputed at query time. Null for modes with no events or when no duration data is available. |
-| `avg_mt_impact_per_event` | number \| null | **Computed, not authoritative.** `avg_duration_seconds / 86400 × theoretical_mt_per_day`. Null for header/belt/packing sections (no formula) or when avg_duration_seconds is null. Written on save. |
-| `iso14224_equipment_class` | string \| null | ISO 14224 equipment class code (validated dropdown — see §38.9). |
-| `iso14224_failure_code` | string \| null | ISO 14224 failure mode code (validated dropdown — see §38.9). |
-| `enabled` | boolean | If false, mode is excluded from RPN rankings and Occurrence calculations. Disabled (soft-deleted) modes are retained in the file. |
-| `created_at` | string | ISO 8601 UTC. |
-| `updated_at` | string | ISO 8601 UTC. Updated on every save. |
-
----
-
-### 38.4 SQLite tables
-
-```sql
-CREATE TABLE IF NOT EXISTS fmea_failure_modes (
-  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-  mode_id                  TEXT NOT NULL UNIQUE,
-  section_id               TEXT NOT NULL,
-  section_label            TEXT NOT NULL,
-  asset_code               TEXT,
-  label                    TEXT NOT NULL,
-  effects                  TEXT NOT NULL DEFAULT '',
-  current_controls         TEXT NOT NULL DEFAULT '',
-  severity                 INTEGER,
-  detection                INTEGER,
-  occurrence_override      INTEGER,
-  occurrence_override_note TEXT NOT NULL DEFAULT '',
-  avg_duration_seconds     REAL,
-  avg_mt_impact_per_event  REAL,
-  iso14224_equipment_class TEXT,
-  iso14224_failure_code    TEXT,
-  enabled                  INTEGER NOT NULL DEFAULT 1,
-  created_at               TEXT NOT NULL,
-  updated_at               TEXT NOT NULL,
-  ingested_at              TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_fmea_modes_section  ON fmea_failure_modes(section_id);
-CREATE INDEX IF NOT EXISTS idx_fmea_modes_asset    ON fmea_failure_modes(asset_code);
-
-CREATE TABLE IF NOT EXISTS fmea_occurrence_events (
-  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_id                 TEXT NOT NULL UNIQUE,
-  source                   TEXT NOT NULL,    -- 'incident' | 'maintenance'
-  mode_id                  TEXT,
-  asset_code               TEXT,
-  failure_mode_other_notes TEXT NOT NULL DEFAULT '',
-  duration_seconds         REAL,
-  trip_number              INTEGER,
-  event_date               TEXT NOT NULL,    -- YYYY-MM-DD
-  ingested_at              TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_fmea_events_mode   ON fmea_occurrence_events(mode_id);
-CREATE INDEX IF NOT EXISTS idx_fmea_events_asset  ON fmea_occurrence_events(asset_code);
-CREATE INDEX IF NOT EXISTS idx_fmea_events_trip   ON fmea_occurrence_events(trip_number);
-
-CREATE TABLE IF NOT EXISTS fmea_config_snapshots (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  snapshot_date TEXT NOT NULL,
-  trip_number   INTEGER,
-  config_json   TEXT NOT NULL,
-  saved_at      TEXT NOT NULL DEFAULT (datetime('now'))
-);
-```
-
-`occurrence` and `rpn` are **never stored** in `fmea_failure_modes` — they are always computed at query time. The values stored in `fmeaconfig.json` are denormalised snapshots for reference only.
-
-**`fmea_occurrence_events.event_id` derivation:**
-
-| Source | Pattern |
-|--------|---------|
-| Resolved incident | `{log_filename}:{incident_id}` |
-| Completed maintenance record | `{task_id}:{completed_at}` |
-
-Used as the upsert key — re-ingestion of the same source row updates the existing event.
-
-### 38.5 IPC handlers (main process)
-
-All handlers are synchronous (`better-sqlite3`).
-
-| Handler | Payload | Returns |
-|---------|---------|---------|
-| `db:ingestFmeaConfig` | `{ failure_modes[] }` | `{ ok, count }` |
-| `db:saveFmeaConfigSnapshot` | `{ snapshot_date, trip_number?, config_json }` | `{ ok }` |
-| `db:getFmeaFailureModes` | `{ section_id? }` | array of rows from `fmea_failure_modes` where `enabled = 1`, ordered by `section_id ASC, label ASC` |
-| `db:getFmeaOccurrence` | `{ mode_id, window_trips?, theoretical_mt_per_day? }` | `{ occurrence_rating, raw_count, window_trips, trips_with_data, avg_duration_seconds, avg_mt_impact }` |
-| `db:ingestFmeaOccurrenceEvents` | `{ events[] }` — each event may include `duration_seconds` | `{ ok, count }` |
-| `db:getFmeaRpnSummary` | `{ section_id?, section_theoretical_rates? }` where `section_theoretical_rates` is `{ [section_id]: mt_per_day }` | array of `{ mode_id, section_id, section_label, label, asset_code, severity, occurrence, detection, rpn, raw_count, window_trips, trips_with_data, occurrence_override, occurrence_override_note, avg_duration_seconds, avg_mt_impact, iso14224_equipment_class, iso14224_failure_code, effects, current_controls }` sorted by RPN desc |
-| `db:upsertFmeaFailureMode` | failure-mode object (without `mode_id` for new entries) | `{ ok, mode_id }` — generates a UUID v4 if absent |
-
-**Behaviour notes:**
-- `db:ingestFmeaConfig` upserts on `mode_id`. **Does not delete** rows absent from the payload — soft-removal is via `enabled = 0`.
-- `db:ingestFmeaOccurrenceEvents` looks up `trip_number` from the `trips` table by `event_date` if not supplied on the payload.
-- Occurrence computation uses the relative-decile algorithm with a fixed-scale fallback when fewer than 3 modes have any events (see §38.9).
-- **CRITICAL — `db:upsertFmeaFailureMode`:** this handler writes registry configuration only (label, effects, severity, detection, etc.). It **never** writes to `fmea_occurrence_events`. Occurrence events are ingested exclusively via `db:ingestFmeaOccurrenceEvents`.
-- `theoretical_mt_per_day` for `db:getFmeaOccurrence` and `section_theoretical_rates` for `db:getFmeaRpnSummary` are **passed from the renderer** using `factoryconfig.production.line_sections` values. The handler never looks them up internally.
-
----
-
-### 38.6 preload.js bindings
-
-Exposed under `window.idms.db`:
-
-```javascript
-ingestFmeaConfig:           (payload) => ipcRenderer.invoke('db:ingestFmeaConfig', payload),
-saveFmeaConfigSnapshot:     (payload) => ipcRenderer.invoke('db:saveFmeaConfigSnapshot', payload),
-getFmeaFailureModes:        (opts)    => ipcRenderer.invoke('db:getFmeaFailureModes', opts),
-getFmeaOccurrence:          (opts)    => ipcRenderer.invoke('db:getFmeaOccurrence', opts),
-ingestFmeaOccurrenceEvents: (payload) => ipcRenderer.invoke('db:ingestFmeaOccurrenceEvents', payload),
-getFmeaRpnSummary:          (opts)    => ipcRenderer.invoke('db:getFmeaRpnSummary', opts),
-upsertFmeaFailureMode:      (payload) => ipcRenderer.invoke('db:upsertFmeaFailureMode', payload),
-```
-
----
-
-### 38.7 graph.js helpers
-
-| Function | Description |
-|----------|-------------|
-| `loadFmeaConfig()` | Reads `config/fmeaconfig.json` from OneDrive. Returns parsed object or null on 404. |
-| `saveFmeaConfig(cfg)` | Writes `config/fmeaconfig.json` to OneDrive. |
-
----
-
-### 38.8 Ingest poller additions
-
-`pollFmeaOccurrenceEvents()` runs as a separate pass during each `pollNow()` cycle in `ingest.js`, after the production data poll. Independent of the existing factory incident ingest (does not modify it).
-
-1. Call `loadFmeaConfig()`. If null (file absent or fetch error), skip silently.
-2. Build an `asset_code → mode_id` map from the loaded config (enabled modes only) for maintenance fallback lookup.
-3. **Pass 1 — factory incident logs.** Scan today's factory log files (using `listLogFilesForDate('factory', date)` + `loadLogFile` helpers). For each resolved incident where `failure_mode_id` is non-null, build an event row. `"other"` selections are recorded with `mode_id = null` and `failure_mode_other_notes` preserved. Untagged incidents are skipped.
-   - **Duration normalisation:** `duration_seconds = inc.duration_seconds ?? inc.duration ?? null`
-4. **Pass 2 — completed maintenance records.** Scan the current year's task record files. For each completed record where `equipment_ids` contains a code present in the asset→mode map, build an event with `source = "maintenance"`. When no `failure_mode_id` is present, `category + title` are concatenated into `failure_mode_other_notes`.
-5. Upsert all events via `db:ingestFmeaOccurrenceEvents`. The handler derives `trip_number` from the `trips` table by `event_date` when not supplied.
-
----
-
-### 38.9 Occurrence scale algorithm
-
-The Occurrence rating uses a **relative scale** — each mode's raw event count is ranked against all other enabled failure modes on the same vessel over the same window.
-
-1. Compute raw event counts for all enabled modes over the last N trips.
-2. Rank by count (ascending). Assign ratings 1–10 by percentile bucket:
-   - 0 events → `1` (always, regardless of percentile).
-   - Top 10% by count → `10`.
-   - Bottom decile (excluding 0-event modes) → `2`.
-   - Linear interpolation across deciles 2–9 for the rest.
-3. **Fixed-scale fallback** when fewer than 3 modes have any events:
-   - 0 events → `1`
-   - 1 event → `3`
-   - 2–3 events → `5`
-   - 4–6 events → `7`
-   - 7+ events → `9`
-
-   This prevents a single event making a mode appear as "10" by percentile alone in a sparse dataset.
-4. If `occurrence_override` is set for a mode, the override value is returned directly — no computation.
-
-Occurrence ratings shift between trips as the window slides; this is by design. Confidence indicators:
-- `trips_with_data < 2`: grey `(low data)` tag — "Fewer than 2 trips have occurrence data. This rating may not be stable."
-- `raw_count = 0`: display `O: 1` with dash indicator — no badge, no count shown.
-- `occurrence_override` set: display override value in amber with lock icon; tooltip shows override note.
-- Otherwise: rating followed by `(n=X, NT)` where N = raw count and T = window size in trips.
-
-**ISO 14224 reference codes** — fixed validated dropdown (subset of ISO 14224). Equipment classes: CE, COM, CR, EL, HE, HYD, INS, PI, PU, REF, TUR, VAL, VES, CON, FRZ, SEP, FIL. Failure codes: AIR, BRD, ELP, ELU, ERO, FCO, FOF, FOD, HIO, INL, LOO, NOI, OHE, PDE, PLU, SER, STD, UST, VIB, CON, LCP, OTH. Each option rendered as `{code} — {full designation}`; stored value is code only.
-
----
-
-### 38.10 Avg duration and MT impact
-
-`db:getFmeaOccurrence` and `db:getFmeaRpnSummary` compute average event duration and production impact alongside occurrence ratings.
-
-**avg_duration_seconds** — mean of `duration_seconds` across all occurrence events for the mode within the window, excluding null values. Null if no events have duration data.
-
-**avg_mt_impact** formula (for `plate_freezer` and `throughput` sections):
-```
-avg_mt_impact = avg_duration_seconds / 86400 × theoretical_mt_per_day
-```
-Null for `header`, `belt`, and `packing` sections (no theoretical MT formula). Also null if `avg_duration_seconds` is null or `theoretical_mt_per_day` is null.
-
-**`theoretical_mt_per_day` is always passed from the renderer** — it is read from `factoryconfig.production.line_sections` by `production.js` and passed in the IPC payload. The IPC handler never looks it up independently. The renderer builds `section_theoretical_rates: { [section_id]: theoretical_mt_per_day }` from the loaded factory config before calling `db:getFmeaRpnSummary`.
-
-On "Save FMEA Config", the console fetches `avg_duration_seconds` and `avg_mt_impact_per_event` for each mode from the current SQLite state and writes them as denormalised snapshots into `fmeaconfig.json` failure mode objects. They are always recomputed at display time.
-
----
-
-### 38.11 UI behaviour
-
-**FMEA tab** (Factory Production module: Overview · Today · Observations · OEE · **FMEA** · Setup)
-
-- **Section filter bar** — dropdown filtering by line section (default "All sections"); `+ Add failure mode` button (admin only) opens the modal.
-- **Failure-mode table columns:** Section · Asset Code · Label · Effects (truncated) · S · O · D · RPN · Avg Duration · Avg MT Impact · ISO Class · ISO Code · Actions (admin only).
-- **O column** — computed Occurrence with grey badge `(n=X, NT)`. Override: amber value with lock icon and override note tooltip.
-- **RPN column** — ≥ 200 red, 100–199 amber, < 100 green, null grey dash.
-- **Avg Duration** — formatted as `Xh Ym` or `Ym Zs`. Null displays as `—`.
-- **Avg MT Impact** — formatted as `X.X MT`. Null displays as `—`. Tooltip shows formula inputs.
-- **Actions:** edit (pencil) opens modal; eye icon toggles enabled/disabled with confirmation. No hard delete.
-- **Stat strip** (below table): Highest RPN mode (label + value), count of modes with RPN ≥ 200, current window in trips.
-- **Save FMEA Config button** (admin only): rebuilds `fmeaconfig.json` from SQLite (including `avg_duration_seconds` and `avg_mt_impact_per_event`), writes to OneDrive, saves snapshot, re-ingests, refreshes table.
-
-**Add / Edit modal fields:** Section (required), Asset (filtered to selected section's sub-assets), Label (required, max 100 chars), Effects, Current controls, Severity 1–10 (required), Detection 1–10 (required), ISO 14224 Equipment Class, ISO 14224 Failure Code, Occurrence override (admin only), Override note (required when override set), Enabled toggle.
-
-Modal saves go through `db:upsertFmeaFailureMode` immediately. **OneDrive is only written on the explicit "Save FMEA Config" action.**
-
-**Overview tab** — read-only **FMEA — Top Risks** widget: top 5 modes by RPN with S/O/D/RPN, header chip showing total mode count and count ≥ 200. Empty state links to FMEA tab.
-
-**PWA (factory only)** — `fmeaconfig.json` cached as `fw_fmeacfg`. On incident resolve, failure-mode dropdown appears (filtered by equipment `asset_code`; falls back to all enabled modes for the section). Always includes `Other / unsure`. Selecting `Other / unsure` reveals a required brief description field. `failure_mode_id` and `failure_mode_other_notes` written into the resolved incident object (§11). If `fmeaconfig.json` is unavailable, dropdown is skipped — incident resolution must never be blocked by FMEA unavailability.
-
----
-
-## §39 — Overall Equipment Effectiveness (OEE)
-
-**Status:** Built (v2.8)
-**File:** `src/renderer/js/production.js` (OEE tab embedded in Factory Production)
-**Screen key:** `factory-production` (OEE tab)
-**Nav group:** Factory
-**Permission gate:** `factory/production` — admin/standard for entry and report generation, observer read-only
-
----
-
-### 39.1 Overview
-
-A **Overall Equipment Effectiveness (OEE)** is a bounded time window of direct observation producing a reliability snapshot of the factory production line. Purpose: captures unreported failures and efficiency losses; compares structured observation against the continuous log baseline; enables time-bounded report generation. "Overall Equipment Effectiveness" (OEE) is the preferred term of art.
-
----
-
-### 39.2 Data storage
-
-Observations are stored in the `observations[]` array in per-user factory log files (schema_version 2). `capacity-{date}.json` is retired as a write target; legacy files remain readable. All observations are aggregated into `capacity_observations` SQLite via the ingest poller. OneDrive read → merge → write pattern is required — never overwrite a log file from local state alone.
-
----
-
-### 39.3 Observation object
-
-Full field reference: see §11 (Observation object fields).
-
-Key fields specific to OEE:
-- `source: "oee"` — all rows in a OEE session carry this value.
-- `oee_session_id` — UUID grouping all observations from one OEE submission. Null for non-OEE sources.
-- `failure_mode_id` — optional link to FMEA failure mode (§38).
-
----
-
-### 39.4 OEE session
-
-A OEE session is a batch of observations sharing a `oee_session_id` UUID. The UUID is generated at submit time and is immutable after submission. All rows in the session carry `source: "oee"`. Session metadata (start/end timestamps, section count, observation count) is derived from the observations themselves — there is no separate session header record.
-
-Sessions returned by `db:getOeeSessions` include:
-- `oee_session_id` — UUID
-- `session_start` — earliest `obs_timestamp` in the session
-- `session_end` — latest `obs_timestamp` in the session
-- `observation_count` — count of rows
-- `sections` — array of `section_label` values (from GROUP_CONCAT)
-
----
-
-### 39.5 PWA observation push
-
-**Factory department only** — Engine Room and Deck users see no change.
-
-- **"Log Observation" action** on the factory department home screen (icon button in topbar, hidden for non-factory departments).
-- **Form fields:** Section (dropdown from `factoryconfig.production.line_sections`), Rate (number, optional), Rate unit (conditional — hidden when no rate entered), Notes (textarea), Wind speed (knots, optional), Sea state (feet, optional).
-- **Submit:** builds observation object with `source: "pwa"`, `oee_session_id: null`, UUID generated locally.
-- **Online path:** `pushObservationToOneDrive` — loads remote log file (with localStorage cache fallback), initialises at schema_version 2 if absent, upserts by `obs_id`, writes back, updates cache.
-- **Offline queue:** on push failure, observation is appended to `fw_obs_queue_{username}` in localStorage. Queue is flushed on next successful write via `flushObservationQueue(username)`.
-- **Cache key:** `fw_log_{username}_{date}` for the local log file mirror.
-
----
-
-### 39.6 `capacity_observations` additions
-
-Columns added in v2.8 (safe migration via ALTER TABLE when absent; table rebuild if `observed_rate` has NOT NULL constraint):
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `failure_mode_id` | TEXT | Optional FMEA failure mode link. |
-| `oee_session_id` | TEXT | UUID grouping a OEE session. Null for non-OEE. |
-| `source_user` | TEXT | Username of the submitting user. |
-
-Index added: `CREATE INDEX IF NOT EXISTS idx_cap_obs_oee ON capacity_observations(oee_session_id);`
-
-`observed_rate` and `rate_unit` changed from NOT NULL to nullable to support qualitative (rate-free) observations.
-
----
-
-### 39.7 IPC handlers
-
-| Channel | Payload / args | Returns |
-|---------|---------------|---------|
-| `db:ingestObservationsFromLog` | `{ user, observations[] }` | `{ ok, count }` — upserts by `obs_id`; derives `obs_date` from `obs_timestamp` when absent |
-| `db:saveObservationsToLog` | `{ user, observations[] }` | `{ ok, count }` — alias for `ingestObservationsFromLog` |
-| `db:getCapacityObservations` | `{ obs_date?, section_id?, source_user?, source?, oee_session_id?, from_timestamp?, to_timestamp? }` | `capacity_observations[]` — dynamic WHERE clause |
-| `db:getOeeSessions` | `{ trip_number? }` | `oee_session[]` ordered by `session_start DESC` |
-| `db:generateRosReportPdf` | `{ report_data }` | `{ ok, path }` — main process only; lazy require puppeteer; Save dialog for final path |
-
----
-
-### 39.8 graph.js helpers
-
-| Function | Description |
-|----------|-------------|
-| `loadUserLogFile(username, dateStr)` | Reads `data/factory/logs/report-{dateStr}-{username}.json`. Returns null on 404. |
-| `saveUserLogFile(username, dateStr, data)` | Writes `data/factory/logs/report-{dateStr}-{username}.json`. |
-
----
-
-### 39.9 Report generator
-
-**Modal** accessible from the OEE tab and via "Generate Report for this Session" on a read-only session view.
-
-**Modal fields:** Time window (from/to datetime), source filter (`pwa` | `oee` | `manual` | all), section filter, incident inclusion toggle.
-
-**Data assembly:**
-1. Query `capacity_observations` within the window (filtered by source and section).
-2. If incident inclusion enabled: fetch all factory events (`db:getEvents({ dept: 'Factory', limit: 2000 })`), filter client-side by timestamp range.
-3. Compute section theoretical rates from `factoryconfig.production.line_sections`.
-4. Utilisation % per section: `sum(observed_rate × window_hours) / (theoretical_mt_per_day × report_window_hours) × 100`. Null for header/belt/packing sections.
-
-**Console report sections:**
-- Header block: vessel, date range, report generated-at, source filter applied.
-- Summary stat strip: total observations, OEE sessions, incidents included, avg observed rate.
-- Timeline: sorted by timestamp; coloured markers by source (orange=PWA, blue=OEE, grey=manual); incident span bars.
-- Observations table: timestamp, section, rate, unit, source badge, user, notes.
-- Incidents table: start, end, duration, equipment, category, FMEA mode, notes.
-- Section summary table: section, theoretical MT/day, observation count, avg observed rate, utilisation %.
-
-**PDF export:**
-- Main process only — never `require('puppeteer')` in the renderer.
-- Lazy `require('puppeteer')` with graceful error if not installed.
-- `puppeteer.launch({ headless: 'new' })`, `page.setContent(html)`, `page.pdf({ format: 'A4', printBackground: false, displayHeaderFooter: true })`.
-- PDF layout: white/print background; header/footer every page; timeline rendered as sorted table.
-- Temp file in `os.tmpdir()`, then `dialog.showSaveDialog` for final path; temp cleaned up after copy.
-
----
-
-### 39.10 UI behaviour
-
-**OEE tab layout:**
-- Left panel: session list (ordered by `session_start DESC`). Each row: date, time window, observation count, sections covered. Clicking selects the session.
-- Right panel: draft entry table (when no session selected) or read-only session view.
-
-**Draft entry table:**
-- Dynamic table of observation rows. Each row: timestamp (default now), section dropdown, asset code (optional free text), FMEA failure mode dropdown (optional, filtered by section), rate (optional), rate unit (conditional), notes.
-- `+ Add Row` button appends empty row. Rows can be removed individually.
-- **Submit:** validates at least one row; generates `oee_session_id` UUID; sets `source: "oee"` on all rows; calls `appendObservationsToLogFile` for the current user and date; ingests to SQLite via `db:ingestObservationsFromLog`; reloads session list; shows newly submitted session.
-
-**Read-only session view:**
-- Non-editable table of all observations in the session.
-- "Generate Report for this Session" pre-populates the report modal with `from = session_start`, `to = session_end`, `oee_session_id` filter.
-
-**Overview tab PWA observation overlay:**
-- Rate observations: orange filled circles at the correct time/rate position.
-- Qualitative observations (no rate): orange diamonds at the x-axis.
-- Hover tooltip: `[PWA] {section_label} — {observed_rate} {rate_unit} — {source_user} — {time}`.
-- Legend entry: `● PWA Observation`.
-
-**Observations tab enhancements:**
-- Source badges: `[PWA]` (amber) for `source: "pwa"`, `[OEE]` (blue) for `source: "oee"`, no badge for `source: "manual"`.
-- Filter bar gains source and user dropdowns.
-- When source filter = `oee`, rows are grouped by `oee_session_id` with a collapsible session header.
-- `source_user` column shows the submitting user's display name.
-- Manual console submissions use `appendObservationsToLogFile` pattern (OneDrive read → merge → write) rather than writing directly to legacy capacity files.
+- Null `theoretical_mt_per_day` for belt/packing sections: display `—`, excluded from bottleneck calculation

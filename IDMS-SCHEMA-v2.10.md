@@ -1,5 +1,9 @@
 # IDMS Schema Specification
-**Version 2.8 — F/V Araho**  
+**Version 2.10 — F/V Araho**  
+v2.10 — Daily Production Report (DPR) ingestion redesigned (§37.11). Microsoft Graph Mail API replaced with OneDrive folder polling driven by a Power Automate flow. The flow watches the user's inbox for "Daily Production Report" emails and saves their PDF attachments to `OneDrive/Daily Production Reports/{YYYY}/` (note: this folder is *outside* `Documents/IDMS/`). IDMS lists that folder, sorts by `lastModifiedDateTime`, downloads the most recent file, parses it with a pure-Node.js text extractor (no `pdfjs-dist` / `pdf-parse` dependency — broken in Electron's main process), and renames it to `DPR-{YYYY-MM-DD}.pdf` using the file's modification date (since midnight reports are dated the previous day inside the PDF). Three new `graph.js` helpers: `graphGetBinaryById`, `graphRenameItem`, plus `id` added to `graphListFolder` `$select`. New main-process IPC handler `pdf:parse` exposed as `window.idms.pdf.parse(buffer)`. The `production-state.json` `source` field changes from `"email"` to `"dpr"`. `email_subject_filter` and `email_source_address` fields in `factoryconfig.json → production` are deprecated (no longer used). MSAL `Mail.Read*` scopes no longer required — `User.Read` and `Files.ReadWrite` suffice. The renderer's DPR fetch now extracts richer per-species production data (trip number, trip day, daily/trip totals in MT and cases, full per-species grade breakdown). Overview "Refresh DPR" panel shows "Today's report not available" when the most recent file's modification date is not today. Bug fix: `ingest.js` `pollNow()` referenced undefined `loadTaskRecordFile` — corrected to `loadTaskEquipmentFile`.
+
+v2.9 — OEE Report (§39) refined. Per-asset rate maps in `assembleOeeReportData` extended with an upstream-bottleneck cap (`equipmentAdjustedRateMap`): each sub-asset's MT/day is capped at the minimum rate of any same-section sub-asset with a lower `order` value, so a fast downstream item only loses what its slowest upstream feeder could have produced. Both incidents and OEE observations carry `adjusted_rate_mt_per_day` alongside `asset_rate_mt_per_day` in `chart_data`. The on-screen and PDF "Observations in Window" tables gain an **Adjusted Δ** column (suppressed to "—" when the cap doesn't change the value, in which case the Delta cell renders muted grey to keep the eye on Adjusted). Available Max calculation made series-aware: line-wide MT lost is no longer the additive sum of per-section losses (which double-counted across sections in series); instead the chart's available-max step function takes the per-section minimum of `(theoreticalRate − lostRate)` at each time slice, and the headline `available_max_mt` is integrated from that step function. Both incident and observation losses contribute per-section. `chart_data` gains `demonstrated_max_mt_per_hour`; both the canvas chart and the PDF SVG chart gain a dashed amber **Demonstrated Max** reference line and matching legend entry.
+
 v2.8 — OEE (Overall Equipment Effectiveness) module added (§39). Per-user factory log file gains `observations` array (schema_version 2). `capacity-{YYYY-MM-DD}.json` retired as a write target (legacy read retained). `capacity_observations` SQLite table gains `failure_mode_id`, `oee_session_id`, `source_user` columns. New IPC handlers: `db:ingestObservationsFromLog`, `db:saveObservationsToLog`, `db:getOeeSessions`, `db:generateRosReportPdf`. Factory Production gains OEE tab (§39) and report generator. PWA gains observation push for factory users. Overview tab gains PWA observation overlay.
 
 v2.7 — FMEA module added (§38). `fmeaconfig.json` introduced at `config/fmeaconfig.json`. Resolved incident object (§11) gains optional `failure_mode_id` and `failure_mode_other_notes` fields (Factory department only on the PWA). Three new SQLite tables: `fmea_failure_modes`, `fmea_occurrence_events`, `fmea_config_snapshots`. Seven new IPC handlers: `db:ingestFmeaConfig`, `db:saveFmeaConfigSnapshot`, `db:getFmeaFailureModes`, `db:getFmeaOccurrence`, `db:ingestFmeaOccurrenceEvents`, `db:getFmeaRpnSummary`, `db:upsertFmeaFailureMode`. graph.js helpers `loadFmeaConfig` / `saveFmeaConfig`. New `pollFmeaOccurrenceEvents()` pass in ingest.js (factory incidents + completed maintenance records). Factory Production gains a dedicated **FMEA tab** with a failure-mode registry, RPN display, occurrence-confidence indicators, and an add/edit modal whose Asset dropdown is filtered to the selected section's sub-assets. Sub-asset objects (§37) gain an `iso14224_equipment_class` field, settable in Setup and auto-populated into the FMEA modal on asset selection. Throughput-section MT/day calculation revised to bottleneck across series stages and sum within parallel stages (grouped by sub-asset `order`) instead of summing all sub-assets.
@@ -117,6 +121,16 @@ Documents/IDMS/
 │       └── notifications/          ← schedule-notification-{YYYY-MM-DD}.json (audit log mirrors)
 │
 └── console.lock                    ← Active console heartbeat file
+```
+
+**External OneDrive folders** (outside `Documents/IDMS/`, read by IDMS but written by other tools):
+
+```
+OneDrive root/
+└── Daily Production Reports/
+    └── {YYYY}/                     ← DPR PDFs dropped here by a Power Automate flow.
+                                       Filenames standardized to `DPR-{YYYY-MM-DD}.pdf`
+                                       on first read by IDMS. See §37.11.
 ```
 
 **Local machine files** (not on OneDrive):
@@ -4193,9 +4207,9 @@ All paths are relative to `Documents/IDMS/` (the `ONEDRIVE_BASE` constant in `gr
     {
       "entry_date":  "2026-04-28",
       "midnight_mt": 45.2,
-      "source":      "email",
+      "source":      "dpr",
       "fetched_at":  "2026-04-29T00:05:00Z",
-      "notes":       "Daily Production Report"
+      "notes":       "Trip ARA2607 Day 5"
     }
   ]
 }
@@ -4203,7 +4217,8 @@ All paths are relative to `Documents/IDMS/` (the `ONEDRIVE_BASE` constant in `gr
 
 **Field notes:**
 - `trip_number` — matches `trips.trip_number` in SQLite
-- `source` — `"email"` | `"manual"`
+- `source` — `"dpr"` (parsed from PDF in `Daily Production Reports/{YYYY}/`) | `"email"` (legacy, pre-v2.10) | `"manual"`
+- `notes` — for `"dpr"` source, populated as `"Trip {tripNumber} Day {tripDay}"` extracted from the PDF
 - `fetched_at` — ISO 8601 UTC; null for manually entered records
 - Keyed by `(trip_number, entry_date)` — one row per calendar day per trip
 
@@ -4273,8 +4288,8 @@ The `production` block lives inside `factoryconfig.json` alongside the `equipmen
 | `pan_volume_l` | number \| null | Pan internal volume in litres. Used to derive density. |
 | `pan_gross_weight_kg` | number \| null | Pan gross fill weight in kg (pan + ice + product at full fill). |
 | `pan_target_overpack_pct` | number \| null | Percentage of gross weight that is overpack. Net weight = gross × (1 − overpack/100). |
-| `email_subject_filter` | string | Substring matched against email subjects when fetching DPR emails. |
-| `email_source_address` | string \| null | Shared mailbox address for DPR email ingestion. |
+| ~~`email_subject_filter`~~ | string | **DEPRECATED in v2.10.** Was used by the old Graph Mail API DPR fetch. The current flow uses Power Automate to filter by subject and drop PDFs into OneDrive. Field is retained in config for backward compatibility but ignored by the renderer. |
+| ~~`email_source_address`~~ | string \| null | **DEPRECATED in v2.10.** Was used to point Graph Mail API requests at a shared mailbox. The current flow reads from the signed-in user's own OneDrive `Daily Production Reports/{YYYY}/` folder. Field is retained for backward compatibility but ignored. |
 | `bottleneck_mt_per_day` | number \| null | Auto-calculated: minimum `theoretical_mt_per_day` across all enabled sections (null sections excluded). Written back on each Setup save. |
 
 **Pan derived values (computed in UI, not stored):**
@@ -4552,7 +4567,10 @@ Added to `src/renderer/js/graph.js`:
 | `saveProductionState(state)` | Writes `production-state.json` |
 | `loadCapacityLog(dateStr)` | Reads `capacity-{dateStr}.json` (legacy read) |
 | `saveCapacityLog(dateStr, data)` | Writes `capacity-{dateStr}.json` (legacy; no longer used for new observations) |
-| `graphMailFetch(url)` | GET request to any Graph API URL with Bearer auth; throws `err.status = 403` on Access Denied |
+| ~~`graphMailFetch(url)`~~ | **DEPRECATED in v2.10.** GET against any Graph API URL with Bearer auth. Was used by the old DPR email fetch; no longer called by any module. Retained in source for now but slated for removal. |
+| `graphListFolder(folderPath)` | Lists items in a OneDrive folder. v2.10: `$select` widened to `id,name,lastModifiedDateTime,size`. Returns `[]` on 404. |
+| `graphGetBinaryById(itemId)` | **NEW in v2.10.** Downloads a file's raw bytes by drive-item ID via `GET /me/drive/items/{itemId}/content`. Returns an `ArrayBuffer`. |
+| `graphRenameItem(itemId, newName)` | **NEW in v2.10.** Renames a OneDrive item via `PATCH /me/drive/items/{itemId}` with body `{ "name": newName }`. Used by the DPR ingestion to standardize PDF filenames to `DPR-{YYYY-MM-DD}.pdf`. |
 | `loadUserLogFile(username, dateStr)` | Reads `data/factory/logs/report-{dateStr}-{username}.json`. Returns null on 404. |
 | `saveUserLogFile(username, dateStr, data)` | Writes `data/factory/logs/report-{dateStr}-{username}.json`. |
 | `loadFmeaConfig()` | Reads `config/fmeaconfig.json`. Returns null on 404. |
@@ -4571,31 +4589,183 @@ Added to `src/renderer/js/graph.js`:
 
 ---
 
-### 37.11 Email ingestion
+### 37.11 DPR ingestion (v2.10)
 
-On the Overview tab, admin/standard users see a **Fetch from DPR Email** panel.
+On the Overview tab, admin/standard users see a **Refresh DPR** panel (button label changed from "Fetch latest email" in v2.10).
 
-**API call:**
+#### 37.11.1 Architecture overview
+
+The Microsoft Graph Mail API is **not used**. Instead, a Power Automate flow running under the signed-in user's M365 account watches the user's inbox for "Daily Production Report" emails and writes their PDF attachments to OneDrive. IDMS reads OneDrive via the existing `Files.ReadWrite` scope. This avoids requiring `Mail.Read*` scopes (which require admin consent in many tenants) and decouples IDMS from email delivery latency.
+
 ```
-GET https://graph.microsoft.com/v1.0/users/{email_source_address}/mailFolders/inbox/messages
-  ?$filter=receivedDateTime ge {today}T00:00:00Z and contains(subject,'{email_subject_filter}')
-  &$top=1
-  &$select=subject,receivedDateTime,from,body
+┌─────────────────┐   email arrives   ┌──────────────────┐   PDF attachment   ┌────────────────────────────┐
+│ Inbox of signed-│─────────────────▶│  Power Automate  │─────────────────▶│ OneDrive: Daily Production │
+│ in user account │                  │  flow (cloud)    │                  │ Reports/{YYYY}/{name}.pdf  │
+└─────────────────┘                  └──────────────────┘                  └────────────────────────────┘
+                                                                                         │
+                                                                            list + sort  │
+                                                                                         ▼
+                                                                          ┌──────────────────────────┐
+                                                                          │ IDMS Console (renderer): │
+                                                                          │  graphListFolder         │
+                                                                          │  graphGetBinaryById      │
+                                                                          │  window.idms.pdf.parse   │
+                                                                          │  parseDPRText            │
+                                                                          │  graphRenameItem         │
+                                                                          └──────────────────────────┘
 ```
 
-**MT extraction regex:**
+#### 37.11.2 Power Automate flow
+
+The flow runs in the signed-in user's M365 tenant at flow.microsoft.com. Required template: **"Save Office 365 email attachments to OneDrive for Business"** (or a custom flow with equivalent steps).
+
+**Trigger:** *When a new email arrives (V3)* — Office 365 Outlook connector
+- Subject Filter: `Daily Production Report`
+- Include Attachments: `Yes`
+- Only with attachments: `Yes`
+
+**Action loop:** *Apply to each attachment* with an inner *Condition* on the attachment name containing `Araho Daily Production`, then *Create file* (OneDrive for Business connector):
+- Folder Path: `Daily Production Reports/@{formatDateTime(utcNow(),'yyyy')}`
+- File Name: `@{items('Apply_to_each_Attachment_on_the_email')?['name']}` (the original attachment filename — IDMS standardizes it on read)
+- File Content: `@{items('Apply_to_each_Attachment_on_the_email')?['contentBytes']}`
+
+The flow JSON is stored in the user's M365 environment, not in this repository.
+
+#### 37.11.3 OneDrive folder layout (external to `Documents/IDMS/`)
+
 ```
-/(?:midnight|total|production)[^\d]*(\d{1,4}(?:\.\d{1,3})?)\s*(?:mt|tonnes?)/i
+OneDrive root/
+└── Daily Production Reports/
+    ├── 2025/
+    │   └── (prior year archive)
+    └── 2026/
+        ├── Araho Daily Production (05-02).pdf   ← original purser-named file (transient)
+        ├── DPR-2026-05-03.pdf                   ← after IDMS standardization
+        └── DPR-2026-05-04.pdf
 ```
 
-**State machine:** `idle` → `fetching` → `found` | `notfound` | `error` → (on save) `saving` → `idle`
+The folder is *outside* `Documents/IDMS/` because it serves as a long-term archive of source documents, not application state. IDMS treats it read-mostly: it lists, downloads, and renames; it does not delete.
 
-**Error states:**
-- 403: display "Access denied — check Mail API permissions."
-- No match: display "No matching email found for today."
-- Parse failure: display specific error message
+#### 37.11.4 Renderer fetch flow (`production.js → fetchFromEmail`)
 
-**On save:** entry is appended to `production-state.json` on OneDrive with `source: "email"`, then ingested to SQLite. Page re-renders.
+The function is still named `fetchFromEmail` for git diff stability, but no longer touches email APIs.
+
+1. List `Daily Production Reports/{currentYear}` via `graphListFolder` (returns items with `id`, `name`, `lastModifiedDateTime`, `size`).
+2. Empty folder → state `notfound`.
+3. Sort by `lastModifiedDateTime` descending; take `files[0]`.
+4. `graphGetBinaryById(latest.id)` → `ArrayBuffer`.
+5. `window.idms.pdf.parse(buffer)` → `{ ok, text }` via the `pdf:parse` IPC handler in main.js.
+6. `parseDPRText(text)` extracts structured fields (see §37.11.6).
+7. Compute `isoDate` from `latest.lastModifiedDateTime` (UTC). The midnight DPR is dated the previous day inside the PDF, so the file's modification date is the canonical "report-as-of" date.
+8. If `latest.name !== "DPR-{isoDate}.pdf"`, fire-and-forget `graphRenameItem` to standardize. Failures log to console only.
+9. Compare `isoDate` to `prodLocalDateStr(PROD.timezone)` — if different, set `isToday: false` so the UI shows a "Today's report not available" notice.
+10. Populate `PROD.emailResult` and re-render the panel.
+
+#### 37.11.5 Pure-Node PDF text extractor (`main.js`)
+
+`pdf-parse` (and its dependency `pdfjs-dist`) is broken in Electron's main process: `pdfjs-dist` requires `DOMMatrix`, `ImageData`, `Path2D`, and `process.getBuiltinModule` (Node ≥22.3). Even with all globals patched, the export resolves as a non-callable, so the package was abandoned in v2.10.
+
+The replacement is a pure-Node extractor in `src/main/main.js`:
+
+| Function | Purpose |
+|----------|---------|
+| `extractPdfText(buffer)` | Top-level: walks the PDF byte-by-byte finding `stream`/`endstream` blocks, FlateDecode-inflates them with Node's built-in `zlib`, and accumulates lines. |
+| `extractTextFromContentStream(content, out)` | Finds `BT`/`ET` text-block pairs and feeds each to `collectStringsFromBlock`. |
+| `collectStringsFromBlock(block)` | Parses balanced `(...)` strings (handling escaped parens/backslashes) and `[...]` array operators (`Tj` / `TJ`). |
+| `unescapePdfString(s)` | Decodes PDF string escapes (octal, `\n`, `\r`, `\t`, `\b`, `\f`, escaped parens/backslashes). |
+
+The handler is registered as `ipcMain.handle('pdf:parse', ...)` and exposed to the renderer via `preload.js` as `window.idms.pdf.parse(buffer)`. Returns `{ ok: true, text }` or `{ ok: false, error }`.
+
+This extractor is sufficient for text-based PDFs whose content streams use `Tj`/`TJ` with `(...)` literal strings (the format produced by Crystal Reports, Word, Excel, and most ERP systems). It will not handle hex strings (`<48656C>` Tj), CMap-mapped fonts, or scanned/image PDFs — none of which apply to the DPR.
+
+#### 37.11.6 `parseDPRText(text)` (in `production.js`)
+
+Extracts a structured object from the PDF text. Regex patterns:
+
+| Field | Pattern |
+|-------|---------|
+| `tripNumber` | `/Trip Number:\s*(\S+)/` |
+| `tripDay` | `/Trip Day:\s*(\d+)/` |
+| `area` | `/Area:\s*(\d+)/` |
+| `weather` | `/Weather:\s*(.+?)(?=\s+Date:)/` |
+| `date` (PDF internal — *not* used as canonical) | `/Date:\s*([\d\/]+)/` |
+| `dailyTotalCases`, `dailyTotalMT` | `/Daily Total:\s*([\d,]+)\s*\/\s*([\d.]+)/` |
+| `tripTotalCases`, `tripTotalMT` | `/Trip Total:\s*([\d,]+)\s*\/\s*([\d.]+)/` |
+| Species header line | `/^(\d{3}-\d{2}-\w{2,3})\s+(.+)$/` |
+| Per-grade row | `/^([\d.]+)\s+([\d.]+)\s+(\S+)\s+([\d,]+)\s+([\d.]+)\s+(\d+)%\s+([\d,]+)\s+([\d.]+)\s+(\d+)%$/` |
+| Species TOTAL row | `/^([\d.]+)\s+TOTAL\s+([\d,]+)\s+([\d.]+)\s+(\d+)%\s+([\d,]+)\s+([\d.]+)\s+(\d+)%$/` |
+
+Returned shape:
+
+```js
+{
+  tripNumber: "ARA2607",
+  tripDay: 5,
+  area: 543,
+  weather: "15 kts",
+  date: "5/2/2026",                  // PDF internal — informational only
+  dailyTotalCases: 4227,
+  dailyTotalMT: 80.3130,
+  tripTotalCases: 17219,
+  tripTotalMT: 327.1610,
+  species: [
+    {
+      processCode: "110-08-G1",
+      name: "Pacific Cod - J-Cut #1",
+      grades: [
+        { pack: 19.0, avgGross: 20.380, size: "3L", dailyCases: 83, dailyMT: 1.5770, dailyPct: 53, tripCases: 247, tripMT: 4.6930, tripPct: 43 },
+        ...
+      ],
+      total: { avgGross: 20.356, dailyCases: 156, dailyMT: 2.9640, dailyPct: 4, tripCases: 571, tripMT: 10.8490, tripPct: 3 }
+    },
+    ...
+  ]
+}
+```
+
+#### 37.11.7 `PROD.emailResult` shape (post-parse)
+
+```js
+{
+  date:        "2026-05-03",          // file modification date (UTC), the canonical DPR-as-of date
+  isToday:     true,                   // false if file mod date != today (in PROD.timezone)
+  midnight_mt: 80.3130,                // alias for dailyTotalMT, retained for save-path compatibility
+  dailyCases:  4227,
+  tripMT:      327.1610,
+  tripCases:   17219,
+  tripNumber:  "ARA2607",
+  tripDay:     5,
+  species:     [ ... ]                 // full structured array from parseDPRText
+}
+```
+
+#### 37.11.8 State machine
+
+`idle` → `fetching` → `found` | `notfound` | `error` → (on save) `saving` → `idle`
+
+**`found` rendering** (Overview panel):
+- If `!isToday`: yellow notice — `Today's report not available. Showing {date}.`
+- Report Date: `{date}`
+- Trip: `{tripNumber} — Day {tripDay}`
+- Daily Total: `{midnight_mt.toFixed(2)} MT ({dailyCases.toLocaleString()} cases)` — bolded
+- Trip Total: `{tripMT.toFixed(2)} MT ({tripCases.toLocaleString()} cases)`
+- Buttons: *Save to trip log* / *Cancel*
+
+**Error / not-found cases:**
+- Empty folder for current year: state `notfound` → "No matching email found for today." (panel string retained from v2.9; covers both no-flow-yet and no-DPR-this-year).
+- PDF parse failure (no Date or Daily Total match): state `error` → message `"Could not parse DPR content."`.
+- Network / Graph errors: state `error` → exception message verbatim.
+
+#### 37.11.9 Save path
+
+Unchanged from v2.9 except `source` value:
+
+1. Load `production-state.json` (or initialize empty).
+2. Find or append entry for `r.date` (which is now the file modification date).
+3. Write entry: `{ entry_date, midnight_mt, source: "dpr", fetched_at, notes: "Trip {tripNumber} Day {tripDay}" }`.
+4. `saveProductionState(state)` → OneDrive.
+5. `db:ingestProductionState` → SQLite.
+6. Refresh local `PROD.entries` and re-render screen.
 
 ---
 
