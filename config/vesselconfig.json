@@ -1,0 +1,439 @@
+{
+  "schema_version": 1,
+  "vessel": "F/V Araho",
+  "info": {
+    "vessel_name": "ARAHO",
+    "official_number": "1250884",
+    "hull_id": "N/A",
+    "mfr_hull_number": "175",
+    "imo_number": "9731963",
+    "flag_state": "UNITED STATES",
+    "call_sign": "WDH7704"
+  },
+  "particulars": {
+    "service_type": "Commercial Fishing Vessel",
+    "length_ft": 171,
+    "breadth_ft": 49,
+    "depth_ft": 28.2,
+    "build_year": 2016,
+    "alternate_vins": "N/A"
+  },
+  "tanks": [
+    {
+      "tank_id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "category": "fuel",
+      "name": "Fuel Double Bottom Tank 2 P",
+      "abbreviation": "F.O. 2P",
+      "contents": "Diesel No. 2",
+      "capacity": 9288,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "category": "fuel",
+      "name": "Fuel Double Bottom Tank 2 S",
+      "abbreviation": "F.O. 2S",
+      "contents": "Diesel No. 2",
+      "capacity": 9191,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "category": "fuel",
+      "name": "Fuel Double Bottom Tank 3 P",
+      "abbreviation": "F.O. 3P",
+      "contents": "Diesel No. 2",
+      "capacity": 8763,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "category": "fuel",
+      "name": "Fuel Double Bottom Tank 3 S",
+      "abbreviation": "F.O. 3S",
+      "contents": "Diesel No. 2",
+      "capacity": 8763,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0005-4000-8000-000000000005",
+      "category": "fuel",
+      "name": "Fuel Double Bottom Tank 3 C",
+      "abbreviation": "F.O. 3C",
+      "contents": "Diesel No. 2",
+      "capacity": 15499,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0006-4000-8000-000000000006",
+      "category": "fuel",
+      "name": "Fuel Double Bottom Tank 4 C",
+      "abbreviation": "F.O. 4C",
+      "contents": "Diesel No. 2",
+      "capacity": 8295,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0007-4000-8000-000000000007",
+      "category": "fuel",
+      "name": "Fuel Double Bottom Tank 4 P",
+      "abbreviation": "F.O. 4P",
+      "contents": "Diesel No. 2",
+      "capacity": 10921,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0008-4000-8000-000000000008",
+      "category": "fuel",
+      "name": "Fuel Double Bottom Tank 4 S",
+      "abbreviation": "F.O. 4S",
+      "contents": "Diesel No. 2",
+      "capacity": 10921,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0009-4000-8000-000000000009",
+      "category": "fuel",
+      "name": "Fuel Double Bottom Tank 5 C Overflow",
+      "abbreviation": "F.O. 5C",
+      "contents": "Diesel No. 2",
+      "capacity": 7576,
+      "units": "USG",
+      "max_fill_pct": 10,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0010-4000-8000-000000000010",
+      "category": "fuel",
+      "name": "Fuel Heeling Tank 6 P",
+      "abbreviation": "F.O. 6P",
+      "contents": "Diesel No. 2",
+      "capacity": 11101,
+      "units": "USG",
+      "max_fill_pct": 50,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0011-4000-8000-000000000011",
+      "category": "fuel",
+      "name": "Fuel Heeling Tank 6 S",
+      "abbreviation": "F.O. 6S",
+      "contents": "Diesel No. 2",
+      "capacity": 11101,
+      "units": "USG",
+      "max_fill_pct": 50,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0012-4000-8000-000000000012",
+      "category": "fuel",
+      "name": "Fuel Main Engine Day Tank 7",
+      "abbreviation": "Day Tk.",
+      "contents": "Diesel No. 2",
+      "capacity": 3360,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0013-4000-8000-000000000013",
+      "category": "fuel",
+      "name": "Fuel Settling Tank 8",
+      "abbreviation": "Settling Tk.",
+      "contents": "Diesel No. 2",
+      "capacity": 3360,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0014-4000-8000-000000000014",
+      "category": "fuel",
+      "name": "Fuel Aux Generator Day Tank 36",
+      "abbreviation": "Aux 1 Day Tk.",
+      "contents": "Diesel No. 2",
+      "capacity": 402,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0015-4000-8000-000000000015",
+      "category": "fuel",
+      "name": "Fuel Aux Generator Day Tank 37",
+      "abbreviation": "Aux 2 Day Tk.",
+      "contents": "Diesel No. 2",
+      "capacity": 402,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0016-4000-8000-000000000016",
+      "category": "fuel",
+      "name": "Fuel Incinerator Tank 42",
+      "abbreviation": "Incin. F.O. Tk.",
+      "contents": "Diesel No. 2",
+      "capacity": 53,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0017-4000-8000-000000000017",
+      "category": "fuel",
+      "name": "Fuel E Generator Tank 43",
+      "abbreviation": "E-Gen Tk.",
+      "contents": "Diesel No. 2",
+      "capacity": 159,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 0.85
+    },
+    {
+      "tank_id": "a1b2c3d4-0018-4000-8000-000000000018",
+      "category": "lube_oil",
+      "name": "Main Engine Lube Oil Tank 22",
+      "abbreviation": "ME L.O. Tk.",
+      "contents": "Mobilgard 410 NC",
+      "capacity": 3938,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.9
+    },
+    {
+      "tank_id": "a1b2c3d4-0019-4000-8000-000000000019",
+      "category": "lube_oil",
+      "name": "Aux Generator Lube Oil Tank 24",
+      "abbreviation": "Aux L.O. Tk.",
+      "contents": "Mobil Delvac MX 15w40",
+      "capacity": 1220,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.9
+    },
+    {
+      "tank_id": "a1b2c3d4-0020-4000-8000-000000000020",
+      "category": "lube_oil",
+      "name": "Reduction Gear Lube Oil Tank 25",
+      "abbreviation": "RG L.O. Tk.",
+      "contents": "Mobil SHC 630",
+      "capacity": 471,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.9
+    },
+    {
+      "tank_id": "a1b2c3d4-0021-4000-8000-000000000021",
+      "category": "lube_oil",
+      "name": "Bow Thruster Gear Oil Tank 26",
+      "abbreviation": "BT Gear Tk.",
+      "contents": "Mobilgear 600 XP 68",
+      "capacity": 16,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.9
+    },
+    {
+      "tank_id": "a1b2c3d4-0022-4000-8000-000000000022",
+      "category": "lube_oil",
+      "name": "CPP Hydraulic Lube Oil Tank 23",
+      "abbreviation": "CPP H.O. Tk.",
+      "contents": "Mobil Nuto H 68",
+      "capacity": 751,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.9
+    },
+    {
+      "tank_id": "a1b2c3d4-0023-4000-8000-000000000023",
+      "category": "lube_oil",
+      "name": "Hydraulic Oil Storage Tank 28",
+      "abbreviation": "H.O. Storage Tk.",
+      "contents": "Chevron Rando 46",
+      "capacity": 1971,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.9
+    },
+    {
+      "tank_id": "a1b2c3d4-0024-4000-8000-000000000024",
+      "category": "lube_oil",
+      "name": "BT/Winch Gearbox Oil Tank 29",
+      "abbreviation": "BT/Gear Tk.",
+      "contents": "Mobilgear 600 XP 68",
+      "capacity": 470,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.9
+    },
+    {
+      "tank_id": "a1b2c3d4-0025-4000-8000-000000000025",
+      "category": "lube_oil",
+      "name": "Motor Cooling Oil Tank 20",
+      "abbreviation": "Motor Cooling Tk.",
+      "contents": "Chevron HDZ 15",
+      "capacity": 1175,
+      "units": "USG",
+      "max_fill_pct": 90,
+      "specific_gravity": 0.9
+    },
+    {
+      "tank_id": "a1b2c3d4-0026-4000-8000-000000000026",
+      "category": "waste_oil",
+      "name": "Bilge Water Tank 16",
+      "abbreviation": "Bilge Tk.",
+      "contents": "Bilge water",
+      "capacity": 1632,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 1
+    },
+    {
+      "tank_id": "a1b2c3d4-0027-4000-8000-000000000027",
+      "category": "waste_oil",
+      "name": "Sludge Tank 27",
+      "abbreviation": "Sludge Tk.",
+      "contents": "Sludge",
+      "capacity": 3936,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 1
+    },
+    {
+      "tank_id": "a1b2c3d4-0028-4000-8000-000000000028",
+      "category": "waste_oil",
+      "name": "Dirty Oil Tank 17",
+      "abbreviation": "Dirty Oil",
+      "contents": "Used Oil",
+      "capacity": 2944,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 1
+    },
+    {
+      "tank_id": "a1b2c3d4-0029-4000-8000-000000000029",
+      "category": "waste_oil",
+      "name": "Incinerator Sludge Tank",
+      "abbreviation": "Incin. Tk.",
+      "contents": "Sludge",
+      "capacity": 140,
+      "units": "USG",
+      "max_fill_pct": 95,
+      "specific_gravity": 1
+    },
+    {
+      "tank_id": "c2ab591d-b765-4cb3-b423-c8a33c6440bc",
+      "category": "water",
+      "name": "Fresh Water Tank  30 P",
+      "abbreviation": "Port Fresh Water",
+      "contents": "Potable",
+      "capacity": 5445,
+      "units": "USG",
+      "max_fill_pct": 100,
+      "specific_gravity": 1
+    },
+    {
+      "tank_id": "016e3601-6c65-4fe4-be5a-1efd9d771b49",
+      "category": "water",
+      "name": "Fresh Water Tank 31 S",
+      "abbreviation": "Stbd. Fresh Water",
+      "contents": "Potable",
+      "capacity": 5445,
+      "units": "USG",
+      "max_fill_pct": 100,
+      "specific_gravity": 1
+    },
+    {
+      "tank_id": "80e8b87f-76fd-4a98-af0a-338dd8d6f705",
+      "category": "water",
+      "name": "Forepeak Technical Water 1 CL",
+      "abbreviation": "Fwd. Technical",
+      "contents": "Fresh Water",
+      "capacity": 21932,
+      "units": "USG",
+      "max_fill_pct": 100,
+      "specific_gravity": 1
+    },
+    {
+      "tank_id": "69f44db8-3f5a-4773-a2c2-2e9a3fc7bc35",
+      "category": "water",
+      "name": "Stern Technical Water 6 CL",
+      "abbreviation": "Aft Technical",
+      "contents": "Fresh Water",
+      "capacity": 14366,
+      "units": "USG",
+      "max_fill_pct": 100,
+      "specific_gravity": 1
+    },
+    {
+      "tank_id": "7c147d30-9a08-4449-8635-feb759d9419d",
+      "category": "water",
+      "name": "Anti Roll Tank 41",
+      "abbreviation": "Anti Roll Tank",
+      "contents": "Fresh Water",
+      "capacity": 14366,
+      "units": "USG",
+      "max_fill_pct": 100,
+      "specific_gravity": 1.025
+    },
+    {
+      "tank_id": "c1c8c408-85ad-4182-8223-61c994efcbfb",
+      "category": "sewage",
+      "name": "Grey Water Port 30 P",
+      "abbreviation": "Grey Water Port",
+      "contents": "Grey Water",
+      "capacity": 1700,
+      "units": "USG",
+      "max_fill_pct": 100,
+      "specific_gravity": 1.025
+    },
+    {
+      "tank_id": "ff66d9da-2fd2-4330-8388-717e591536ac",
+      "category": "sewage",
+      "name": "Grey Water Stbd 39 S",
+      "abbreviation": "Grey Water Stbd",
+      "contents": "Grey Water",
+      "capacity": 1700,
+      "units": "USG",
+      "max_fill_pct": 100,
+      "specific_gravity": 1.025
+    },
+    {
+      "tank_id": "5904ec40-4071-46ac-9086-cb498e3876f2",
+      "category": "sewage",
+      "name": "Black Water 40",
+      "abbreviation": "",
+      "contents": "Black Water",
+      "capacity": 500,
+      "units": "USG",
+      "max_fill_pct": 100,
+      "specific_gravity": 1.025
+    }
+  ],
+  "machinery": [],
+  "compartments": [],
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-04-21",
+      "note": "Initial vessel configuration."
+    }
+  ]
+}

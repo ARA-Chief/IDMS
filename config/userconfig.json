@@ -1,14 +1,109 @@
 {
   "vessel": "F/V Araho",
   "version": "1.0",
-  "departments": ["Factory", "Engine Room", "Deck"],
+  "departments": [
+    "Factory",
+    "Engine Room",
+    "Deck"
+  ],
   "users": [
-    { "username": "admin",    "password": "araho24", "role": "Admin",            "departments": ["Factory", "Engine Room", "Deck"] },
-    { "username": "tploch",   "password": "araho24", "role": "Chief Engineer",   "departments": ["Factory", "Engine Room"] },
-    { "username": "wostara",  "password": "araho24", "role": "Chief Engineer",   "departments": ["Factory", "Engine Room"] },
-    { "username": "spotchik", "password": "araho24", "role": "1st Engineer",     "departments": ["Factory", "Engine Room"] },
-    { "username": "psimes",   "password": "araho24", "role": "1st Engineer",     "departments": ["Factory", "Engine Room"] },
-    { "username": "rgarcia",  "password": "araho24", "role": "Factory Engineer", "departments": ["Factory"] },
-    { "username": "tlee",     "password": "araho24", "role": "Freezer Tech",     "departments": ["Factory"] }
-  ]
+    {
+      "username": "admin",
+      "password": "araho24",
+      "role": "Admin",
+      "departments": [
+        "Factory",
+        "Engine Room",
+        "Deck"
+      ],
+      "user_id": "0e08ff3c-ba70-41b3-85f4-07e7f2766369",
+      "name": "Araho Administrator",
+      "permission_tier": "admin",
+      "status": "active",
+      "email": "",
+      "phone": "",
+      "location": ""
+    },
+    {
+      "username": "tploch",
+      "password": "araho24",
+      "role": "Chief Engineer",
+      "departments": [
+        "Factory",
+        "Engine Room"
+      ],
+      "user_id": "2fb9eb13-d02c-40f4-ab5d-a8077402a99f",
+      "name": "Taylor Ploch",
+      "permission_tier": "admin",
+      "status": "active",
+      "email": "",
+      "phone": "",
+      "location": ""
+    },
+    {
+      "username": "wostara",
+      "password": "araho24",
+      "role": "Chief Engineer",
+      "departments": [
+        "Factory",
+        "Engine Room"
+      ],
+      "user_id": "84ff7654-3d20-499c-92f4-7e41af1d6e74",
+      "name": "William Ostara",
+      "permission_tier": "admin",
+      "status": "active",
+      "email": "wm.ostara@gmail.com",
+      "phone": "+1 206 451 0549 or +44 07535 271858",
+      "location": "Plymouth, UK"
+    },
+    {
+      "username": "spotchik",
+      "password": "araho24",
+      "role": "1st Engineer",
+      "departments": [
+        "Factory",
+        "Engine Room"
+      ],
+      "user_id": "bb092596-1f7d-46f3-83d2-ea024a13287e",
+      "name": "Sam Potchik",
+      "permission_tier": "admin",
+      "status": "active",
+      "email": "",
+      "phone": "",
+      "location": ""
+    },
+    {
+      "username": "psimes",
+      "password": "araho24",
+      "role": "1st Engineer",
+      "departments": [
+        "Factory",
+        "Engine Room"
+      ],
+      "user_id": "254220b1-77d0-4c74-ad52-b7668db70beb",
+      "name": "Patience Simes",
+      "permission_tier": "admin",
+      "status": "active",
+      "email": "",
+      "phone": "",
+      "location": ""
+    },
+    {
+      "username": "rgarcia",
+      "password": "araho24",
+      "role": "Factory Engineer",
+      "departments": [
+        "Factory",
+        "Engine Room"
+      ],
+      "user_id": "36ae745f-5b6e-4f8a-a2dd-44805e02a52c",
+      "name": "Rolando Garcia",
+      "permission_tier": "standard",
+      "status": "active",
+      "email": "",
+      "phone": "",
+      "location": ""
+    }
+  ],
+  "schema_version": 1
 }

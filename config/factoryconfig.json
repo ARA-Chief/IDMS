@@ -1,12 +1,12 @@
 {
   "department": "Factory",
   "version": "1.0",
-  "note": "OPERATOR CONFIG — edit this file to customise equipment and categories for your vessel. Do not edit factoryshell.json unless directed by a developer.",
+  "schema_version": 2,
+  "note": "OPERATOR CONFIG — edit this file to customise equipment, categories, and production line sections for your vessel. Do not edit factoryshell.json unless directed by a developer.",
 
   "presets_default": [
-    { "equipment": "Plate Freezer #1", "category": "Mechanical jam",         "label": "PLATE FREEZER JAM" },
-    { "equipment": "Pan Ejector 1",    "category": "Mechanical jam",         "label": "PAN EJECTOR JAM"   },
-    { "equipment": "Label Applicator", "category": "Mislabel / wrong label", "label": "MISLABEL"          }
+    { "equipment": "Plate Freezer #1",   "category": "Mechanical jam", "label": "PLATE FREEZER JAM"   },
+    { "equipment": "Breaking Station 1", "category": "Mechanical jam", "label": "BREAKING STATION JAM" }
   ],
 
   "equipment": [
@@ -23,12 +23,9 @@
     {
       "group": "Breaking & Case Up",
       "items": [
-        "Pan Ejector 1",
-        "Pan Ejector 2",
-        "Bag Applicator",
-        "Welding Machine",
-        "Check Weight Scale",
-        "Label Applicator"
+        "Breaking Station 1",
+        "Breaking Station 2",
+        "Case Up"
       ]
     },
     {
@@ -37,13 +34,13 @@
         "Back Line",
         "Header #1",
         "Header #2",
-        "Packing Station"
+        "Packing Stations"
       ]
     },
     {
       "group": "General",
       "items": [
-        "Conveyor Belt",
+        "Conveyor Belts",
         "Air Compressor",
         "Forklift"
       ]
@@ -60,5 +57,106 @@
     "Operator error",
     "Mislabel / wrong label",
     "Unknown / investigating"
+  ],
+
+  "production": {
+    "reset_time": "00:00",
+    "target_species": null,
+    "trip_capacity_mt": null,
+    "species_baseline_avg_mt": null,
+    "pan_volume_l": null,
+    "pan_gross_weight_kg": null,
+    "pan_target_overpack_pct": null,
+    "email_subject_filter": "Daily Production Report",
+    "email_source_address": null,
+    "bottleneck_mt_per_day": null,
+
+    "line_sections": [
+      {
+        "section_id":              "3e4a5f6b-7c8d-4e0f-a1b2-000000000001",
+        "label":                   "Plate Freezers",
+        "type":                    "plate_freezer",
+        "equipment_group_code":    null,
+        "equipment_subgroup_code": null,
+        "sub_assets":              [],
+        "enabled":                 true,
+        "theoretical_mt_per_day":  null
+      },
+      {
+        "section_id":              "3e4a5f6b-7c8d-4e0f-a1b2-000000000002",
+        "label":                   "Headers",
+        "type":                    "header",
+        "equipment_group_code":    null,
+        "equipment_subgroup_code": null,
+        "sub_assets":              [],
+        "enabled":                 true,
+        "belt_speed_ms":           null,
+        "fish_per_minute":         null,
+        "theoretical_mt_per_day":  null
+      },
+      {
+        "section_id":              "3e4a5f6b-7c8d-4e0f-a1b2-000000000003",
+        "label":                   "Pan Breaking",
+        "type":                    "throughput",
+        "equipment_group_code":    null,
+        "equipment_subgroup_code": null,
+        "sub_assets":              [],
+        "enabled":                 true,
+        "theoretical_mt_per_day":  null
+      },
+      {
+        "section_id":              "3e4a5f6b-7c8d-4e0f-a1b2-000000000004",
+        "label":                   "Case-Up",
+        "type":                    "throughput",
+        "equipment_group_code":    null,
+        "equipment_subgroup_code": null,
+        "sub_assets":              [],
+        "enabled":                 true,
+        "theoretical_mt_per_day":  null
+      },
+      {
+        "section_id":              "3e4a5f6b-7c8d-4e0f-a1b2-000000000005",
+        "label":                   "Conveyor Belts",
+        "type":                    "belt",
+        "equipment_group_code":    null,
+        "equipment_subgroup_code": null,
+        "sub_assets":              [],
+        "enabled":                 true,
+        "theoretical_mt_per_day":  null
+      },
+      {
+        "section_id":              "3e4a5f6b-7c8d-4e0f-a1b2-000000000006",
+        "label":                   "Packing Station",
+        "type":                    "packing",
+        "equipment_group_code":    null,
+        "equipment_subgroup_code": null,
+        "sub_assets":              [],
+        "enabled":                 true,
+        "theoretical_mt_per_day":  null
+      },
+      {
+        "section_id":              "3e4a5f6b-7c8d-4e0f-a1b2-000000000007",
+        "label":                   "Back Line",
+        "type":                    "belt",
+        "equipment_group_code":    null,
+        "equipment_subgroup_code": null,
+        "sub_assets":              [],
+        "enabled":                 true,
+        "theoretical_mt_per_day":  null
+      }
+    ]
+  },
+
+  "changelog": [
+    {
+      "version": "2.0",
+      "date":    "2026-04-29",
+      "note":    "Added production section (schema_version 2) with line_sections for Factory Production module."
+    },
+    {
+      "version": "2.1",
+      "date":    "2026-04-30",
+      "note":    "Moved pan spec (volume, gross weight, overpack) to production top-level. Removed per-section pan spec fields."
+    }
   ]
 }
