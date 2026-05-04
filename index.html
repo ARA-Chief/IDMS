@@ -354,6 +354,30 @@
     /* Center the modal card on bigger screens, keep bottom-sheet feel on phones */
     #er-task-update-modal { align-items: center; justify-content: center; padding: 16px; }
     #er-task-update-modal .modal-card { border-radius: var(--radius-xl); max-height: calc(100vh - 32px); overflow-y: auto; }
+    #er-cert-add-modal { align-items: center; justify-content: center; padding: 16px; }
+    #er-cert-add-modal .modal-card { border-radius: var(--radius-xl); max-height: calc(100vh - 32px); overflow-y: auto; }
+
+    /* ── PROFILE — editable view ── */
+    .er-profile-pic-wrap { position: relative; width: 96px; height: 96px; margin: 0 auto 14px; }
+    .er-profile-pic { width: 96px; height: 96px; border-radius: 50%; background: var(--bg-2); border: 2px solid var(--border); object-fit: cover; display: block; }
+    .er-profile-pic-initials { width: 96px; height: 96px; border-radius: 50%; background: var(--bg-2); border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 700; color: var(--accent); }
+    .er-profile-pic-edit { position: absolute; bottom: 0; right: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; border: 2px solid var(--bg-1); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .er-profile-section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); padding: 16px 16px 8px; }
+    .er-profile-field { padding: 0 16px 12px; }
+    .er-profile-field-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 5px; }
+    .er-profile-field-input { width: 100%; padding: 10px 12px; font-size: 14px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); box-sizing: border-box; }
+    .er-profile-field-input[readonly] { color: var(--text-muted); }
+    .er-profile-cert-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; margin: 0 16px 8px; display: flex; align-items: center; gap: 10px; }
+    .er-profile-cert-info { flex: 1; min-width: 0; }
+    .er-profile-cert-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .er-profile-cert-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+    .er-profile-cert-status-valid    { color: var(--success); }
+    .er-profile-cert-status-expiring { color: var(--warning); }
+    .er-profile-cert-status-expired  { color: var(--danger);  }
+    .er-profile-cert-delete { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 6px 8px; font-size: 16px; }
+    .er-profile-cert-delete:hover { color: var(--danger); }
+    .er-profile-add-cert-btn { width: calc(100% - 32px); margin: 4px 16px 16px; padding: 12px; background: transparent; color: var(--accent); border: 1px dashed var(--border-accent, var(--accent)); border-radius: var(--radius-md); font-size: 14px; font-weight: 600; cursor: pointer; }
+    .er-profile-add-cert-btn:active { background: var(--bg-2); }
 
     /* ── MODAL ── */
     .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; display: flex; align-items: flex-end; }
@@ -1081,11 +1105,61 @@
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <h2>My Profile</h2>
-      <div style="width:36px"></div>
+      <button class="icon-btn" id="er-profile-save-btn" onclick="saveErProfile()" aria-label="Save" style="display:none">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M3 9l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div id="er-profile-save-spacer" style="width:36px"></div>
     </div>
     <div id="er-profile-loading" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px">Loading…</div>
-    <div id="er-profile-content" style="display:none;flex:1;overflow-y:auto;padding-bottom:24px"></div>
+    <div id="er-profile-content" style="display:none;flex:1;overflow-y:auto;padding-bottom:120px"></div>
     <div id="er-profile-error" style="display:none;flex:1;align-items:center;justify-content:center;padding:24px;color:var(--text-muted);font-size:14px;text-align:center;line-height:1.6"></div>
+    <div id="er-profile-toast" style="display:none;position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:var(--success);color:#fff;padding:10px 18px;border-radius:var(--radius-md);font-size:13px;font-weight:600;z-index:50;box-shadow:0 6px 18px rgba(0,0,0,0.3)"></div>
+    <input type="file" id="er-profile-pic-input" accept="image/*" style="display:none">
+  </div>
+
+  <!-- ── ENGINE ROOM: ADD CERTIFICATE MODAL ── -->
+  <div class="modal-overlay" id="er-cert-add-modal" style="display:none">
+    <div class="modal-card" style="max-width:480px;text-align:left">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h3 class="modal-title" style="margin:0">Add Certificate</h3>
+        <button onclick="closeErCertAddModal()" style="background:transparent;border:none;color:var(--text-muted);font-size:22px;cursor:pointer;line-height:1;padding:0 4px">×</button>
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Certificate Type</label>
+        <select id="er-cert-type-sel" class="er-form-input" onchange="onErCertTypeChange()"></select>
+      </div>
+
+      <div class="er-form-row" id="er-cert-custom-row" style="display:none">
+        <label class="er-form-label">Custom Name</label>
+        <input type="text" id="er-cert-custom-name" class="er-form-input" placeholder="Name of certificate">
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Date Issued</label>
+        <input type="date" id="er-cert-date-issued" class="er-form-input">
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Date Expiry <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+        <input type="date" id="er-cert-date-expiry" class="er-form-input">
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Files <span style="color:var(--text-muted);font-weight:400">(PDF or images, multiple OK)</span></label>
+        <input type="file" id="er-cert-files" accept=".pdf,image/*" multiple class="er-form-input" style="padding:6px">
+        <div id="er-cert-files-preview" style="font-size:11px;color:var(--text-muted);margin-top:6px"></div>
+      </div>
+
+      <div id="er-cert-add-error" style="display:none;font-size:12px;color:var(--danger);margin-top:8px"></div>
+
+      <div class="modal-actions" style="margin-top:18px">
+        <button class="modal-btn modal-btn-secondary" onclick="closeErCertAddModal()">Cancel</button>
+        <button class="modal-btn modal-btn-primary" id="er-cert-add-save" onclick="submitErCertAdd()">Upload &amp; Save</button>
+      </div>
+    </div>
   </div>
 
   <!-- ── ROUNDS CONFIRM MODAL ── -->
@@ -2447,15 +2521,102 @@ function erEscapeAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-// ── ENGINE ROOM: PROFILE ─────────────────
+// ── ENGINE ROOM: PROFILE — editable, writes to crewconfig.json ──────────────
+// Loads the crew member's record, lets them edit a defined subset of fields,
+// add/delete certificates, and upload a profile picture. All writes go to
+// Documents/IDMS/config/crewconfig.json on OneDrive — the same file the Console
+// reads, so changes propagate everywhere on next load.
+
+// Major US commercial airports (IATA code + city). "Other" lives at the top so
+// crew can type a freeform location when their preferred airport isn't listed.
+var ER_US_AIRPORTS = [
+  ['__OTHER__','— Other (type below) —'],
+  ['ABQ','Albuquerque, NM'], ['ADQ','Kodiak, AK'], ['AEX','Alexandria, LA'],
+  ['ALB','Albany, NY'], ['ANC','Anchorage, AK'], ['ASE','Aspen, CO'],
+  ['ATL','Atlanta, GA'], ['ATW','Appleton, WI'], ['AUS','Austin, TX'],
+  ['AVL','Asheville, NC'], ['AVP','Wilkes-Barre, PA'], ['AZA','Phoenix-Mesa, AZ'],
+  ['BDL','Hartford, CT'], ['BET','Bethel, AK'], ['BFL','Bakersfield, CA'],
+  ['BGM','Binghamton, NY'], ['BGR','Bangor, ME'], ['BHM','Birmingham, AL'],
+  ['BIL','Billings, MT'], ['BIS','Bismarck, ND'], ['BLI','Bellingham, WA'],
+  ['BMI','Bloomington, IL'], ['BNA','Nashville, TN'], ['BOI','Boise, ID'],
+  ['BOS','Boston, MA'], ['BTR','Baton Rouge, LA'], ['BTV','Burlington, VT'],
+  ['BUF','Buffalo, NY'], ['BUR','Burbank, CA'], ['BWI','Baltimore, MD'],
+  ['BZN','Bozeman, MT'], ['CAE','Columbia, SC'], ['CAK','Akron-Canton, OH'],
+  ['CDB','Cold Bay, AK'], ['CHA','Chattanooga, TN'], ['CHO','Charlottesville, VA'],
+  ['CHS','Charleston, SC'], ['CID','Cedar Rapids, IA'], ['CLE','Cleveland, OH'],
+  ['CLT','Charlotte, NC'], ['CMH','Columbus, OH'], ['COD','Cody, WY'],
+  ['COS','Colorado Springs, CO'], ['CPR','Casper, WY'], ['CRP','Corpus Christi, TX'],
+  ['CRW','Charleston, WV'], ['CVG','Cincinnati, OH'], ['CYS','Cheyenne, WY'],
+  ['DAB','Daytona Beach, FL'], ['DAL','Dallas Love, TX'], ['DAY','Dayton, OH'],
+  ['DCA','Washington Reagan, DC'], ['DEN','Denver, CO'], ['DFW','Dallas/Ft Worth, TX'],
+  ['DLG','Dillingham, AK'], ['DLH','Duluth, MN'], ['DSM','Des Moines, IA'],
+  ['DTW','Detroit, MI'], ['DUT','Dutch Harbor, AK'], ['ELP','El Paso, TX'],
+  ['EUG','Eugene, OR'], ['EVV','Evansville, IN'], ['EWR','Newark, NJ'],
+  ['FAI','Fairbanks, AK'], ['FAR','Fargo, ND'], ['FAT','Fresno, CA'],
+  ['FAY','Fayetteville, NC'], ['FLL','Ft Lauderdale, FL'], ['FNT','Flint, MI'],
+  ['FSD','Sioux Falls, SD'], ['FWA','Ft Wayne, IN'], ['GCC','Gillette, WY'],
+  ['GEG','Spokane, WA'], ['GJT','Grand Junction, CO'], ['GPT','Gulfport, MS'],
+  ['GRB','Green Bay, WI'], ['GRR','Grand Rapids, MI'], ['GSO','Greensboro, NC'],
+  ['GSP','Greenville, SC'], ['HNL','Honolulu, HI'], ['HOM','Homer, AK'],
+  ['HOU','Houston Hobby, TX'], ['HPN','White Plains, NY'], ['HSV','Huntsville, AL'],
+  ['IAD','Washington Dulles, VA'], ['IAH','Houston Intercontinental, TX'],
+  ['ICT','Wichita, KS'], ['IDA','Idaho Falls, ID'], ['ILM','Wilmington, NC'],
+  ['IND','Indianapolis, IN'], ['ISP','Long Island, NY'], ['JAC','Jackson Hole, WY'],
+  ['JAN','Jackson, MS'], ['JAX','Jacksonville, FL'], ['JFK','New York JFK, NY'],
+  ['JNU','Juneau, AK'], ['KOA','Kona, HI'], ['KTN','Ketchikan, AK'],
+  ['KVC','King Cove, AK'], ['LAS','Las Vegas, NV'], ['LAX','Los Angeles, CA'],
+  ['LBB','Lubbock, TX'], ['LEX','Lexington, KY'], ['LFT','Lafayette, LA'],
+  ['LGA','New York LaGuardia, NY'], ['LGB','Long Beach, CA'], ['LIH','Lihue, HI'],
+  ['LIT','Little Rock, AR'], ['MAF','Midland, TX'], ['MBS','Saginaw, MI'],
+  ['MCI','Kansas City, MO'], ['MCO','Orlando, FL'], ['MDT','Harrisburg, PA'],
+  ['MDW','Chicago Midway, IL'], ['MEM','Memphis, TN'], ['MFE','McAllen, TX'],
+  ['MFR','Medford, OR'], ['MGM','Montgomery, AL'], ['MHT','Manchester, NH'],
+  ['MIA','Miami, FL'], ['MKE','Milwaukee, WI'], ['MLB','Melbourne, FL'],
+  ['MLI','Moline, IL'], ['MOB','Mobile, AL'], ['MRY','Monterey, CA'],
+  ['MSN','Madison, WI'], ['MSO','Missoula, MT'], ['MSP','Minneapolis, MN'],
+  ['MSY','New Orleans, LA'], ['MYR','Myrtle Beach, SC'], ['OAK','Oakland, CA'],
+  ['OGG','Maui, HI'], ['OKC','Oklahoma City, OK'], ['OMA','Omaha, NE'],
+  ['OME','Nome, AK'], ['ONT','Ontario, CA'], ['ORD','Chicago O\'Hare, IL'],
+  ['ORF','Norfolk, VA'], ['OTZ','Kotzebue, AK'], ['PBI','West Palm Beach, FL'],
+  ['PDX','Portland, OR'], ['PHF','Newport News, VA'], ['PHL','Philadelphia, PA'],
+  ['PHX','Phoenix, AZ'], ['PIA','Peoria, IL'], ['PIT','Pittsburgh, PA'],
+  ['PNS','Pensacola, FL'], ['PSC','Pasco, WA'], ['PSG','Petersburg, AK'],
+  ['PSP','Palm Springs, CA'], ['PVD','Providence, RI'], ['PWM','Portland, ME'],
+  ['RAP','Rapid City, SD'], ['RDM','Redmond/Bend, OR'], ['RDU','Raleigh-Durham, NC'],
+  ['RIC','Richmond, VA'], ['RIW','Riverton, WY'], ['RNO','Reno, NV'],
+  ['ROA','Roanoke, VA'], ['ROC','Rochester, NY'], ['RST','Rochester, MN'],
+  ['RSW','Ft Myers, FL'], ['SAF','Santa Fe, NM'], ['SAN','San Diego, CA'],
+  ['SAT','San Antonio, TX'], ['SAV','Savannah, GA'], ['SBA','Santa Barbara, CA'],
+  ['SBN','South Bend, IN'], ['SDF','Louisville, KY'], ['SDP','Sand Point, AK'],
+  ['SEA','Seattle-Tacoma, WA'], ['SFO','San Francisco, CA'], ['SGF','Springfield, MO'],
+  ['SHV','Shreveport, LA'], ['SIT','Sitka, AK'], ['SJC','San Jose, CA'],
+  ['SLC','Salt Lake City, UT'], ['SMF','Sacramento, CA'], ['SNA','Orange County, CA'],
+  ['SNP','St. Paul Island, AK'], ['SPI','Springfield, IL'], ['SRQ','Sarasota, FL'],
+  ['STL','St. Louis, MO'], ['STT','St. Thomas, VI'], ['STX','St. Croix, VI'],
+  ['SYR','Syracuse, NY'], ['TLH','Tallahassee, FL'], ['TPA','Tampa, FL'],
+  ['TRI','Tri-Cities, TN'], ['TUL','Tulsa, OK'], ['TUS','Tucson, AZ'],
+  ['TVC','Traverse City, MI'], ['TYS','Knoxville, TN'], ['VPS','Destin/Ft Walton, FL'],
+  ['WRG','Wrangell, AK'], ['XNA','NW Arkansas, AR'], ['YAK','Yakutat, AK']
+];
+
+// In-memory state for the profile screen
+var ER_PROFILE_STATE = {
+  crewConfig:     null,  // full crewconfig.json blob (so we save it back intact)
+  member:         null,  // reference to the current user's crew member object
+  certTypes:      [],    // from trainingmatrix.json
+  pendingPicFile: null   // staged profile pic blob, uploaded on save
+};
+
 function openEngineProfile() {
   showScreen('screen-engine-profile');
   var loadEl    = document.getElementById('er-profile-loading');
   var contentEl = document.getElementById('er-profile-content');
   var errorEl   = document.getElementById('er-profile-error');
+  var saveBtn   = document.getElementById('er-profile-save-btn');
   loadEl.style.display    = 'flex';
   contentEl.style.display = 'none';
   errorEl.style.display   = 'none';
+  if (saveBtn) saveBtn.style.display = 'none';
 
   if (!graphToken) {
     loadEl.style.display  = 'none';
@@ -2464,80 +2625,501 @@ function openEngineProfile() {
     return;
   }
 
-  var url = configURL('config/crewconfig.json');
-  fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } })
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .catch(function() { return null; })
-    .then(function(cfg) {
-      loadEl.style.display = 'none';
-      var member = null;
-      if (cfg && cfg.crew) {
-        for (var i = 0; i < cfg.crew.length; i++) {
-          if (cfg.crew[i].username === currentUser.username) { member = cfg.crew[i]; break; }
-        }
-      }
-      // Fall back to userconfig data when crewconfig is absent or user not listed
-      if (!member) {
-        member = {
-          name:       currentUser.name,
-          role:       currentUser.role,
-          department: currentDepartment,
-          username:   currentUser.username,
-          status:     'active'
-        };
-      }
-      erRenderProfile(contentEl, member);
-      contentEl.style.display = 'block';
+  // Load crewconfig + trainingmatrix in parallel from OneDrive
+  Promise.all([
+    erFetchOneDriveJson('Documents/IDMS/config/crewconfig.json'),
+    erFetchOneDriveJson('Documents/IDMS/config/trainingmatrix.json').catch(function() { return null; })
+  ]).then(function(results) {
+    var cfg = results[0], tm = results[1];
+    loadEl.style.display = 'none';
+
+    if (!cfg || !Array.isArray(cfg.crew)) {
+      errorEl.style.display = 'flex';
+      errorEl.textContent   = 'Could not load crew config.';
+      return;
+    }
+
+    var member = null;
+    for (var i = 0; i < cfg.crew.length; i++) {
+      if (cfg.crew[i].username === currentUser.username) { member = cfg.crew[i]; break; }
+    }
+    if (!member) {
+      errorEl.style.display = 'flex';
+      errorEl.textContent   = 'No crew record found for ' + currentUser.username + '. Ask an administrator to add you to the Crew List.';
+      return;
+    }
+
+    ER_PROFILE_STATE.crewConfig     = cfg;
+    ER_PROFILE_STATE.member         = member;
+    ER_PROFILE_STATE.certTypes      = (tm && Array.isArray(tm.cert_types)) ? tm.cert_types : [];
+    ER_PROFILE_STATE.pendingPicFile = null;
+
+    erRenderProfile(contentEl, member);
+    contentEl.style.display = 'block';
+    if (saveBtn) saveBtn.style.display = 'flex';
+  }).catch(function(err) {
+    loadEl.style.display  = 'none';
+    errorEl.style.display = 'flex';
+    errorEl.textContent   = 'Error loading profile: ' + err.message;
+  });
+}
+
+function erFetchOneDriveJson(path) {
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' + encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+  return fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } })
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + path);
+      return r.json();
     });
 }
 
 function erRenderProfile(el, m) {
-  var initials = (m.name || '?').split(' ').map(function(w) { return w[0]; }).join('').toUpperCase().slice(0, 2);
-  var statusColor = m.status === 'active' ? 'var(--success)' : 'var(--warning)';
-  var statusBg    = m.status === 'active' ? 'rgba(0,200,100,0.12)' : 'rgba(255,170,0,0.12)';
+  var contact = m.contact || {};
+  var initials = (m.name || '?').split(/\s+/).filter(Boolean)
+    .map(function(w) { return w[0]; }).join('').toUpperCase().slice(0, 2);
 
-  var html = '<div style="display:flex;flex-direction:column;align-items:center;padding:28px 16px 20px;border-bottom:1px solid var(--border)">'
-    + '<div class="user-avatar" style="width:72px;height:72px;font-size:24px;margin-bottom:14px">' + initials + '</div>'
-    + '<div style="font-size:20px;font-weight:700;color:var(--text-primary)">' + (m.name || '—') + '</div>'
-    + '<div style="font-size:14px;color:var(--text-muted);margin-top:4px">' + (m.role || '—') + '</div>'
-    + (m.status ? '<div style="margin-top:10px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;padding:3px 10px;border-radius:10px;background:' + statusBg + ';color:' + statusColor + '">' + m.status + '</div>' : '')
-    + '</div>';
+  // Build airport options (current value selected; "Other" used when current value isn't a known IATA)
+  var currentAirport = contact.preferred_airport || '';
+  var airportCodes   = ER_US_AIRPORTS.map(function(a) { return a[0]; });
+  var isKnownAirport = currentAirport && airportCodes.indexOf(currentAirport) !== -1;
+  var airportOpts = ER_US_AIRPORTS.map(function(a) {
+    var sel = (isKnownAirport && a[0] === currentAirport) ? ' selected' : '';
+    return '<option value="' + a[0] + '"' + sel + '>' + erEscapeHtml(a[1]) + '</option>';
+  }).join('');
 
-  var rows = [
-    { label: 'Username',    value: m.username },
-    { label: 'Department',  value: m.department || currentDepartment },
-    { label: 'Vessel',      value: m.vessel || (CONFIG && CONFIG.vessel_name) || 'F/V Araho' }
-  ];
-  if (m.contact) {
-    if (m.contact.email) rows.push({ label: 'Email', value: m.contact.email });
-    if (m.contact.phone) rows.push({ label: 'Phone', value: m.contact.phone });
+  // Profile picture: <img> if a path is set, otherwise initials
+  var picHtml;
+  if (m.profile_picture && m.profile_picture.path) {
+    picHtml = '<img id="er-profile-pic-img" class="er-profile-pic" data-path="' + erEscapeAttr(m.profile_picture.path) + '" alt="">';
+  } else {
+    picHtml = '<div class="er-profile-pic-initials" id="er-profile-pic-img">' + erEscapeHtml(initials) + '</div>';
   }
 
-  html += '<div>';
-  rows.forEach(function(r) {
-    if (!r.value) return;
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)">'
-      + '<span style="font-size:13px;color:var(--text-muted)">' + r.label + '</span>'
-      + '<span style="font-size:14px;color:var(--text-secondary);font-weight:500">' + r.value + '</span>'
-      + '</div>';
-  });
-  html += '</div>';
+  var html = ''
+    + '<div style="padding:24px 16px 12px;text-align:center;border-bottom:1px solid var(--border)">'
+    +   '<div class="er-profile-pic-wrap">'
+    +     picHtml
+    +     '<div class="er-profile-pic-edit" onclick="document.getElementById(\'er-profile-pic-input\').click()" title="Change photo">'
+    +       '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11 2l3 3-9 9H2v-3l9-9z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div style="font-size:18px;font-weight:700;color:var(--text-primary)">' + erEscapeHtml(m.name || '—') + '</div>'
+    +   '<div style="font-size:13px;color:var(--text-muted);margin-top:3px">' + erEscapeHtml(m.role_label || m.role || '') + ' · ' + erEscapeHtml(m.department || currentDepartment || '') + '</div>'
+    +   (m.crew_id ? '<div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;color:var(--text-muted);margin-top:6px;word-break:break-all">' + erEscapeHtml(m.crew_id) + '</div>' : '')
+    + '</div>'
 
-  if (m.certificates && m.certificates.length > 0) {
-    html += '<div style="padding:16px 16px 6px">'
-      + '<div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px">Certificates</div>';
-    m.certificates.forEach(function(cert) {
-      var name   = typeof cert === 'string' ? cert : (cert.name || '—');
-      var expiry = typeof cert === 'object' ? cert.expiry : null;
-      html += '<div style="background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:8px">'
-        + '<div style="font-size:14px;font-weight:600;color:var(--text-primary)">' + name + '</div>'
-        + (expiry ? '<div style="font-size:12px;color:var(--text-muted);margin-top:3px">Expires ' + expiry + '</div>' : '')
+    + '<div class="er-profile-field" style="padding-top:14px">'
+    +   '<div class="er-profile-field-label">Full Name</div>'
+    +   '<input type="text" class="er-profile-field-input" value="' + erEscapeAttr(m.name || '') + '" readonly>'
+    + '</div>'
+    + '<div class="er-profile-field">'
+    +   '<div class="er-profile-field-label">IDMS Username</div>'
+    +   '<input type="text" class="er-profile-field-input" value="' + erEscapeAttr(m.username || '') + '" readonly>'
+    + '</div>'
+    + '<div class="er-profile-field">'
+    +   '<div class="er-profile-field-label">Password</div>'
+    +   '<input type="text" id="er-profile-password" class="er-profile-field-input" value="' + erEscapeAttr(m.password || '') + '">'
+    + '</div>'
+
+    + '<div class="er-profile-section-label">Contact</div>'
+    + '<div class="er-profile-field">'
+    +   '<div class="er-profile-field-label">Phone</div>'
+    +   '<input type="tel" id="er-profile-phone" class="er-profile-field-input" value="' + erEscapeAttr(contact.phone || '') + '" placeholder="+1 555 123 4567">'
+    + '</div>'
+    + '<div class="er-profile-field">'
+    +   '<div class="er-profile-field-label">Email</div>'
+    +   '<input type="email" id="er-profile-email" class="er-profile-field-input" value="' + erEscapeAttr(contact.email || '') + '" placeholder="name@example.com">'
+    + '</div>'
+    + '<div class="er-profile-field">'
+    +   '<div class="er-profile-field-label">Preferred Airport</div>'
+    +   '<select id="er-profile-airport-sel" class="er-profile-field-input" onchange="onErAirportChange()">'
+    +     '<option value="">— select —</option>'
+    +     airportOpts
+    +   '</select>'
+    +   '<input type="text" id="er-profile-airport-other" class="er-profile-field-input" placeholder="Type airport / location"'
+    +     ' style="margin-top:6px;display:' + (isKnownAirport || !currentAirport ? 'none' : 'block') + '"'
+    +     ' value="' + (isKnownAirport ? '' : erEscapeAttr(currentAirport)) + '">'
+    + '</div>'
+    + '<div class="er-profile-field">'
+    +   '<div class="er-profile-field-label">WhatsApp</div>'
+    +   '<input type="tel" id="er-profile-whatsapp" class="er-profile-field-input" value="' + erEscapeAttr(contact.whatsapp || '') + '" placeholder="+1 555 123 4567">'
+    + '</div>'
+    + '<div class="er-profile-field">'
+    +   '<div class="er-profile-field-label">Messenger</div>'
+    +   '<input type="text" id="er-profile-messenger" class="er-profile-field-input" value="' + erEscapeAttr(contact.messenger || '') + '" placeholder="Facebook Messenger handle">'
+    + '</div>'
+
+    + '<div class="er-profile-section-label">Certificates</div>';
+
+  var certs = m.certificates || [];
+  if (certs.length === 0) {
+    html += '<div style="padding:0 16px 8px;font-size:13px;color:var(--text-muted)">No certificates on file.</div>';
+  } else {
+    var todayStr = new Date().toISOString().slice(0, 10);
+    var ninetyOut = new Date();
+    ninetyOut.setDate(ninetyOut.getDate() + 90);
+    var ninetyStr = ninetyOut.toISOString().slice(0, 10);
+
+    certs.forEach(function(cert) {
+      var typeLabel = cert.custom_name
+        || (ER_PROFILE_STATE.certTypes.find ? (ER_PROFILE_STATE.certTypes.find(function(t) { return t.cert_id === cert.cert_id; }) || {}).label : null)
+        || cert.cert_id || 'Certificate';
+      var statusCls = '';
+      var statusLabel = '';
+      if (cert.date_expiry) {
+        if (cert.date_expiry < todayStr)        { statusCls = 'er-profile-cert-status-expired';  statusLabel = 'Expired'; }
+        else if (cert.date_expiry < ninetyStr)  { statusCls = 'er-profile-cert-status-expiring'; statusLabel = 'Expiring soon'; }
+        else                                    { statusCls = 'er-profile-cert-status-valid';    statusLabel = 'Valid'; }
+      }
+      var fileCount = (cert.file_refs && cert.file_refs.length) || (cert.file_ref ? 1 : 0);
+      html += '<div class="er-profile-cert-card">'
+        + '<div class="er-profile-cert-info">'
+        +   '<div class="er-profile-cert-title">' + erEscapeHtml(typeLabel) + '</div>'
+        +   '<div class="er-profile-cert-meta">'
+        +     (cert.date_issued ? 'Issued ' + erEscapeHtml(cert.date_issued) : '')
+        +     (cert.date_expiry ? ' · Expires ' + erEscapeHtml(cert.date_expiry) : '')
+        +     (statusLabel ? ' · <span class="' + statusCls + '">' + statusLabel + '</span>' : '')
+        +     (fileCount ? ' · ' + fileCount + ' file' + (fileCount > 1 ? 's' : '') : '')
+        +   '</div>'
+        + '</div>'
+        + '<button class="er-profile-cert-delete" onclick="deleteErCert(\'' + erEscapeAttr(cert.cert_instance_id) + '\')" title="Delete">✕</button>'
         + '</div>';
     });
-    html += '</div>';
   }
+  html += '<button class="er-profile-add-cert-btn" onclick="openErCertAddModal()">+ Add Certificate</button>';
 
   el.innerHTML = html;
+
+  // Wire profile picture file input + load existing pic via Graph
+  var picInput = document.getElementById('er-profile-pic-input');
+  if (picInput) {
+    picInput.onchange = function(e) { onErProfilePicSelected(e.target.files[0]); };
+  }
+  var picImg = document.getElementById('er-profile-pic-img');
+  if (picImg && picImg.tagName === 'IMG' && picImg.dataset.path) {
+    erLoadProfilePicture(picImg, picImg.dataset.path);
+  }
+}
+
+function onErAirportChange() {
+  var sel   = document.getElementById('er-profile-airport-sel');
+  var other = document.getElementById('er-profile-airport-other');
+  if (!sel || !other) return;
+  if (sel.value === '__OTHER__') {
+    other.style.display = 'block';
+    other.focus();
+  } else {
+    other.style.display = 'none';
+    other.value = '';
+  }
+}
+
+function onErProfilePicSelected(file) {
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { alert('Please select an image file.'); return; }
+  ER_PROFILE_STATE.pendingPicFile = file;
+  var img = document.getElementById('er-profile-pic-img');
+  var url = URL.createObjectURL(file);
+  if (img && img.tagName === 'IMG') {
+    img.src = url;
+  } else if (img) {
+    // Replace initials div with an <img>
+    var newImg = document.createElement('img');
+    newImg.id = 'er-profile-pic-img';
+    newImg.className = 'er-profile-pic';
+    newImg.src = url;
+    img.parentNode.replaceChild(newImg, img);
+  }
+  showErProfileToast('Photo staged — tap save to upload', 'info');
+}
+
+function erLoadProfilePicture(imgEl, relPath) {
+  // Fetch the picture from OneDrive as a blob, since the <img> tag can't send Bearer tokens.
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/' + encodeURIComponent(relPath).replace(/%2F/g, '/') + ':/content';
+  fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } })
+    .then(function(r) { return r.ok ? r.blob() : null; })
+    .then(function(blob) { if (blob) imgEl.src = URL.createObjectURL(blob); })
+    .catch(function() { /* leave as broken — initials fallback would need full re-render */ });
+}
+
+async function saveErProfile() {
+  var saveBtn = document.getElementById('er-profile-save-btn');
+  var m = ER_PROFILE_STATE.member;
+  if (!m || !ER_PROFILE_STATE.crewConfig) return;
+  if (saveBtn) saveBtn.style.opacity = '0.5';
+
+  try {
+    // Read form values
+    var password = (document.getElementById('er-profile-password') || {}).value || '';
+    var phone    = ((document.getElementById('er-profile-phone')    || {}).value || '').trim();
+    var email    = ((document.getElementById('er-profile-email')    || {}).value || '').trim();
+    var whatsapp = ((document.getElementById('er-profile-whatsapp') || {}).value || '').trim();
+    var messenger= ((document.getElementById('er-profile-messenger')|| {}).value || '').trim();
+    var airSel   = (document.getElementById('er-profile-airport-sel')   || {}).value || '';
+    var airOther = ((document.getElementById('er-profile-airport-other')|| {}).value || '').trim();
+    var preferred_airport = (airSel === '__OTHER__' ? airOther : airSel) || '';
+
+    // Optional: upload staged profile pic first (so the path lands in the same write)
+    if (ER_PROFILE_STATE.pendingPicFile) {
+      var uploaded = await erUploadProfilePicture(m.username, ER_PROFILE_STATE.pendingPicFile);
+      m.profile_picture = uploaded;
+      ER_PROFILE_STATE.pendingPicFile = null;
+    }
+
+    // Mutate the member record on the in-memory crewconfig
+    if (password) m.password = password;
+    m.contact = m.contact || {};
+    m.contact.phone             = phone;
+    m.contact.email             = email;
+    m.contact.preferred_airport = preferred_airport;
+    m.contact.whatsapp          = whatsapp;
+    m.contact.messenger         = messenger;
+
+    // Persist back. We re-fetch first to merge with any concurrent admin edits.
+    await erSaveCrewConfigForUser(m.username, function(fileMember) {
+      if (password) fileMember.password = password;
+      fileMember.contact = fileMember.contact || {};
+      fileMember.contact.phone             = phone;
+      fileMember.contact.email             = email;
+      fileMember.contact.preferred_airport = preferred_airport;
+      fileMember.contact.whatsapp          = whatsapp;
+      fileMember.contact.messenger         = messenger;
+      if (m.profile_picture) fileMember.profile_picture = m.profile_picture;
+    });
+
+    showErProfileToast('Saved ✓', 'success');
+  } catch (err) {
+    showErProfileToast('Save failed: ' + err.message, 'error');
+  } finally {
+    if (saveBtn) saveBtn.style.opacity = '1';
+  }
+}
+
+async function erUploadProfilePicture(username, file) {
+  // Resize to a square-ish avatar at ~512px max
+  var blob = await erTaskResizeImage(file, 512, 512, 0.85);
+  var ext = '.jpg';
+  var path = 'data/crew/' + username + '/profile.jpg';
+  await erPutBlob('Documents/IDMS/' + path, blob);
+  return { path: path };
+}
+
+// Read crewconfig fresh, apply the mutator to the matching member, write it back.
+async function erSaveCrewConfigForUser(username, mutate) {
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/config/crewconfig.json:/content';
+  var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+  if (!resp.ok) throw new Error('crewconfig fetch failed: ' + resp.status);
+  var data = await resp.json();
+  if (!data || !Array.isArray(data.crew)) throw new Error('crewconfig malformed');
+  var fileMember = null;
+  for (var i = 0; i < data.crew.length; i++) {
+    if (data.crew[i].username === username) { fileMember = data.crew[i]; break; }
+  }
+  if (!fileMember) throw new Error('Member no longer in crewconfig');
+  mutate(fileMember);
+  var putResp = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data, null, 2)
+  });
+  if (!putResp.ok) throw new Error('crewconfig save failed: ' + putResp.status);
+  ER_PROFILE_STATE.crewConfig = data;
+}
+
+function showErProfileToast(text, kind) {
+  var el = document.getElementById('er-profile-toast');
+  if (!el) return;
+  el.textContent = text;
+  el.style.background = kind === 'error' ? 'var(--danger)'
+                      : kind === 'info'  ? 'var(--bg-1)'
+                      : 'var(--success)';
+  if (kind === 'info') {
+    el.style.color = 'var(--text-secondary)';
+    el.style.border = '1px solid var(--border)';
+  } else {
+    el.style.color = '#fff';
+    el.style.border = 'none';
+  }
+  el.style.display = 'block';
+  clearTimeout(showErProfileToast._t);
+  showErProfileToast._t = setTimeout(function() { el.style.display = 'none'; }, 2400);
+}
+
+// ── Add Certificate modal ─────────────────────────────────────────────────────
+function openErCertAddModal() {
+  // Populate cert type dropdown: "Other" pinned at top, then Training Matrix entries
+  var sel = document.getElementById('er-cert-type-sel');
+  if (sel) {
+    var opts = '<option value="">— select type —</option>'
+             + '<option value="__OTHER__">— Other (custom name) —</option>';
+    ER_PROFILE_STATE.certTypes.forEach(function(t) {
+      opts += '<option value="' + erEscapeAttr(t.cert_id) + '">' + erEscapeHtml(t.label || t.cert_id) + '</option>';
+    });
+    sel.innerHTML = opts;
+    sel.value = '';
+  }
+  var customRow = document.getElementById('er-cert-custom-row');
+  if (customRow) customRow.style.display = 'none';
+  ['er-cert-custom-name','er-cert-date-issued','er-cert-date-expiry'].forEach(function(id) {
+    var e = document.getElementById(id); if (e) e.value = '';
+  });
+  var filesEl = document.getElementById('er-cert-files');
+  if (filesEl) filesEl.value = '';
+  var preview = document.getElementById('er-cert-files-preview');
+  if (preview) preview.textContent = '';
+  if (filesEl) {
+    filesEl.onchange = function(e) {
+      var files = Array.from(e.target.files);
+      if (preview) preview.textContent = files.length
+        ? files.length + ' file' + (files.length > 1 ? 's' : '') + ' selected: ' + files.map(function(f) { return f.name; }).join(', ')
+        : '';
+    };
+  }
+  var err = document.getElementById('er-cert-add-error');
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+  var saveBtn = document.getElementById('er-cert-add-save');
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Upload & Save'; }
+
+  document.getElementById('er-cert-add-modal').style.display = 'flex';
+}
+
+function closeErCertAddModal() {
+  var m = document.getElementById('er-cert-add-modal');
+  if (m) m.style.display = 'none';
+}
+
+function onErCertTypeChange() {
+  var sel = document.getElementById('er-cert-type-sel');
+  var row = document.getElementById('er-cert-custom-row');
+  if (!sel || !row) return;
+  row.style.display = sel.value === '__OTHER__' ? 'block' : 'none';
+}
+
+async function submitErCertAdd() {
+  var saveBtn = document.getElementById('er-cert-add-save');
+  var errEl   = document.getElementById('er-cert-add-error');
+  var showErr = function(msg) { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+  if (errEl) errEl.style.display = 'none';
+
+  var sel        = document.getElementById('er-cert-type-sel');
+  var custom     = document.getElementById('er-cert-custom-name');
+  var dIssuedEl  = document.getElementById('er-cert-date-issued');
+  var dExpiryEl  = document.getElementById('er-cert-date-expiry');
+  var filesEl    = document.getElementById('er-cert-files');
+
+  var certType = sel ? sel.value : '';
+  if (!certType) { showErr('Select a certificate type.'); return; }
+  var customName = '';
+  if (certType === '__OTHER__') {
+    customName = custom ? custom.value.trim() : '';
+    if (!customName) { showErr('Enter a name for the certificate.'); return; }
+  }
+  var dateIssued = dIssuedEl ? dIssuedEl.value : '';
+  if (!dateIssued) { showErr('Date issued is required.'); return; }
+  var dateExpiry = dExpiryEl ? dExpiryEl.value : '';
+  if (dateExpiry && dateExpiry <= dateIssued) { showErr('Expiry must be after issued date.'); return; }
+  var files = filesEl ? Array.from(filesEl.files) : [];
+  if (files.length === 0) { showErr('Attach at least one file (PDF or image).'); return; }
+
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Uploading…'; }
+
+  try {
+    var m = ER_PROFILE_STATE.member;
+    var certId = certType === '__OTHER__' ? 'custom' : certType;
+    var instanceId = erUuid();
+    var fileRefs = [];
+
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      var ext = (f.name.split('.').pop() || 'pdf').toLowerCase();
+      var safeBase = (certId + '-' + dateIssued + '-' + (i + 1)).replace(/[^a-zA-Z0-9\-]/g, '-');
+      var destName = safeBase + '.' + ext;
+      var relPath  = 'crew/' + m.username + '/certificates/' + destName;
+      var blob;
+      var contentType;
+      if (/^image\//.test(f.type)) {
+        // Resize images to keep file sizes reasonable; PDFs upload as-is
+        blob = await erTaskResizeImage(f, 1600, 1600, 0.85);
+        contentType = 'image/jpeg';
+      } else {
+        blob = f;
+        contentType = f.type || 'application/octet-stream';
+      }
+      await erPutTypedBlob('Documents/IDMS/' + relPath, blob, contentType);
+      fileRefs.push(relPath);
+    }
+
+    var newCert = {
+      cert_instance_id: instanceId,
+      cert_id:          certId,
+      date_issued:      dateIssued,
+      date_expiry:      dateExpiry || null,
+      file_ref:         fileRefs[0] || null,  // backward compat with single-file consumers
+      file_refs:        fileRefs
+    };
+    if (customName) newCert.custom_name = customName;
+
+    // Append to in-memory member, then persist crewconfig (re-read & merge)
+    m.certificates = m.certificates || [];
+    m.certificates.push(newCert);
+    await erSaveCrewConfigForUser(m.username, function(fileMember) {
+      fileMember.certificates = fileMember.certificates || [];
+      fileMember.certificates.push(newCert);
+    });
+
+    closeErCertAddModal();
+    erRenderProfile(document.getElementById('er-profile-content'), m);
+    showErProfileToast('Certificate added ✓', 'success');
+  } catch (err) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Upload & Save'; }
+    showErr('Save failed: ' + err.message);
+  }
+}
+
+// PUT a blob to OneDrive at the given absolute path with a chosen Content-Type.
+async function erPutTypedBlob(path, blob, contentType) {
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' + encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+  var resp = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': contentType || 'application/octet-stream' },
+    body: blob
+  });
+  if (!resp.ok) throw new Error('Upload failed: ' + resp.status);
+}
+
+async function deleteErCert(certInstanceId) {
+  var m = ER_PROFILE_STATE.member;
+  if (!m || !m.certificates) return;
+  var cert = null;
+  for (var i = 0; i < m.certificates.length; i++) {
+    if (m.certificates[i].cert_instance_id === certInstanceId) { cert = m.certificates[i]; break; }
+  }
+  if (!cert) return;
+  var typeLabel = cert.custom_name
+    || (ER_PROFILE_STATE.certTypes.find ? (ER_PROFILE_STATE.certTypes.find(function(t) { return t.cert_id === cert.cert_id; }) || {}).label : null)
+    || cert.cert_id;
+  if (!confirm('Delete certificate "' + typeLabel + '"? Files will also be removed from OneDrive.')) return;
+
+  try {
+    // Best-effort delete the files; don't block if some are already gone
+    var paths = (cert.file_refs && cert.file_refs.length) ? cert.file_refs.slice()
+              : (cert.file_ref ? [cert.file_ref] : []);
+    for (var p = 0; p < paths.length; p++) {
+      try {
+        var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' + encodeURIComponent('Documents/IDMS/' + paths[p]).replace(/%2F/g, '/');
+        await fetch(url, { method: 'DELETE', headers: { Authorization: 'Bearer ' + graphToken } });
+      } catch (e) { /* ignore */ }
+    }
+
+    m.certificates = m.certificates.filter(function(c) { return c.cert_instance_id !== certInstanceId; });
+    await erSaveCrewConfigForUser(m.username, function(fileMember) {
+      fileMember.certificates = (fileMember.certificates || []).filter(function(c) { return c.cert_instance_id !== certInstanceId; });
+    });
+    erRenderProfile(document.getElementById('er-profile-content'), m);
+    showErProfileToast('Certificate deleted', 'success');
+  } catch (err) {
+    showErProfileToast('Delete failed: ' + err.message, 'error');
+  }
 }
 
 // ── SWITCH USER ──────────────────────────
