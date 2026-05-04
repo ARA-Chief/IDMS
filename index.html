@@ -321,6 +321,40 @@
     .er-task-badge { min-width: 24px; height: 24px; border-radius: 12px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 6px; }
     .er-task-badge-empty { background: var(--bg-2); color: var(--text-muted); border: 1px solid var(--border); }
 
+    /* ── ENGINE ROOM TASKS — list view ── */
+    .er-task-filterbar { display: flex; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg-1); }
+    .er-task-filter { flex: 1; min-width: 0; }
+    .er-task-filter label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 3px; }
+    .er-task-filter select { width: 100%; padding: 7px 8px; font-size: 13px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); }
+    .er-task-filter-dept #er-task-filter-dept-label { padding: 7px 8px; font-size: 13px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); }
+    .er-task-row { display: flex; gap: 10px; align-items: stretch; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .er-task-row-body { flex: 1; min-width: 0; }
+    .er-task-row-title { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.3; margin-bottom: 4px; }
+    .er-task-row-meta { font-size: 11px; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .er-task-row-equip { color: var(--accent); font-weight: 500; }
+    .er-task-cat-pill { font-size: 9px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 3px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text-secondary); }
+    .er-task-status-pill { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 10px; white-space: nowrap; align-self: flex-start; }
+    .er-task-status-open                { background: rgba(0,170,255,0.12); color: #38bdf8; }
+    .er-task-status-investigating       { background: rgba(0,170,255,0.12); color: #38bdf8; }
+    .er-task-status-waiting_parts       { background: rgba(255,107,53,0.15); color: #fb923c; }
+    .er-task-status-waiting_opportunity { background: rgba(255,170,0,0.15);  color: var(--warning); }
+    .er-task-status-shipyard            { background: rgba(180,140,255,0.15); color: #c4b5fd; }
+    .er-task-status-other                { background: var(--bg-2); color: var(--text-secondary); }
+    .er-task-status-completed           { background: rgba(0,200,100,0.15); color: var(--success); }
+    .er-task-status-cancelled           { background: var(--bg-2); color: var(--text-muted); }
+    .er-task-update-btn { padding: 7px 12px; font-size: 12px; font-weight: 600; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); cursor: pointer; align-self: center; white-space: nowrap; }
+    .er-task-update-btn:active { opacity: 0.85; }
+
+    /* Update modal form fields */
+    .er-form-row { margin-bottom: 12px; }
+    .er-form-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; }
+    .er-form-input { width: 100%; padding: 9px 10px; font-size: 14px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); box-sizing: border-box; }
+    .er-task-preview-thumb { width: 60px; height: 45px; object-fit: cover; border-radius: 3px; border: 1px solid var(--border); }
+
+    /* Center the modal card on bigger screens, keep bottom-sheet feel on phones */
+    #er-task-update-modal { align-items: center; justify-content: center; padding: 16px; }
+    #er-task-update-modal .modal-card { border-radius: var(--radius-xl); max-height: calc(100vh - 32px); overflow-y: auto; }
+
     /* ── MODAL ── */
     .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; display: flex; align-items: flex-end; }
     .modal-card { background: var(--bg-1); border: 1px solid var(--border); border-top-left-radius: var(--radius-xl); border-top-right-radius: var(--radius-xl); width: 100%; padding: 28px 24px 36px; text-align: center; }
@@ -965,7 +999,7 @@
       <button class="back-btn" onclick="showScreen('screen-engine-home')">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <h2>Tasks</h2>
+      <h2>Tasks &amp; Maintenance</h2>
       <button class="icon-btn" onclick="loadEngineTasks()" aria-label="Refresh">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <path d="M15 9a6 6 0 11-1.5-3.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -973,21 +1007,71 @@
         </svg>
       </button>
     </div>
-    <div style="display:flex;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)">
-      <div class="er-task-stat">
-        <div class="er-task-stat-num" id="er-stat-overdue-n" style="color:var(--text-primary)">—</div>
-        <div class="er-task-stat-label">Overdue</div>
+    <div class="er-task-filterbar">
+      <div class="er-task-filter">
+        <label>Status</label>
+        <select id="er-task-filter-status" onchange="renderEngineTasksList()">
+          <option value="active" selected>All Active</option>
+          <option value="open">Open</option>
+          <option value="investigating">Investigating</option>
+          <option value="waiting_parts">Waiting Parts</option>
+          <option value="waiting_opportunity">Waiting Opportunity</option>
+          <option value="shipyard">Shipyard</option>
+          <option value="other">Other</option>
+        </select>
       </div>
-      <div class="er-task-stat">
-        <div class="er-task-stat-num" id="er-stat-today-n">—</div>
-        <div class="er-task-stat-label">Due Today</div>
+      <div class="er-task-filter">
+        <label>Role</label>
+        <select id="er-task-filter-role" onchange="renderEngineTasksList()">
+          <option value="" selected>All Roles</option>
+        </select>
       </div>
-      <div class="er-task-stat">
-        <div class="er-task-stat-num" id="er-stat-week-n">—</div>
-        <div class="er-task-stat-label">This Week</div>
+      <div class="er-task-filter er-task-filter-dept">
+        <label>Department</label>
+        <div id="er-task-filter-dept-label">Engine Room</div>
       </div>
     </div>
+    <div id="er-task-count" style="padding:8px 14px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">—</div>
     <div id="er-tasks-list" style="flex:1;overflow-y:auto"></div>
+  </div>
+
+  <!-- ── ENGINE ROOM: UPDATE TASK STATUS MODAL ── -->
+  <div class="modal-overlay" id="er-task-update-modal" style="display:none">
+    <div class="modal-card" style="max-width:480px;text-align:left">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h3 class="modal-title" style="margin:0">Update Status</h3>
+        <button onclick="closeErTaskUpdateModal()" style="background:transparent;border:none;color:var(--text-muted);font-size:22px;cursor:pointer;line-height:1;padding:0 4px">×</button>
+      </div>
+      <div id="er-task-update-context" style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.4"></div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">New Status</label>
+        <select id="er-task-update-status" class="er-form-input"></select>
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Failure Mode <span style="color:var(--text-muted);font-weight:400">(ISO 14224)</span></label>
+        <select id="er-task-update-fm" class="er-form-input"></select>
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Comment <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
+        <textarea id="er-task-update-comment" class="er-form-input" rows="3" placeholder="Reason for status change…" style="resize:vertical;font-family:inherit"></textarea>
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Images <span style="color:var(--text-muted);font-weight:400">(optional, up to 5)</span></label>
+        <input type="file" id="er-task-update-files" accept="image/*" multiple class="er-form-input" style="padding:6px">
+        <div id="er-task-update-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
+      </div>
+
+      <div id="er-task-update-error" style="display:none;font-size:12px;color:var(--danger);margin-top:8px"></div>
+
+      <div class="modal-actions" style="margin-top:18px">
+        <button class="modal-btn modal-btn-secondary" onclick="closeErTaskUpdateModal()">Cancel</button>
+        <button class="modal-btn modal-btn-primary" id="er-task-update-save" onclick="submitErTaskUpdate()">Save</button>
+      </div>
+    </div>
   </div>
 
   <!-- ── ENGINE ROOM: PROFILE ── -->
@@ -1862,82 +1946,505 @@ function confirmEngineRounds() {
   initRoundsEntry();
 }
 
-// ── ENGINE ROOM: TASKS ───────────────────
-var ER_TASK_CATEGORIES = [
-  { code: 'CHK', label: 'Checks',       desc: 'Routine checks & inspections' },
-  { code: 'LUB', label: 'Lubrication',  desc: 'Greasing & lubrication rounds' },
-  { code: 'SRV', label: 'Service',      desc: 'Scheduled service intervals'  },
-  { code: 'CLN', label: 'Cleaning',     desc: 'Cleaning & filtration'        },
-  { code: 'MON', label: 'Monitoring',   desc: 'Log readings & trending'      },
-  { code: 'REP', label: 'Repair',       desc: 'Outstanding repairs'          },
-  { code: 'CAL', label: 'Calibration',  desc: 'Sensor & instrument calibration' },
-  { code: 'ONE', label: 'One-off',      desc: 'Non-recurring tasks'          }
+// ── ENGINE ROOM: TASKS & MAINTENANCE ─────
+// Reads task definitions directly from OneDrive (Documents/IDMS/data/tasks/definitions/),
+// filters to the user's department by code_range, and lets the user update task status,
+// failure mode, and add a comment + images. Events appended here are picked up by the
+// Console next time it ingests the definitions files.
+
+var ER_TASKS_ISO14224 = [
+  ['',    '— None —'],
+  ['AIR', 'AIR — Abnormal instrument reading'],
+  ['BRD', 'BRD — Breakdown'],
+  ['ELP', 'ELP — External leakage — process medium'],
+  ['ELU', 'ELU — External leakage — utility medium'],
+  ['ERO', 'ERO — Erratic output'],
+  ['FCO', 'FCO — Failure to close on demand'],
+  ['FOF', 'FOF — Failure to open on demand'],
+  ['FOD', 'FOD — Failure on demand'],
+  ['HIO', 'HIO — High output'],
+  ['INL', 'INL — Internal leakage'],
+  ['LOO', 'LOO — Low output'],
+  ['NOI', 'NOI — Noise'],
+  ['OHE', 'OHE — Overheating'],
+  ['PDE', 'PDE — Parameter deviation'],
+  ['PLU', 'PLU — Plugged / choked'],
+  ['SER', 'SER — Minor in-service problems'],
+  ['STD', 'STD — Structural deficiency'],
+  ['UST', 'UST — Spurious stop'],
+  ['VIB', 'VIB — Vibration'],
+  ['CON', 'CON — Contamination'],
+  ['LCP', 'LCP — Loss of containment / process'],
+  ['OTH', 'OTH — Other']
 ];
+
+var ER_TASK_STATUSES = [
+  ['open',                'Open'],
+  ['investigating',       'Investigating'],
+  ['waiting_parts',       'Waiting Parts'],
+  ['waiting_opportunity', 'Waiting Opportunity'],
+  ['shipyard',            'Shipyard'],
+  ['other',               'Other'],
+  ['completed',           'Close (Completed)'],
+  ['cancelled',           'Cancelled']
+];
+var ER_TASK_ACTIVE_STATUSES = ['open','investigating','waiting_parts','waiting_opportunity','shipyard','other'];
+
+var ER_TASKS_STATE = {
+  tasks:           [], // flattened {task, defFilename}
+  deptCodeRanges:  null, // array of code_range prefixes for user's department, or null = all
+  loaded:          false,
+  editing:         null  // task_id currently in modal
+};
+
+function deptKeyForCurrentUser() {
+  var d = (currentDepartment || '').toLowerCase();
+  if (d.indexOf('engine') !== -1)  return 'engine';
+  if (d.indexOf('factory') !== -1) return 'factory';
+  if (d.indexOf('deck') !== -1)    return 'deck';
+  return '';
+}
 
 function openEngineTasks() {
   showScreen('screen-engine-tasks');
+  // Default the department label to the user's current department
+  var deptLabelEl = document.getElementById('er-task-filter-dept-label');
+  if (deptLabelEl) deptLabelEl.textContent = currentDepartment || 'Engine Room';
+
+  // Reset filters to the requested defaults
+  var statusEl = document.getElementById('er-task-filter-status');
+  var roleEl   = document.getElementById('er-task-filter-role');
+  if (statusEl) statusEl.value = 'active';
+  if (roleEl)   roleEl.value   = '';
+
   loadEngineTasks();
 }
 
-function loadEngineTasks() {
+async function loadEngineTasks() {
   var listEl = document.getElementById('er-tasks-list');
   if (!listEl) return;
   listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:14px">Loading…</div>';
-  document.getElementById('er-stat-overdue-n').textContent = '—';
-  document.getElementById('er-stat-today-n').textContent   = '—';
-  document.getElementById('er-stat-week-n').textContent    = '—';
-  document.getElementById('er-stat-overdue-n').style.color = '';
 
   if (!graphToken) {
-    erRenderTaskCategories(listEl, null);
+    listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">Not signed in to OneDrive.</div>';
     return;
   }
 
-  var url = configURL('data/tasks/active/' + currentUser.username + '.json');
-  fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } })
-    .then(function(r) { return r.ok ? r.json() : null; })
-    .catch(function() { return null; })
-    .then(function(active) {
-      var overdue = 0, today = 0, week = 0;
-      var todayStr  = new Date().toISOString().slice(0, 10);
-      var weekLimit = new Date(); weekLimit.setDate(weekLimit.getDate() + 7);
-      var weekStr   = weekLimit.toISOString().slice(0, 10);
-      if (active && active.tasks) {
-        active.tasks.forEach(function(t) {
-          if (!t.due_date) return;
-          if (t.due_date < todayStr)  overdue++;
-          else if (t.due_date === todayStr) today++;
-          else if (t.due_date <= weekStr)   week++;
+  try {
+    // Step 1: load equipmentconfig.json to learn which code ranges belong to the current department
+    var deptKey = deptKeyForCurrentUser();
+    var ranges  = null;
+    if (deptKey) {
+      try {
+        var eqUrl  = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/config/equipmentconfig.json:/content';
+        var eqResp = await fetch(eqUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
+        if (eqResp.ok) {
+          var eqCfg = await eqResp.json();
+          var deptObj = eqCfg && eqCfg.departments && eqCfg.departments[deptKey];
+          if (deptObj && Array.isArray(deptObj.ranges)) {
+            ranges = deptObj.ranges.map(function(r) {
+              return typeof r === 'string' ? r : (r.range_from || r.code || '');
+            }).filter(Boolean);
+          }
+        }
+      } catch (e) { /* fall through — show all */ }
+    }
+    ER_TASKS_STATE.deptCodeRanges = ranges; // null = no filtering by code_range
+
+    // Step 2: list the definitions folder
+    var folderUrl = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/definitions:/children?$select=id,name';
+    var listResp  = await fetch(folderUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
+    if (!listResp.ok && listResp.status !== 404) throw new Error('Folder list failed: ' + listResp.status);
+    var listData = listResp.ok ? await listResp.json() : { value: [] };
+    var files    = (listData.value || []).filter(function(f) { return f.name && f.name.indexOf('tasks-') === 0 && f.name.slice(-5) === '.json'; });
+
+    // Step 3: filter filenames by code_range (if known) — name pattern: tasks-{codeRange}-{year}.json
+    if (ranges && ranges.length > 0) {
+      files = files.filter(function(f) {
+        // strip leading "tasks-" and trailing "-{year}.json"
+        var rest = f.name.slice('tasks-'.length).replace(/-\d{4}\.json$/, '');
+        return ranges.indexOf(rest) !== -1;
+      });
+    }
+
+    // Step 4: load every file, flatten tasks
+    var allTasks = [];
+    var roleSet  = {};
+    for (var i = 0; i < files.length; i++) {
+      var fn  = files[i].name;
+      var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/definitions/' + encodeURIComponent(fn) + ':/content';
+      try {
+        var r = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+        if (!r.ok) continue;
+        var data = await r.json();
+        if (!data || !Array.isArray(data.tasks)) continue;
+        data.tasks.forEach(function(t) {
+          allTasks.push({ task: t, file: fn });
+          if (t.role) roleSet[t.role] = true;
         });
-      }
-      document.getElementById('er-stat-overdue-n').textContent  = overdue;
-      document.getElementById('er-stat-today-n').textContent    = today;
-      document.getElementById('er-stat-week-n').textContent     = week;
-      if (overdue > 0) document.getElementById('er-stat-overdue-n').style.color = 'var(--danger)';
-      erRenderTaskCategories(listEl, active);
-    });
+      } catch (e) { /* skip file */ }
+    }
+
+    ER_TASKS_STATE.tasks  = allTasks;
+    ER_TASKS_STATE.loaded = true;
+
+    // Populate role filter dynamically
+    var roleEl = document.getElementById('er-task-filter-role');
+    if (roleEl) {
+      var current = roleEl.value;
+      var html = '<option value="">All Roles</option>';
+      Object.keys(roleSet).sort().forEach(function(r) {
+        html += '<option value="' + erEscapeAttr(r) + '">' + erEscapeHtml(r) + '</option>';
+      });
+      roleEl.innerHTML = current && roleSet[current]
+        ? html.replace('value="' + erEscapeAttr(current) + '"', 'value="' + erEscapeAttr(current) + '" selected')
+        : html;
+    }
+
+    renderEngineTasksList();
+  } catch (err) {
+    console.warn('[ER Tasks] Load failed:', err);
+    listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">Could not load tasks: ' + erEscapeHtml(err.message) + '</div>';
+  }
 }
 
-function erRenderTaskCategories(listEl, active) {
-  var html = '';
-  ER_TASK_CATEGORIES.forEach(function(cat) {
-    var count = 0;
-    if (active && active.tasks) {
-      active.tasks.forEach(function(t) { if (t.category === cat.code) count++; });
+function renderEngineTasksList() {
+  var listEl = document.getElementById('er-tasks-list');
+  var countEl = document.getElementById('er-task-count');
+  if (!listEl) return;
+
+  var statusFilter = (document.getElementById('er-task-filter-status') || {}).value || 'active';
+  var roleFilter   = (document.getElementById('er-task-filter-role')   || {}).value || '';
+
+  var rows = ER_TASKS_STATE.tasks.filter(function(entry) {
+    var t = entry.task;
+    var status = t.status || 'open';
+    if (statusFilter === 'active') {
+      if (ER_TASK_ACTIVE_STATUSES.indexOf(status) === -1) return false;
+    } else if (statusFilter && status !== statusFilter) {
+      return false;
     }
-    html += '<div class="er-task-cat-row">'
-      + '<div style="flex:1">'
-      +   '<div style="font-size:15px;font-weight:600;color:var(--text-primary)">' + cat.label + '</div>'
-      +   '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">' + cat.desc + '</div>'
+    if (roleFilter && t.role !== roleFilter) return false;
+    return true;
+  });
+
+  // Sort: priority then status then created_at
+  var prioOrder = { 'Critical': 1, 'High': 2, 'Normal': 3, 'Low': 4 };
+  var statusOrder = { 'shipyard': 9, 'waiting_opportunity': 1, 'waiting_parts': 2, 'investigating': 3, 'open': 4, 'other': 5 };
+  rows.sort(function(a, b) {
+    var pa = prioOrder[a.task.priority] || 5;
+    var pb = prioOrder[b.task.priority] || 5;
+    if (pa !== pb) return pa - pb;
+    var sa = statusOrder[a.task.status] || 9;
+    var sb = statusOrder[b.task.status] || 9;
+    if (sa !== sb) return sa - sb;
+    return (a.task.created_at || '').localeCompare(b.task.created_at || '');
+  });
+
+  if (countEl) countEl.textContent = rows.length + (rows.length === 1 ? ' task' : ' tasks');
+
+  if (rows.length === 0) {
+    listEl.innerHTML = '<div style="padding:40px 16px;text-align:center;color:var(--text-muted);font-size:13px">No tasks match the current filters.</div>';
+    return;
+  }
+
+  var html = '';
+  rows.forEach(function(entry) {
+    var t = entry.task;
+    var status = t.status || 'open';
+    var statusLabel = erTaskStatusLabel(status);
+    var equipIds = [];
+    try { equipIds = typeof t.equipment_ids === 'string' ? JSON.parse(t.equipment_ids) : (t.equipment_ids || []); } catch(e) { equipIds = []; }
+    var equipStr = equipIds.length ? equipIds.join(', ') : (t.code_range || '');
+    var dateStr  = t.created_at ? t.created_at.slice(0, 10) : '';
+
+    html += '<div class="er-task-row">'
+      + '<div class="er-task-row-body">'
+      +   '<div class="er-task-row-title">' + erEscapeHtml(t.title || '(untitled)') + '</div>'
+      +   '<div class="er-task-row-meta">'
+      +     (dateStr ? '<span>' + erEscapeHtml(dateStr) + '</span>' : '')
+      +     (t.priority ? '<span>' + erEscapeHtml(t.priority) + '</span>' : '')
+      +     (t.category ? '<span class="er-task-cat-pill">' + erEscapeHtml(t.category) + '</span>' : '')
+      +     (equipStr ? '<span class="er-task-row-equip">' + erEscapeHtml(equipStr) + '</span>' : '')
+      +     (t.role ? '<span>' + erEscapeHtml(t.role) + '</span>' : '')
+      +   '</div>'
       + '</div>'
-      + '<div class="er-task-badge' + (count === 0 ? ' er-task-badge-empty' : '') + '">' + count + '</div>'
-      + '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="margin-left:8px;opacity:0.35"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      + '<span class="er-task-status-pill er-task-status-' + erEscapeAttr(status) + '">' + erEscapeHtml(statusLabel) + '</span>'
+      + '<button class="er-task-update-btn" onclick="openErTaskUpdateModal(\'' + erEscapeAttr(t.task_id) + '\')">Update</button>'
       + '</div>';
   });
-  html += '<div style="padding:20px 16px;font-size:12px;color:var(--text-muted);text-align:center;line-height:1.6">'
-    +   'Task definitions are managed via the IDMS Console.<br>Task detail view coming in a future version.'
-    + '</div>';
   listEl.innerHTML = html;
+}
+
+function erTaskStatusLabel(s) {
+  for (var i = 0; i < ER_TASK_STATUSES.length; i++) {
+    if (ER_TASK_STATUSES[i][0] === s) {
+      // For the row pill we want the short label, not "Close (Completed)"
+      return s === 'completed' ? 'Completed' : ER_TASK_STATUSES[i][1];
+    }
+  }
+  return s || 'Unknown';
+}
+
+function findErTaskById(taskId) {
+  for (var i = 0; i < ER_TASKS_STATE.tasks.length; i++) {
+    if (ER_TASKS_STATE.tasks[i].task.task_id === taskId) return ER_TASKS_STATE.tasks[i];
+  }
+  return null;
+}
+
+function openErTaskUpdateModal(taskId) {
+  var entry = findErTaskById(taskId);
+  if (!entry) return;
+  var t = entry.task;
+  ER_TASKS_STATE.editing = taskId;
+
+  // Populate context line
+  var ctxEl = document.getElementById('er-task-update-context');
+  if (ctxEl) ctxEl.innerHTML = '<strong>' + erEscapeHtml(t.title || '(untitled)') + '</strong>'
+    + (t.code_range ? '<div style="font-size:11px;color:var(--text-muted);margin-top:3px">' + erEscapeHtml(t.code_range) + ' · current: ' + erEscapeHtml(erTaskStatusLabel(t.status || 'open')) + '</div>' : '');
+
+  // Populate status options (default to current status)
+  var statusEl = document.getElementById('er-task-update-status');
+  if (statusEl) {
+    statusEl.innerHTML = ER_TASK_STATUSES.map(function(s) {
+      var sel = (t.status || 'open') === s[0] ? ' selected' : '';
+      return '<option value="' + s[0] + '"' + sel + '>' + s[1] + '</option>';
+    }).join('');
+  }
+
+  // Populate failure mode options (default to current task.failure_mode)
+  var fmEl = document.getElementById('er-task-update-fm');
+  if (fmEl) {
+    fmEl.innerHTML = ER_TASKS_ISO14224.map(function(c) {
+      var sel = (t.failure_mode || '') === c[0] ? ' selected' : '';
+      return '<option value="' + c[0] + '"' + sel + '>' + c[1] + '</option>';
+    }).join('');
+  }
+
+  // Reset comment, files, preview, error
+  var commentEl = document.getElementById('er-task-update-comment');
+  if (commentEl) commentEl.value = '';
+  var filesEl = document.getElementById('er-task-update-files');
+  if (filesEl) filesEl.value = '';
+  var previewEl = document.getElementById('er-task-update-preview');
+  if (previewEl) previewEl.innerHTML = '';
+  var errEl = document.getElementById('er-task-update-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  var saveBtn = document.getElementById('er-task-update-save');
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+
+  // Wire image preview (overwrite handler each open)
+  if (filesEl) {
+    filesEl.onchange = function(e) {
+      if (!previewEl) return;
+      previewEl.innerHTML = '';
+      var arr = Array.from(e.target.files).slice(0, 5);
+      arr.forEach(function(f) {
+        var url = URL.createObjectURL(f);
+        var img = document.createElement('img');
+        img.src = url;
+        img.className = 'er-task-preview-thumb';
+        img.onload = function() { URL.revokeObjectURL(url); };
+        previewEl.appendChild(img);
+      });
+    };
+  }
+
+  document.getElementById('er-task-update-modal').style.display = 'flex';
+}
+
+function closeErTaskUpdateModal() {
+  var m = document.getElementById('er-task-update-modal');
+  if (m) m.style.display = 'none';
+  ER_TASKS_STATE.editing = null;
+}
+
+async function submitErTaskUpdate() {
+  var taskId = ER_TASKS_STATE.editing;
+  if (!taskId) return;
+  var entry = findErTaskById(taskId);
+  if (!entry) return;
+  var t = entry.task;
+
+  var saveBtn  = document.getElementById('er-task-update-save');
+  var errEl    = document.getElementById('er-task-update-error');
+  var newStatus = (document.getElementById('er-task-update-status') || {}).value || (t.status || 'open');
+  var newFm     = (document.getElementById('er-task-update-fm') || {}).value || '';
+  var comment   = ((document.getElementById('er-task-update-comment') || {}).value || '').trim();
+  var filesEl   = document.getElementById('er-task-update-files');
+  var files     = filesEl ? Array.from(filesEl.files).slice(0, 5) : [];
+
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+
+  var prevStatus = t.status || 'open';
+  var prevFm     = t.failure_mode || '';
+
+  var statusChanged = newStatus !== prevStatus;
+  // Only treat FM as a change when a non-empty value is selected AND it differs from current.
+  // Per requirement: if blank, or same, make no changes to FM.
+  var fmChanged = newFm !== '' && newFm !== prevFm;
+
+  if (!statusChanged && !fmChanged && !comment && files.length === 0) {
+    if (errEl) { errEl.textContent = 'Nothing to update — change status, failure mode, or add a comment / image.'; errEl.style.display = 'block'; }
+    return;
+  }
+
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = files.length ? 'Uploading…' : 'Saving…'; }
+
+  try {
+    // Determine equipment id for attachment storage (first equipment id, fallback to code_range/task_id)
+    var equipIds = [];
+    try { equipIds = typeof t.equipment_ids === 'string' ? JSON.parse(t.equipment_ids) : (t.equipment_ids || []); } catch(e) {}
+    var itemId = (equipIds[0] || t.code_range || t.task_id || 'misc');
+
+    // Upload images
+    var attachments = [];
+    for (var i = 0; i < files.length; i++) {
+      try {
+        var att = await erTaskUploadImage(itemId, files[i]);
+        attachments.push(att);
+      } catch (e) {
+        console.warn('[ER Tasks] Image upload failed', e);
+      }
+    }
+
+    // Build event:
+    //  - status changed → 'transition' with from_status/to_status
+    //  - status unchanged → 'comment' (per spec: "only update the comment")
+    var event = {
+      event_id:    erUuid(),
+      task_id:     taskId,
+      type:        statusChanged ? 'transition' : 'comment',
+      from_status: statusChanged ? prevStatus : null,
+      to_status:   statusChanged ? newStatus  : null,
+      comment:     comment || null,
+      actor_user:  currentUser.username || 'unknown',
+      actor_name:  currentUser.name || currentUser.username || 'Unknown',
+      occurred_at: new Date().toISOString()
+    };
+    if (attachments.length) event.attachments = attachments;
+    if (fmChanged) {
+      event.failure_mode_from = prevFm || null;
+      event.failure_mode_to   = newFm;
+    }
+
+    // Apply mutations to the in-memory task
+    if (statusChanged) t.status = newStatus;
+    if (fmChanged)     t.failure_mode = newFm;
+    if (!Array.isArray(t.events)) t.events = [];
+    t.events.push(event);
+
+    // Persist the whole definitions file back to OneDrive
+    await erTaskSaveDefinitionsFile(entry.file, taskId, function(fileTask) {
+      if (statusChanged) fileTask.status = newStatus;
+      if (fmChanged)     fileTask.failure_mode = newFm;
+      if (!Array.isArray(fileTask.events)) fileTask.events = [];
+      fileTask.events.push(event);
+    });
+
+    closeErTaskUpdateModal();
+    renderEngineTasksList();
+  } catch (err) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    if (errEl)   { errEl.textContent = 'Save failed: ' + err.message; errEl.style.display = 'block'; }
+  }
+}
+
+// Re-fetches the definitions file, applies the mutator to the matching task, PUTs it back.
+// Reading fresh on every save avoids clobbering edits made in the Console between loads.
+async function erTaskSaveDefinitionsFile(filename, taskId, mutate) {
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/definitions/' + encodeURIComponent(filename) + ':/content';
+  var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+  if (!resp.ok) throw new Error('Definitions file fetch failed: ' + resp.status);
+  var data = await resp.json();
+  if (!data || !Array.isArray(data.tasks)) throw new Error('Definitions file malformed');
+  var ft = null;
+  for (var i = 0; i < data.tasks.length; i++) {
+    if (data.tasks[i].task_id === taskId) { ft = data.tasks[i]; break; }
+  }
+  if (!ft) throw new Error('Task no longer in definitions file');
+  mutate(ft);
+
+  var putResp = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data, null, 2)
+  });
+  if (!putResp.ok) throw new Error('Definitions file save failed: ' + putResp.status);
+}
+
+// Resize, sanitize, upload — returns attachment metadata in the same shape the Console writes.
+async function erTaskUploadImage(itemId, file) {
+  var safeName = erTaskSanitizeFilename(file.name);
+  var fullBlob  = await erTaskResizeImage(file, 1080, 1024, 0.85);
+  var thumbBlob = await erTaskResizeImage(file,  240,  180, 0.85);
+  var basePath  = 'Documents/IDMS/data/assets/pictures/' + itemId + '/';
+  await erPutBlob(basePath + safeName, fullBlob);
+  await erPutBlob(basePath + 'thumb-' + safeName, thumbBlob);
+  return {
+    filename:       safeName,
+    path:           'data/assets/pictures/' + itemId + '/' + safeName,
+    thumbnail_path: 'data/assets/pictures/' + itemId + '/thumb-' + safeName
+  };
+}
+
+async function erPutBlob(path, blob) {
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' + encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+  var resp = await fetch(url, {
+    method:  'PUT',
+    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'image/jpeg' },
+    body:    blob
+  });
+  if (!resp.ok) throw new Error('Image upload failed: ' + resp.status);
+}
+
+function erTaskSanitizeFilename(name) {
+  var dot = name.lastIndexOf('.');
+  var ext = dot > 0 ? name.slice(dot).toLowerCase() : '.jpg';
+  var base = name.slice(0, dot > 0 ? dot : name.length)
+    .replace(/[^a-zA-Z0-9\-]/g, '-').replace(/-+/g, '-').toLowerCase();
+  return (base || 'image') + ext;
+}
+
+function erTaskResizeImage(file, maxW, maxH, quality) {
+  return new Promise(function(resolve, reject) {
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+    img.onload = function() {
+      URL.revokeObjectURL(url);
+      var w = img.width, h = img.height;
+      if (w > maxW || h > maxH) {
+        var r = Math.min(maxW / w, maxH / h);
+        w = Math.round(w * r); h = Math.round(h * r);
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(function(b) {
+        b ? resolve(b) : reject(new Error('Canvas toBlob failed'));
+      }, 'image/jpeg', quality || 0.85);
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+    img.src = url;
+  });
+}
+
+function erUuid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+function erEscapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function erEscapeAttr(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ── ENGINE ROOM: PROFILE ─────────────────
