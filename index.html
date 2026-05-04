@@ -345,6 +345,28 @@
     .er-task-update-btn { padding: 7px 12px; font-size: 12px; font-weight: 600; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); cursor: pointer; align-self: center; white-space: nowrap; }
     .er-task-update-btn:active { opacity: 0.85; }
 
+    /* Expandable task row + event log */
+    .er-task-row { cursor: pointer; }
+    .er-task-row:active { background: var(--bg-2); }
+    .er-task-row-expanded { background: var(--bg-2); cursor: default; }
+    .er-task-detail { padding: 10px 14px 14px; border-bottom: 1px solid var(--border); background: var(--bg-2); }
+    .er-task-detail-section { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 6px 0 6px; }
+    .er-task-detail-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px; white-space: pre-wrap; }
+    .er-task-detail-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12px; margin-bottom: 6px; }
+    .er-task-detail-grid dt { color: var(--text-muted); }
+    .er-task-detail-grid dd { color: var(--text-secondary); margin: 0; }
+    .er-event-row { padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; }
+    .er-event-row:first-child { border-top: none; }
+    .er-event-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-bottom: 3px; }
+    .er-event-ts { color: var(--text-muted); font-size: 11px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .er-event-actor { color: var(--text-secondary); font-weight: 600; font-size: 11px; }
+    .er-event-arrow { color: var(--text-muted); font-size: 11px; }
+    .er-event-comment { color: var(--text-secondary); margin-top: 2px; line-height: 1.4; white-space: pre-wrap; }
+    .er-event-thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .er-event-thumb { width: 70px; height: 52px; object-fit: cover; border-radius: 3px; background: var(--bg-1); border: 1px solid var(--border); cursor: zoom-in; opacity: 0; transition: opacity 0.2s; }
+    .er-event-fm-pill { font-size: 10px; padding: 1px 6px; background: var(--bg-1); border: 1px solid var(--border); border-radius: 3px; color: var(--warning); }
+    .er-event-empty { color: var(--text-muted); font-size: 12px; padding: 6px 0; }
+
     /* Update modal form fields */
     .er-form-row { margin-bottom: 12px; }
     .er-form-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; }
@@ -2068,7 +2090,8 @@ var ER_TASKS_STATE = {
   tasks:           [], // flattened {task, defFilename}
   deptCodeRanges:  null, // array of code_range prefixes for user's department, or null = all
   loaded:          false,
-  editing:         null  // task_id currently in modal
+  editing:         null, // task_id currently in modal
+  expanded:        null  // task_id currently expanded in the list
 };
 
 function deptKeyForCurrentUser() {
@@ -2231,8 +2254,9 @@ function renderEngineTasksList() {
     try { equipIds = typeof t.equipment_ids === 'string' ? JSON.parse(t.equipment_ids) : (t.equipment_ids || []); } catch(e) { equipIds = []; }
     var equipStr = equipIds.length ? equipIds.join(', ') : (t.code_range || '');
     var dateStr  = t.created_at ? t.created_at.slice(0, 10) : '';
+    var isExpanded = ER_TASKS_STATE.expanded === t.task_id;
 
-    html += '<div class="er-task-row">'
+    html += '<div class="er-task-row' + (isExpanded ? ' er-task-row-expanded' : '') + '" onclick="toggleErTaskExpand(\'' + erEscapeAttr(t.task_id) + '\')">'
       + '<div class="er-task-row-body">'
       +   '<div class="er-task-row-title">' + erEscapeHtml(t.title || '(untitled)') + '</div>'
       +   '<div class="er-task-row-meta">'
@@ -2244,10 +2268,146 @@ function renderEngineTasksList() {
       +   '</div>'
       + '</div>'
       + '<span class="er-task-status-pill er-task-status-' + erEscapeAttr(status) + '">' + erEscapeHtml(statusLabel) + '</span>'
-      + '<button class="er-task-update-btn" onclick="openErTaskUpdateModal(\'' + erEscapeAttr(t.task_id) + '\')">Update</button>'
+      + '<button class="er-task-update-btn" onclick="event.stopPropagation();openErTaskUpdateModal(\'' + erEscapeAttr(t.task_id) + '\')">Update</button>'
       + '</div>';
+
+    if (isExpanded) html += buildErTaskDetailPanel(t);
   });
   listEl.innerHTML = html;
+
+  // Async-load any thumbnails just rendered (Graph requires a Bearer token, so <img src> can't load directly)
+  if (ER_TASKS_STATE.expanded) loadErEventLogThumbnails(listEl);
+}
+
+function toggleErTaskExpand(taskId) {
+  ER_TASKS_STATE.expanded = (ER_TASKS_STATE.expanded === taskId) ? null : taskId;
+  renderEngineTasksList();
+}
+
+function buildErTaskDetailPanel(t) {
+  var html = '<div class="er-task-detail" onclick="event.stopPropagation()">';
+
+  if (t.description) {
+    html += '<div class="er-task-detail-section">Description</div>'
+         +  '<div class="er-task-detail-desc">' + erEscapeHtml(t.description) + '</div>';
+  }
+
+  // Compact metadata grid
+  var meta = [];
+  if (t.assigned_to)  meta.push(['Assigned to', t.assigned_to]);
+  if (t.failure_mode) meta.push(['Failure mode', t.failure_mode]);
+  if (t.recurring && t.interval) meta.push(['Recurring', t.interval]);
+  if (t.code_range)   meta.push(['Code range', t.code_range]);
+  if (meta.length) {
+    html += '<dl class="er-task-detail-grid">';
+    meta.forEach(function(pair) {
+      html += '<dt>' + erEscapeHtml(pair[0]) + '</dt><dd>' + erEscapeHtml(pair[1]) + '</dd>';
+    });
+    html += '</dl>';
+  }
+
+  // Event log (newest first)
+  html += '<div class="er-task-detail-section">Event Log</div>';
+  var events = Array.isArray(t.events) ? t.events.slice() : [];
+  events.sort(function(a, b) { return (b.occurred_at || '').localeCompare(a.occurred_at || ''); });
+
+  if (events.length === 0) {
+    html += '<div class="er-event-empty">No events recorded yet.</div>';
+  } else {
+    events.forEach(function(ev) { html += buildErEventLogRow(ev); });
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function buildErEventLogRow(ev) {
+  var ts    = ev.occurred_at ? erFormatEventTime(ev.occurred_at) : '';
+  var actor = erEscapeHtml(ev.actor_name || ev.actor_user || '');
+  var atts  = Array.isArray(ev.attachments) ? ev.attachments : [];
+
+  var head = '<div class="er-event-head">'
+           + '<span class="er-event-ts">' + erEscapeHtml(ts) + '</span>'
+           + (actor ? '<span class="er-event-actor">' + actor + '</span>' : '');
+
+  if (ev.type === 'transition' && ev.from_status && ev.to_status) {
+    head += '<span class="er-task-status-pill er-task-status-' + erEscapeAttr(ev.from_status) + '" style="font-size:9px;padding:1px 6px">' + erEscapeHtml(erTaskStatusLabel(ev.from_status)) + '</span>'
+         +  '<span class="er-event-arrow">→</span>'
+         +  '<span class="er-task-status-pill er-task-status-' + erEscapeAttr(ev.to_status) + '" style="font-size:9px;padding:1px 6px">' + erEscapeHtml(erTaskStatusLabel(ev.to_status)) + '</span>';
+  }
+  if (ev.failure_mode_to) {
+    head += '<span class="er-event-fm-pill">FM: ' + erEscapeHtml(ev.failure_mode_to) + '</span>';
+  }
+  head += '</div>';
+
+  var body = '';
+  if (ev.comment) body += '<div class="er-event-comment">' + erEscapeHtml(ev.comment) + '</div>';
+  if (atts.length) {
+    body += '<div class="er-event-thumbs">';
+    atts.forEach(function(a) {
+      var thumbPath = a.thumbnail_path || a.path;
+      var fullPath  = a.path || a.thumbnail_path;
+      body += '<img class="er-event-thumb" data-thumb-path="' + erEscapeAttr(thumbPath) + '" data-full-path="' + erEscapeAttr(fullPath) + '" alt="">';
+    });
+    body += '</div>';
+  }
+
+  return '<div class="er-event-row">' + head + body + '</div>';
+}
+
+function erFormatEventTime(iso) {
+  // "2026-05-04T14:23:11.000Z" → "2026-05-04 14:23"
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+    + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+// Load thumbnails as blobs (Graph requires Bearer auth, so <img src=...> alone won't work).
+// Marks each img as loaded so we don't double-fetch when re-rendering.
+async function loadErEventLogThumbnails(scopeEl) {
+  if (!scopeEl) return;
+  var imgs = scopeEl.querySelectorAll('img.er-event-thumb[data-thumb-path]');
+  for (var i = 0; i < imgs.length; i++) {
+    var img = imgs[i];
+    if (img.dataset.loaded === '1') continue;
+    img.dataset.loaded = '1';
+    var rel = img.dataset.thumbPath;
+    if (!rel) continue;
+    try {
+      var url  = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/' + encodeURIComponent(rel).replace(/%2F/g, '/') + ':/content';
+      var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+      if (!resp.ok) { img.style.display = 'none'; continue; }
+      var blob = await resp.blob();
+      img.src = URL.createObjectURL(blob);
+      img.style.opacity = '1';
+      img.onclick = (function(fullPath) {
+        return function(e) { e.stopPropagation(); openErAttachmentLightbox(fullPath); };
+      })(img.dataset.fullPath || rel);
+    } catch (e) { img.style.display = 'none'; }
+  }
+}
+
+function openErAttachmentLightbox(relPath) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:16px';
+  overlay.innerHTML = '<div style="color:#fff;font-size:13px">Loading…</div>';
+  overlay.onclick = function() { overlay.remove(); };
+  document.body.appendChild(overlay);
+
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/' + encodeURIComponent(relPath).replace(/%2F/g, '/') + ':/content';
+  fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } })
+    .then(function(r) { return r.ok ? r.blob() : null; })
+    .then(function(blob) {
+      if (!blob) { overlay.innerHTML = '<div style="color:#fff">Failed to load image.</div>'; return; }
+      var img = document.createElement('img');
+      img.src = URL.createObjectURL(blob);
+      img.style.cssText = 'max-width:90vw;max-height:90vh;border-radius:4px';
+      overlay.innerHTML = '';
+      overlay.appendChild(img);
+    });
 }
 
 function erTaskStatusLabel(s) {

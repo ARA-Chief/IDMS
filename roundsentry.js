@@ -812,7 +812,12 @@ function reOnResize() {
 function reExit() {
   reUnbindGestures();
   window.removeEventListener('resize', reOnResize);
-  showScreen('screen-home');
+  // Return to the department-specific hub the user came from, not the generic home
+  if (typeof currentDepartment === 'string' && currentDepartment === 'Engine Room') {
+    showScreen('screen-engine-home');
+  } else {
+    showScreen('screen-home');
+  }
 }
 
 // ── Gestures ──────────────────────────────────────────────────────────────────
