@@ -1541,6 +1541,11 @@ function submitLogin() {
       if (v) v.textContent = config.vessel;
     }
 
+    // Record login + start heartbeat so the Console Crew List can show online status.
+    // Fire-and-forget — login should not block on this.
+    recordLoginActivity(currentUser.username);
+    startActivityHeartbeat(currentUser.username);
+
     routeAfterLogin();
 
   }).catch(function(err) {
@@ -3288,6 +3293,7 @@ function switchUser() {
   if (activeIncidents.length > 0) {
     if (!confirm('You have active timers. Switch user anyway?')) return;
   }
+  stopActivityHeartbeat();
   activeIncidents   = [];
   currentUser       = { username: '', name: '', initials: '', role: '', departments: [] };
   currentDepartment = '';
@@ -3311,6 +3317,7 @@ function signOut() {
     if (!confirm('You have active timers running. Sign out anyway?')) return;
   }
   if (_syncTimer) { clearInterval(_syncTimer); _syncTimer = null; }
+  stopActivityHeartbeat();
   activeIncidents   = [];
   resolvedIncidents = [];
   currentUser       = { username: '', name: '', initials: '', role: '', departments: [] };
@@ -3327,6 +3334,53 @@ function signOut() {
   document.getElementById('login-remember').checked    = false;
   document.getElementById('login-error').style.display = 'none';
   msalSignOut(); // clears Microsoft session and returns to splash
+}
+
+// ── ACTIVITY TRACKING ────────────────────
+// Writes Documents/IDMS/data/crew/{username}/activity.json so the Console Crew List
+// can show online status. Heartbeat updates `last_active` every 5 minutes while
+// the user is signed in.
+var _activityHeartbeatTimer = null;
+
+function recordLoginActivity(username) {
+  if (!username || !graphToken) return;
+  var now = new Date().toISOString();
+  putActivityFile(username, { last_login: now, last_active: now });
+}
+
+function startActivityHeartbeat(username) {
+  stopActivityHeartbeat();
+  if (!username) return;
+  _activityHeartbeatTimer = setInterval(function() {
+    if (!currentUser.username || currentUser.username !== username || !graphToken) return;
+    putActivityFile(username, { last_active: new Date().toISOString() }, /*merge*/ true);
+  }, 5 * 60 * 1000);
+}
+
+function stopActivityHeartbeat() {
+  if (_activityHeartbeatTimer) { clearInterval(_activityHeartbeatTimer); _activityHeartbeatTimer = null; }
+}
+
+function putActivityFile(username, fields, merge) {
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/crew/'
+          + encodeURIComponent(username) + '/activity.json:/content';
+  var write = function(payload) {
+    return fetch(url, {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload, null, 2)
+    }).catch(function() { /* offline / transient — ignore */ });
+  };
+  if (!merge) { write(fields); return; }
+  // Merge: read current contents, overlay new fields, write back. Falls back to
+  // writing just the new fields if the file doesn't exist yet.
+  fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } })
+    .then(function(r) { return r.ok ? r.json() : {}; })
+    .catch(function() { return {}; })
+    .then(function(existing) {
+      var next = Object.assign({}, existing || {}, fields);
+      write(next);
+    });
 }
 
 // ── START TIMER — PRESET PATH ────────────

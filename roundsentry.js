@@ -356,11 +356,27 @@ function reColHeadersHTML() {
 // ── Rows ──────────────────────────────────────────────────────────────────────
 
 function reAllRowsHTML() {
-  return RE.flatItems.map(r => {
-    if (r.item.type === 'heading') return reHeadingRowHTML(r);
-    const ni = RE.navItems.indexOf(r);
-    return reDataRowHTML(r, ni);
-  }).join('');
+  // Insert a section-title row each time the section changes, so users can see
+  // the section name (e.g. "Engine Room") above its headings + items.
+  let lastSection = null;
+  const out = [];
+  for (const r of RE.flatItems) {
+    if (r.section !== lastSection) {
+      lastSection = r.section;
+      const label = r.section?.label;
+      if (label) out.push(reSectionTitleHTML(label));
+    }
+    if (r.item.type === 'heading') {
+      out.push(reHeadingRowHTML(r));
+    } else {
+      out.push(reDataRowHTML(r, RE.navItems.indexOf(r)));
+    }
+  }
+  return out.join('');
+}
+
+function reSectionTitleHTML(label) {
+  return `<div class="re-row re-section-row"><span class="re-section-text">${reEsc(label)}</span></div>`;
 }
 
 function reHeadingRowHTML(r) {
@@ -503,8 +519,8 @@ function reKeypadHTML() {
       ${toggle}
       <div class="re-kp-grid">
         <button class="re-kp-btn re-kp-fn"   onclick="reKpBs()">&#8592;</button>
-        <button class="re-kp-btn re-kp-fn"   onclick="reKpKey('/')">&#247;</button>
-        <button class="re-kp-btn re-kp-fn"   onclick="reKpKey('*')">&#215;</button>
+        <div></div>
+        <button class="re-kp-btn re-kp-fn"   onclick="reKpMinus()" title="Toggle negative">&#8722;</button>
         <button class="re-kp-btn re-kp-nav"  onclick="reNavUp()">&#9650;</button>
 
         <button class="re-kp-btn" onclick="reKpKey('7')">7</button>
@@ -551,6 +567,21 @@ function reKpBs() {
   if (RE.secd[iid]) return;
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
   RE.values[iid] = (RE.values[iid] || '').slice(0, -1);
+  reUpdateNum(iid);
+}
+
+// Toggle a leading minus sign on the current entry. Tap once to mark as negative,
+// tap again to clear. We toggle the sign rather than appending so the entry stays
+// well-formed regardless of where the cursor is.
+function reKpMinus() {
+  const nav = RE.navItems[RE.cursorIdx];
+  if (!nav) return;
+  const iid  = nav.item.item_id;
+  const type = nav.item.type;
+  if (RE.secd[iid]) return;
+  if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
+  const v = RE.values[iid] || '';
+  RE.values[iid] = v.startsWith('-') ? v.slice(1) : '-' + v;
   reUpdateNum(iid);
 }
 
@@ -949,6 +980,8 @@ function reStylesHTML() {
 }
 .re-heading-row  { grid-template-columns: 1fr; background: var(--re-heading-bg); min-height: 32px; }
 .re-heading-text { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: var(--re-muted); padding: 0 4px; }
+.re-section-row  { grid-template-columns: 1fr; background: var(--re-bg1); min-height: 40px; border-bottom: 1px solid var(--re-border); }
+.re-section-text { font-size: 14px; font-weight: 700; letter-spacing: 0.04em; color: var(--re-text); padding: 0 6px; }
 .re-active-row   { background: var(--re-active-row); }
 .re-done .re-col-label { color: var(--re-done-text); }
 
