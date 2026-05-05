@@ -3128,6 +3128,15 @@ function openErCertAddModal() {
   ['er-cert-custom-name','er-cert-date-issued','er-cert-date-expiry'].forEach(function(id) {
     var e = document.getElementById(id); if (e) e.value = '';
   });
+  // Reset the "user typed something" flag so auto-fill can populate again, and
+  // wire the input/change listeners that drive auto-fill.
+  var issuedEl = document.getElementById('er-cert-date-issued');
+  var expiryEl = document.getElementById('er-cert-date-expiry');
+  if (expiryEl) {
+    expiryEl.dataset.userEdited = '';
+    expiryEl.oninput = function() { expiryEl.dataset.userEdited = '1'; };
+  }
+  if (issuedEl) issuedEl.onchange = recomputeErCertExpiry;
   var filesEl = document.getElementById('er-cert-files');
   if (filesEl) filesEl.value = '';
   var preview = document.getElementById('er-cert-files-preview');
@@ -3158,6 +3167,33 @@ function onErCertTypeChange() {
   var row = document.getElementById('er-cert-custom-row');
   if (!sel || !row) return;
   row.style.display = sel.value === '__OTHER__' ? 'block' : 'none';
+  recomputeErCertExpiry();
+}
+
+// Returns YYYY-MM-DD for issued + cert's expiry_years. Returns '' for unknown
+// cert types or types with no renewal cycle (Initial / Once / "Other").
+function computeErCertExpiry(certId, dateIssued) {
+  if (!certId || certId === '__OTHER__' || !dateIssued) return '';
+  var cert = (ER_PROFILE_STATE.certTypes || []).find(function(c) { return c.cert_id === certId; });
+  if (!cert) return '';
+  var years = (typeof cert.expiry_years === 'number' && isFinite(cert.expiry_years)) ? cert.expiry_years : null;
+  if (!years) return '';
+  var d = new Date(dateIssued);
+  if (isNaN(d.getTime())) return '';
+  d.setFullYear(d.getFullYear() + years);
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
+// Auto-fill the expiry input from cert type + issued date — but only if the user
+// hasn't already typed something themselves.
+function recomputeErCertExpiry() {
+  var sel       = document.getElementById('er-cert-type-sel');
+  var issuedEl  = document.getElementById('er-cert-date-issued');
+  var expiryEl  = document.getElementById('er-cert-date-expiry');
+  if (!expiryEl) return;
+  if (expiryEl.dataset.userEdited === '1') return;
+  expiryEl.value = computeErCertExpiry(sel?.value, issuedEl?.value) || '';
 }
 
 async function submitErCertAdd() {
@@ -3181,7 +3217,10 @@ async function submitErCertAdd() {
   }
   var dateIssued = dIssuedEl ? dIssuedEl.value : '';
   if (!dateIssued) { showErr('Date issued is required.'); return; }
-  var dateExpiry = dExpiryEl ? dExpiryEl.value : '';
+  // Blank expiry → derive from cert type's renewal cycle. If the cert has no cycle
+  // (Initial / Once / "Other"), the result is '' meaning "no expiry".
+  var dateExpiry = (dExpiryEl ? dExpiryEl.value : '')
+    || computeErCertExpiry(certType, dateIssued);
   if (dateExpiry && dateExpiry <= dateIssued) { showErr('Expiry must be after issued date.'); return; }
   var files = filesEl ? Array.from(filesEl.files) : [];
   if (files.length === 0) { showErr('Attach at least one file (PDF or image).'); return; }
