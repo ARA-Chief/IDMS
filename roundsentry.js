@@ -138,12 +138,18 @@ function reInferRound(schedule) {
 // ── Item filtering ────────────────────────────────────────────────────────────
 
 function reFilterItems(config, roundNum, dow) {
-  const userKeys = (currentUser.departments || []).map(reDeptKey);
+  // Scope rounds to the department the user is currently inside (the hub they entered through),
+  // not the full set of departments they have access to. A crew with both Engine Room and Factory
+  // access who entered via Engine Room should only see Engine Room rounds here; switching
+  // departments from the user menu re-routes them through the Factory hub for Factory rounds.
+  const activeKey = currentDepartment ? reDeptKey(currentDepartment) : null;
   const flat = [];
 
   for (const section of (config.sections || [])) {
     const sk = section.dept_key || null;
-    if (sk !== null && !userKeys.includes(sk)) continue;
+    // A section with no dept_key is shared (visible everywhere).
+    // A section with a dept_key only renders when it matches the active hub.
+    if (sk !== null && activeKey !== null && sk !== activeKey) continue;
 
     const visible = [];
     for (const item of (section.items || [])) {
@@ -812,12 +818,16 @@ function reOnResize() {
 function reExit() {
   reUnbindGestures();
   window.removeEventListener('resize', reOnResize);
-  // Return to the department-specific hub the user came from, not the generic home
-  if (typeof currentDepartment === 'string' && currentDepartment === 'Engine Room') {
-    showScreen('screen-engine-home');
-  } else {
-    showScreen('screen-home');
+  // Return to the department hub the user came from, not the generic Factory home.
+  // Match flexibly because `currentDepartment` can vary in casing / whitespace.
+  const dept = (typeof currentDepartment === 'string' ? currentDepartment : '').trim().toLowerCase();
+  let target = 'screen-home';
+  if (dept.indexOf('engine') !== -1 && document.getElementById('screen-engine-home')) {
+    target = 'screen-engine-home';
+  } else if (dept.indexOf('deck') !== -1 && document.getElementById('screen-deck-home')) {
+    target = 'screen-deck-home';
   }
+  showScreen(target);
 }
 
 // ── Gestures ──────────────────────────────────────────────────────────────────
