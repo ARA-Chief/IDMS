@@ -1,5 +1,7 @@
 # IDMS Field PWA — Schema & Architecture Reference
-**Version 1.1 — F/V Araho**
+**Version 1.2 — F/V Araho**
+
+v1.2 — Rounds entry module (`roundsentry.js`) updated. **Year subfolders:** entry log files are now written to `data/rounds/logs/{username}/{YYYY}/roundslog-…` — one subfolder per calendar year, preventing unbounded OneDrive folder growth. **Payload-level round fields:** `round_number` and `scheduled_time` are now top-level fields in the §22 payload in addition to being echoed per-entry; the Console ingest reads from payload level. **Submit flow change:** incomplete round warning changed from blocking (OK only) to a modal with **OK / Cancel** — crew can submit a partial round. **Add Oil excluded from incomplete count:** `add_oil` type items are never counted as "not yet checked" in the submission warning. **Add Oil zero = null:** entering `0` for an `add_oil` item stores `null` in the aggregate `display_value` — no volume recorded if nothing was actually added. **Keypad layout updated:** row 1 = ← − ▲; row 2 = 7 8 9 ▼; row 3 = 4 5 6 SEC'D; row 4–5 = 1 2 3 [enter, spans 2 rows]; row 5 = 0 dcml [enter continues]. "`.`" key renamed to `dcml`. **First-keystroke-replaces:** cursor navigation (click or arrow key) sets a `freshCursor` flag on the active item; the next digit or decimal keypress replaces the existing value rather than appending it. `freshCursor` is cleared after the first keypress and on backspace/sign-toggle. New `RE` state field: `freshCursor` (boolean). Data contracts updated: §22 per IDMS-SCHEMA-v2.14.
 
 v1.1 — Rounds entry module built (`roundsentry.js`). New screen `screen-roundsentry` added to screen registry (§5). `ACTIVE_MODULES` note updated — rounds entry operates across all departments via `active_rounds` / `active_days` item filtering rather than a per-department module flag (§3). New config files read by the PWA: `roundsconfig.json` and `userprefs-{username}.json` (§6). New `localStorage` key `fw_re_prefs_{username}` (§8). Section §19 (Planned Modules) updated — rounds entry promoted from planned to built. New §20 documents `roundsentry.js`: state model (`RE` object), round inference (§24 rule), item filtering by dept/active_rounds/active_days, 4-column entry grid, numeric keypad (phone: bottom, tablet: left/right per preference), SEC'D behaviour, colour mode toggle, gesture lockout (pull-to-refresh + swipe-back prevention), submit flow, and OneDrive write path. Data contracts: entry log written per IDMS-SCHEMA-v2.11 §22; history columns read from §23 aggregate files; paths and round inference per §24.
 
@@ -748,7 +750,7 @@ Mirror of the Factory event-timing module. Will use `engineconfig.json` + `engin
 
 Same pattern as Engine Room. Uses `deckconfig.json` + `deckshell.json`.
 
-### Rounds entry *(Built — v1.1)*
+### Rounds entry *(Built — v1.2)*
 
 `roundsentry.js` is the field rounds data-entry module. See §20 for full documentation.
 
@@ -757,9 +759,11 @@ Same pattern as Engine Room. Uses `deckconfig.json` + `deckshell.json`.
 **Key behaviour (summary):**
 - Reads `roundsconfig.json` + `userprefs-{username}.json` from OneDrive on init.
 - Filters items by `dept_key`, `active_rounds`, and `active_days`.
-- Infers current round number per the §24 rule.
+- Infers current round number per the §24 rule; stores as payload-level `round_number`.
 - Loads two most recent aggregate files from `data/rounds/{year}/` for history columns.
-- Writes per-user entry log per v2.11 §22 on submit.
+- Writes per-user entry log per v2.14 §22 on submit, to `data/rounds/logs/{username}/{YYYY}/`.
+- Partial rounds can be submitted (OK / Cancel warning, not a block).
+- `add_oil` items are excluded from the incomplete count and zero values are not stored.
 - Saves `userprefs-{username}.json` on preference change.
 
 ### Tasks & Maintenance
@@ -794,7 +798,7 @@ Current passwords are plaintext in `userconfig.json`. Planned work:
 **File:** `roundsentry.js` (external script, loaded after `index.html` main `</script>`)  
 **Screen:** `<div class="screen" id="screen-roundsentry">`  
 **Entry point:** `initRoundsEntry()` — called by the rounds icon button on `screen-home`  
-**Data contracts:** IDMS-SCHEMA-v2.11 §22 (write), §23 (history read), §24 (paths + round inference)
+**Data contracts:** IDMS-SCHEMA-v2.14 §22 (write), §23 (history read), §24 (paths + round inference)
 
 ### Module state object
 
@@ -816,6 +820,7 @@ All state for the rounds module lives in a single `const RE = { … }` object in
 | `vessel` | string | From `roundsconfig.json`. |
 | `submitting` | boolean | Prevents double-submit. |
 | `isTablet` | boolean | `window.innerWidth >= 768`. Re-evaluated on resize. |
+| `freshCursor` | boolean | Set to `true` when the cursor moves to a different row (click or arrow key). The next digit or decimal keypress replaces the existing value instead of appending. Cleared after the first keypress and on backspace or sign-toggle. |
 
 ### Init sequence
 
@@ -856,17 +861,21 @@ The entry grid is a 4-column CSS grid rendered as rows within `#screen-roundsent
 ### Keypad layout
 
 ```
- ←       −   ▲
- 7   8   9   ▼
- 4   5   6  SEC'D
- 1   2   3
- 0   .       ↵
+ ←    −    ▲
+ 7    8    9    ▼
+ 4    5    6   SEC'D
+ 1    2    3   ┐
+ 0   dcml  _   ┘ enter (spans rows 4–5)
 ```
 
 - **Phone** (< 768 px): fixed to bottom, full width.
 - **Tablet** (≥ 768 px): fixed to left or right side (`RE.prefs.keypad_side`). A toggle button swaps sides and saves `userprefs-{username}.json`.
 - **Hidden** when active item is `custom` or `text` type.
 - SEC'D button is visually subdued (grey background) to prevent accidental activation.
+- `dcml` inserts a decimal point. If `freshCursor` is set, clears the field first (sets value to `"."`).
+- `enter` spans grid rows 4 and 5 (CSS `grid-row: span 2`).
+- `←` (backspace): if `freshCursor` is set, clears the field entirely; otherwise removes the last character.
+- First-keystroke-replaces: when `RE.freshCursor` is `true`, the next digit or `dcml` press replaces the current value rather than appending. `freshCursor` is set by `reCursorTo()` when the cursor moves to a new row.
 
 ### SEC'D behaviour
 
@@ -897,10 +906,14 @@ Applied on `screen-roundsentry`, removed on exit:
 
 ### Submit flow
 
-1. User confirms all items have values or are SEC'd.
-2. If any items are incomplete: show inline message *"X items not yet checked."* — do not advance.
-3. Show confirmation modal: **"Submit rounds?"** with OK / CANCEL.
-4. On OK: build §22 payload, call `rePut(path, payload)` to write to `data/rounds/logs/{username}/roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json` where `{HHmm}` is the UTC wall-clock time at submission.
+`add_oil` type items are **never** counted as incomplete — they represent optional oil additions and may legitimately be zero / unentered.
+
+1. Count incomplete items: items where `item.type !== 'add_oil'` AND not SEC'd AND `reItemComplete()` returns false.
+2. If `n > 0`: show modal — *"n items not yet checked. Submit anyway?"* with **Cancel** and **OK** buttons.
+   - **Cancel**: dismiss modal, return to entry screen; no submission.
+   - **OK**: proceed to step 3.
+3. Show confirmation modal: **"Submit rounds?"** with OK / Cancel.
+4. On OK: build §22 payload with `round_number` and `scheduled_time` at the **top level** (and echoed per-entry), call `rePut(path, payload)` to write to `data/rounds/logs/{username}/{YYYY}/roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json` where `{HHmm}` is the UTC wall-clock time at submission.
 5. On success: return to department home screen.
 6. On failure: display inline error; keep data in `RE.values` / `RE.secd`; allow retry.
 

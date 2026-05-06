@@ -21,6 +21,7 @@ const RE = {
   scheduledTime: '00:00',
   vessel:       '',
   submitting:   false,
+  freshCursor:  false,
   isTablet:     false,
   touchStartX:  0,
   touchStartY:  0,
@@ -473,6 +474,7 @@ function reScrollToActive() {
 function reCursorTo(ni) {
   if (ni < 0 || ni >= RE.navItems.length) return;
   const prev = RE.cursorIdx;
+  if (ni !== prev) RE.freshCursor = true;
   RE.cursorIdx = ni;
 
   // Remove highlight from previous row
@@ -520,15 +522,15 @@ function reKeypadHTML() {
     <div class="re-keypad${hidden}" id="re-keypad">
       ${toggle}
       <div class="re-kp-grid">
-        <button class="re-kp-btn re-kp-fn"   onclick="reKpBs()">&#8592;</button>
+        <button class="re-kp-btn re-kp-fn"  onclick="reKpBs()">&#8592;</button>
+        <button class="re-kp-btn re-kp-fn"  onclick="reKpMinus()" title="Toggle negative">&#8722;</button>
+        <button class="re-kp-btn re-kp-nav" onclick="reNavUp()">&#9650;</button>
         <div></div>
-        <button class="re-kp-btn re-kp-fn"   onclick="reKpMinus()" title="Toggle negative">&#8722;</button>
-        <button class="re-kp-btn re-kp-nav"  onclick="reNavUp()">&#9650;</button>
 
         <button class="re-kp-btn" onclick="reKpKey('7')">7</button>
         <button class="re-kp-btn" onclick="reKpKey('8')">8</button>
         <button class="re-kp-btn" onclick="reKpKey('9')">9</button>
-        <button class="re-kp-btn re-kp-nav"  onclick="reNavDown()">&#9660;</button>
+        <button class="re-kp-btn re-kp-nav" onclick="reNavDown()">&#9660;</button>
 
         <button class="re-kp-btn" onclick="reKpKey('4')">4</button>
         <button class="re-kp-btn" onclick="reKpKey('5')">5</button>
@@ -538,12 +540,11 @@ function reKeypadHTML() {
         <button class="re-kp-btn" onclick="reKpKey('1')">1</button>
         <button class="re-kp-btn" onclick="reKpKey('2')">2</button>
         <button class="re-kp-btn" onclick="reKpKey('3')">3</button>
-        <div></div>
+        <button class="re-kp-btn re-kp-enter" onclick="reKpEnter()">enter</button>
 
         <button class="re-kp-btn" onclick="reKpKey('0')">0</button>
-        <button class="re-kp-btn re-kp-fn" onclick="reKpDot()">.</button>
+        <button class="re-kp-btn re-kp-fn" onclick="reKpDot()">dcml</button>
         <div></div>
-        <button class="re-kp-btn re-kp-enter" onclick="reKpEnter()">&#8629;</button>
       </div>
     </div>`;
 }
@@ -557,7 +558,8 @@ function reKpKey(k) {
   const type = nav.item.type;
   if (RE.secd[iid]) return;
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
-  RE.values[iid] = (RE.values[iid] || '') + k;
+  if (RE.freshCursor) { RE.freshCursor = false; RE.values[iid] = k; }
+  else                { RE.values[iid] = (RE.values[iid] || '') + k; }
   reUpdateNum(iid);
 }
 
@@ -568,7 +570,8 @@ function reKpBs() {
   const type = nav.item.type;
   if (RE.secd[iid]) return;
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
-  RE.values[iid] = (RE.values[iid] || '').slice(0, -1);
+  if (RE.freshCursor) { RE.freshCursor = false; RE.values[iid] = ''; }
+  else                { RE.values[iid] = (RE.values[iid] || '').slice(0, -1); }
   reUpdateNum(iid);
 }
 
@@ -582,6 +585,7 @@ function reKpMinus() {
   const type = nav.item.type;
   if (RE.secd[iid]) return;
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
+  RE.freshCursor = false;
   const v = RE.values[iid] || '';
   RE.values[iid] = v.startsWith('-') ? v.slice(1) : '-' + v;
   reUpdateNum(iid);
@@ -593,6 +597,7 @@ function reKpDot() {
   const iid = nav.item.item_id;
   if (RE.secd[iid]) return;
   if (nav.item.type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
+  if (RE.freshCursor) { RE.freshCursor = false; RE.values[iid] = '.'; reUpdateNum(iid); return; }
   const v = RE.values[iid] || '';
   if (v.includes('.')) return;
   RE.values[iid] = v + '.';
@@ -719,6 +724,7 @@ function reSecD() {
 
 function reCountIncomplete() {
   return RE.navItems.filter(({ item }) => {
+    if (item.type === 'add_oil') return false;
     const iid = item.item_id;
     if (RE.secd[iid]) return false;
     return !reItemComplete(item, iid);
@@ -730,12 +736,18 @@ function reHandleSubmit() {
   const n = reCountIncomplete();
   if (n > 0) {
     reShowModal(`
-      <p class="re-modal-body">${n} item${n !== 1 ? 's' : ''} not yet checked.</p>
+      <h3 class="re-modal-title">${n} item${n !== 1 ? 's' : ''} not yet checked.</h3>
+      <p class="re-modal-body">Submit anyway?</p>
       <div class="re-modal-actions">
-        <button class="re-modal-btn re-modal-primary" onclick="reCloseModal()">OK</button>
+        <button class="re-modal-btn re-modal-secondary" onclick="reCloseModal()">Cancel</button>
+        <button class="re-modal-btn re-modal-primary" onclick="reCloseModal();reShowRoundsSubmitConfirm()">OK</button>
       </div>`);
     return;
   }
+  reShowRoundsSubmitConfirm();
+}
+
+function reShowRoundsSubmitConfirm() {
   reShowModal(`
     <h3 class="re-modal-title">Submit rounds?</h3>
     <p class="re-modal-body">Round ${RE.roundNum} &middot; ${reEsc(RE.scheduledTime)}</p>
@@ -791,8 +803,9 @@ async function reConfirmSubmit() {
       entries
     };
 
+    const year = now.getFullYear();
     const path = ONEDRIVE_BASE + '/data/rounds/logs/' + username +
-                 '/roundslog-' + username + '-' + dateStr + '-' + hhmm + '.json';
+                 '/' + year + '/roundslog-' + username + '-' + dateStr + '-' + hhmm + '.json';
     await rePut(path, payload);
 
     RE.submitting = false;
@@ -1035,7 +1048,7 @@ function reStylesHTML() {
 .re-kp-btn:active  { filter: brightness(0.8); }
 .re-kp-fn          { font-size: 16px; color: var(--re-text2); }
 .re-kp-nav         { font-size: 14px; color: var(--re-accent); }
-.re-kp-enter       { background: var(--re-accent); color: var(--re-bg0); }
+.re-kp-enter       { background: var(--re-accent); color: var(--re-bg0); grid-row: span 2; font-size: 13px; }
 .re-kp-secd        { font-size: 11px; font-weight: 700; color: var(--re-muted); background: var(--re-bg1); letter-spacing: 0.04em; }
 .re-kp-side-toggle { display: block; width: 100%; background: transparent; border: none; color: var(--re-text2); font-size: 18px; cursor: pointer; text-align: right; margin-bottom: 4px; padding: 0 4px; }
 

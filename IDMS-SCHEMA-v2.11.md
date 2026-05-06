@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.13 — F/V Araho**  
+**Version 2.14 — F/V Araho**  
+v2.14 — Rounds module hardened (Console + PWA). **Year subfolders:** user entry log files are now stored under `data/rounds/logs/{username}/{YYYY}/` (year subfolder added); the Console `listRoundsLogFilesForUser` scans current and previous year. **`round_number` / `scheduled_time` at payload level:** in the §22 file these fields are canonical at the top-level payload and echoed into each entry for backward compatibility — the Console ingest now reads from payload level, not per-entry level. **Actual submission time:** `rounds_aggregates` overview now exposes `actual_time` (earliest `submitted` timestamp across all contributing users) displayed in the Rounds Log "Actual" column. **Rounds Log detail view** layout changed to Section / Item / Value / Unit / Delta -1 / Delta -2; contributing user names appear in the panel header alongside Round # and Date; row order follows Rounds Setup config order (using SQLite window-function `MIN(id) OVER (PARTITION BY section_id, item_id)`). **Sync column:** "OD Status" renamed to "Sync"; badge values: `complete` → "Synced", `failed` → "Failed", `pending` → "Pending"; rows with no `round_number` show "—" instead of a badge. **Add Oil zero = null:** `add_oil` items with a summed value of `0` or `0.00` produce `display_value: null` (`—`) in the detail view, delta columns, and Add Oil Summary — only actual volumes > 0 are recorded. **Add Oil excluded from incomplete count:** `add_oil` type items are never counted as "not yet checked" in the PWA submit-incomplete warning. **Weekly cleanup:** after a successful aggregate write, the Console deletes individual user OneDrive submission files older than 7 days (runs at most once per 24 hours per ingest session). New IPC handler `rounds:getSyncedSourceFiles`. New Graph helper `graphDelete` / `deleteRoundsUserFile`. **PWA keypad layout** updated: row 1 = ← − ▲; row 2 = 7 8 9 ▼; row 3 = 4 5 6 SEC'D; row 4 = 1 2 3 (enter, spans rows 4–5); row 5 = 0 dcml (enter continues). **First-keystroke-replaces:** navigating to a field (click or arrow key) sets a `freshCursor` flag; the next keypad digit/decimal replaces the existing value rather than appending. **Submit flow change (PWA):** incomplete rounds show an OK / Cancel modal — crew can submit a partial round; submission is no longer blocked.
+
 v2.13 — Trip Analytics module expanded. Map upgraded to a full nautical-chart presentation: Leaflet panes give bathymetry / land / coastline / reefs / graticules / OpenSeaMap tile overlay deterministic z-order independent of async fetch order; antimeridian wrapping via `worldCopyJump` plus 3-world vector rendering and longitude-unwrapping for tracks; permanent map labels for vessel (from `vesselconfig.json → info.vessel_name`), departure port, and destination port; departure / destination markers now render in the topmost `ta-vessel` pane so they sit above land. CSP updated to allow `https://tiles.openseamap.org` and `https://*.tile.openstreetmap.org`. New high-resolution natural-earth assets bundled (`ne_10m_land`, `ne_10m_coastline`, `ne_10m_minor_islands`, `ne_10m_reefs`, `ne_10m_graticules_5`, `ne_10m_ports`, full `ne_10m_bathymetry_*` set). `tripanalyticsconfig.json` schema_version bumped to 2 (§40): `map.show_bathymetry` (boolean toggle for performance), `map.ocean_color`, `active_trip.fuel_onboard_trip_start_usg`, `active_trip.trip_start_at`. Three additional default Alaska ports auto-injected if missing: Adak (ADK), Kodiak (KOD), Togiak (TOG); Dutch Harbor / Seattle renamed with state suffix. Trip Metadata lat/lon now editable in degrees + decimal-minutes with N/S/E/W select; admin-only **Save Position (today)** button calls `db:upsertDailyPosition`. Offload Estimator gains **Fuel Onboard Trip Start (USG)**, **Fuel Onboard Now (USG)**, and **Daily Avg. Consumption (USG/day)** rows above Est. Fuel Upon Arrival; the trip-start fuel snapshot and timestamp are captured automatically when **Open New Trip** confirms, and both are admin-editable to correct mistakes. Daily burn calculation now prefers the trip-start derivation (`(start − now) / hours × 24`) and falls back to the fuel-log average when not available. **Generate Bunker Pre-Load** button now produces a real plan: builds rows by walking fuel tanks in `localeCompare(numeric)` order, filling each from current level to `capacity × max_fill_pct/100` until `desiredFuel − (currentOnboard − dailyBurn × steamDays)` is satisfied; sets `date = ETA + 1 day`; preserves PIC names / delivery rates from any existing `bunkerplan.json`; writes via `saveBunkerPlan()` then navigates. Lube Oil block removed from Tab 1 (diesel-only). Numeric inputs in Tab 1 now commit on blur or Enter (no per-keystroke re-renders); a `rerender()` helper preserves scroll position and focus on the editing field. Stale-map detection on tab re-entry rebuilds the map when its container has been re-rendered; `invalidateSize()` deferred one frame to handle 0×0 measurement during tab transitions. Bug fix: tripanalytics.js was reading `fuelstate.json` tank entries as `volume_usg` instead of `volume`, leaving Est. Fuel Upon Arrival blank.
 
 v2.12 — Trip Planner dissolved and replaced by Trip Analytics module (§27 rewritten). New `tripanalyticsconfig.json` introduced (§40). Factory Production Setup tab gains `processing_start_time` field (§37.5.1, §37.13). Rotation Planner tab moved from Trip Planner to Schedule module as Tab 4 (§28). `tripplanner.js` retired; replaced by `tripanalytics.js`.
@@ -123,7 +125,8 @@ Documents/IDMS/
 │   │   └── reports/
 │   ├── rounds/
 │   │   ├── logs/
-│   │   │   └── {username}/         ← roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json  (per-user entry logs, written by PWA)
+│   │   │   └── {username}/
+│   │   │       └── {YYYY}/         ← roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json  (per-user entry logs, written by PWA)
 │   │   ├── {YYYY}/                 ← rounds-{YYYY-MM-DD}-{HHmm}.json  (aggregates, written by console)
 │   │   └── reports/                ← rounds-report-{YYYY-MM-DD}.json (future)
 │   ├── roughlog/
@@ -1972,11 +1975,11 @@ Per-user preference file for the rounds entry module. One file per IDMS user. Cr
 
 ## 22. Rounds Entry Log File (per-user, per-round)
 
-**Location:** `Documents/IDMS/data/rounds/logs/{username}/roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json`  
+**Location:** `Documents/IDMS/data/rounds/logs/{username}/{YYYY}/roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json`  
 **Written by:** Field PWA (`roundsentry.js`) on submit  
 **Read by:** Console (`rounds:ingestLog` IPC handler via `pollRoundsLogs()`)
 
-One file per user per round submission. `{HHmm}` is the UTC wall-clock time at the moment of submission (not the scheduled round time). A user who submits the same round twice produces two files with different `{HHmm}` values; the console deduplicates by `source_file` — the second file is skipped if the first is already ingested.
+One file per user per round submission. `{HHmm}` is the UTC wall-clock time at the moment of submission (not the scheduled round time). `{YYYY}` is the four-digit year of the submission date. A user who submits the same round twice produces two files with different `{HHmm}` values; the console deduplicates by `source_file` — the second file is skipped if the first is already ingested. Files older than 7 days whose rounds have been successfully aggregated are automatically deleted by the Console cleanup pass.
 
 ### Full example
 
@@ -2047,14 +2050,16 @@ One file per user per round submission. `{HHmm}` is the UTC wall-clock time at t
 | `username`       | string   | IDMS username of the submitting user.                                                 |
 | `display_name`   | string   | Full display name. Copied from the user's session object at submission time.         |
 | `submitted`      | string   | ISO 8601 UTC. Exact moment of submission. Used for deduplication and recency sorting. |
+| `round_number`   | integer \| null | **Canonical round number for this submission.** Inferred by `reInferRound` at submit time; see §24. The Console reads this field at the payload level, not from individual entries. |
+| `scheduled_time` | string \| null | **Canonical scheduled time** (`"HH:MM"`) corresponding to `round_number`. Set at the payload level; echoed into entries for backward compatibility. |
 | `entries`        | object[] | Flat array of all items the user interacted with — one entry per non-heading item.   |
 
 ### entry object fields
 
 | Field            | Type          | Notes                                                                                                       |
 |------------------|---------------|-------------------------------------------------------------------------------------------------------------|
-| `round_number`   | integer        | Which round. Inferred at load time; see §24.                                                               |
-| `scheduled_time` | string         | Nominal `"HH:MM"` from config. Copied at submission.                                                       |
+| `round_number`   | integer \| null | Echo of the payload-level `round_number`. Present for backward compatibility; Console ingest now reads from payload level. |
+| `scheduled_time` | string \| null | Echo of the payload-level `scheduled_time`. Present for backward compatibility.                            |
 | `date`           | string         | `YYYY-MM-DD`. Vessel-local calendar date the entry relates to.                                             |
 | `section_id`     | string         | UUID from `roundsconfig.json`.                                                                              |
 | `section_label`  | string         | Section label at time of submission. Snapshot — preserved if config later changes.                         |
@@ -2174,12 +2179,14 @@ One file per calendar date per round. `{HHmm}` is the scheduled round time (e.g.
 
 | File | Path pattern | `{HHmm}` meaning |
 |------|--------------|------------------|
-| User entry log | `data/rounds/logs/{username}/roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json` | UTC wall-clock time at submission |
+| User entry log | `data/rounds/logs/{username}/{YYYY}/roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json` | UTC wall-clock time at submission |
 | Round aggregate | `data/rounds/{year}/rounds-{YYYY-MM-DD}-{HHmm}.json` | Scheduled round time, zero-padded (e.g. `0600`) |
 
 The two `{HHmm}` values are different: the log filename records *when* the user submitted; the aggregate filename records *which round* it covers (the scheduled time). This means an 06:00 round submitted at 06:14 produces:
-- Log: `roundslog-tploch-2026-05-04-0614.json`
-- Aggregate: `rounds-2026-05-04-0600.json`
+- Log: `data/rounds/logs/tploch/2026/roundslog-tploch-2026-05-04-0614.json`
+- Aggregate: `data/rounds/2026/rounds-2026-05-04-0600.json`
+
+The Console scans both the current year and the previous year when polling for new user log files, so submissions made just after midnight on 1 January are not missed.
 
 ### Round number inference rule (field PWA — `reInferRound`)
 
