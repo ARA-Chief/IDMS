@@ -1,5 +1,9 @@
 # IDMS Schema Specification
-**Version 2.11 — F/V Araho**  
+**Version 2.13 — F/V Araho**  
+v2.13 — Trip Analytics module expanded. Map upgraded to a full nautical-chart presentation: Leaflet panes give bathymetry / land / coastline / reefs / graticules / OpenSeaMap tile overlay deterministic z-order independent of async fetch order; antimeridian wrapping via `worldCopyJump` plus 3-world vector rendering and longitude-unwrapping for tracks; permanent map labels for vessel (from `vesselconfig.json → info.vessel_name`), departure port, and destination port; departure / destination markers now render in the topmost `ta-vessel` pane so they sit above land. CSP updated to allow `https://tiles.openseamap.org` and `https://*.tile.openstreetmap.org`. New high-resolution natural-earth assets bundled (`ne_10m_land`, `ne_10m_coastline`, `ne_10m_minor_islands`, `ne_10m_reefs`, `ne_10m_graticules_5`, `ne_10m_ports`, full `ne_10m_bathymetry_*` set). `tripanalyticsconfig.json` schema_version bumped to 2 (§40): `map.show_bathymetry` (boolean toggle for performance), `map.ocean_color`, `active_trip.fuel_onboard_trip_start_usg`, `active_trip.trip_start_at`. Three additional default Alaska ports auto-injected if missing: Adak (ADK), Kodiak (KOD), Togiak (TOG); Dutch Harbor / Seattle renamed with state suffix. Trip Metadata lat/lon now editable in degrees + decimal-minutes with N/S/E/W select; admin-only **Save Position (today)** button calls `db:upsertDailyPosition`. Offload Estimator gains **Fuel Onboard Trip Start (USG)**, **Fuel Onboard Now (USG)**, and **Daily Avg. Consumption (USG/day)** rows above Est. Fuel Upon Arrival; the trip-start fuel snapshot and timestamp are captured automatically when **Open New Trip** confirms, and both are admin-editable to correct mistakes. Daily burn calculation now prefers the trip-start derivation (`(start − now) / hours × 24`) and falls back to the fuel-log average when not available. **Generate Bunker Pre-Load** button now produces a real plan: builds rows by walking fuel tanks in `localeCompare(numeric)` order, filling each from current level to `capacity × max_fill_pct/100` until `desiredFuel − (currentOnboard − dailyBurn × steamDays)` is satisfied; sets `date = ETA + 1 day`; preserves PIC names / delivery rates from any existing `bunkerplan.json`; writes via `saveBunkerPlan()` then navigates. Lube Oil block removed from Tab 1 (diesel-only). Numeric inputs in Tab 1 now commit on blur or Enter (no per-keystroke re-renders); a `rerender()` helper preserves scroll position and focus on the editing field. Stale-map detection on tab re-entry rebuilds the map when its container has been re-rendered; `invalidateSize()` deferred one frame to handle 0×0 measurement during tab transitions. Bug fix: tripanalytics.js was reading `fuelstate.json` tank entries as `volume_usg` instead of `volume`, leaving Est. Fuel Upon Arrival blank.
+
+v2.12 — Trip Planner dissolved and replaced by Trip Analytics module (§27 rewritten). New `tripanalyticsconfig.json` introduced (§40). Factory Production Setup tab gains `processing_start_time` field (§37.5.1, §37.13). Rotation Planner tab moved from Trip Planner to Schedule module as Tab 4 (§28). `tripplanner.js` retired; replaced by `tripanalytics.js`.
+
 v2.11 — Rounds entry module built on the Field PWA (`roundsentry.js`). Per-user round log file format defined (§22): `roundslog-{username}-{YYYY-MM-DD}-{HHmm}.json` written to `data/rounds/logs/{username}/`. Rounds aggregate file format defined (§23): `rounds-{YYYY-MM-DD}-{HHmm}.json` written to `data/rounds/{year}/`. OneDrive path conventions and round number inference rule documented (§24). `userprefs-{username}.json` introduced at `config/userprefs-{username}.json` (§21) — stores per-user PWA preferences (`keypad_side`, `colour_mode`). `roundsconfig.json` item schema updated: new item types `add_oil` and `heading`; new item fields `active_days` (day-of-week filter, 1=Monday), `add_oil_tank_id` (tank source for oil additions). Console rounds ingestion rebuilt: `rounds:ingestLog` IPC handler ingests per-user log files from per-user subdirectories; `rounds:buildAggregate` computes §23 aggregates; `rounds:markAggregateWritten` / `rounds:markAggregateFailed` track OneDrive write status. Three new SQLite tables: `rounds_entries` (§22-compatible schema, no UNIQUE constraint — multi-user support), `rounds_aggregates` (with `onedrive_write_status` column: `pending` / `complete` / `failed`), `rounds_config_snapshots` (updated). Old `rounds_entries` schema migrated to `rounds_entries_legacy` on upgrade. Console rounds viewer added: `roundsviewer.js` with three panels — Overview (per-day/round summary), Round Detail (per-item per-user values), Add Oil Summary (fuel-module feed for Phase 5). New IPC handlers: `rounds:getOverview`, `rounds:getRoundDetail`, `rounds:getAddOilSummary`, `rounds:getDistinctDates`, `rounds:saveConfigSnapshot`. New Graph helpers: `listRoundsUserDirs`, `listRoundsLogFilesForUser`, `loadRoundsUserLogFile`, `writeRoundsAggregate`. Ingest poller updated: old flat-folder rounds block replaced with `pollRoundsLogs()` + `buildAndWriteAggregate()` + `retryPendingAggregates()`.
 
 v2.10 — Daily Production Report (DPR) ingestion redesigned (§37.11). Microsoft Graph Mail API replaced with OneDrive folder polling driven by a Power Automate flow. The flow watches the user's inbox for "Daily Production Report" emails and saves their PDF attachments to `OneDrive/Daily Production Reports/{YYYY}/` (note: this folder is *outside* `Documents/IDMS/`). IDMS lists that folder, sorts by `lastModifiedDateTime`, downloads the most recent file, parses it with a pure-Node.js text extractor (no `pdfjs-dist` / `pdf-parse` dependency — broken in Electron's main process), and renames it to `DPR-{YYYY-MM-DD}.pdf` using the file's modification date (since midnight reports are dated the previous day inside the PDF). Three new `graph.js` helpers: `graphGetBinaryById`, `graphRenameItem`, plus `id` added to `graphListFolder` `$select`. New main-process IPC handler `pdf:parse` exposed as `window.idms.pdf.parse(buffer)`. The `production-state.json` `source` field changes from `"email"` to `"dpr"`. `email_subject_filter` and `email_source_address` fields in `factoryconfig.json → production` are deprecated (no longer used). MSAL `Mail.Read*` scopes no longer required — `User.Read` and `Files.ReadWrite` suffice. The renderer's DPR fetch now extracts richer per-species production data (trip number, trip day, daily/trip totals in MT and cases, full per-species grade breakdown). Overview "Refresh DPR" panel shows "Today's report not available" when the most recent file's modification date is not today. Bug fix: `ingest.js` `pollNow()` referenced undefined `loadTaskRecordFile` — corrected to `loadTaskEquipmentFile`.
@@ -54,8 +58,8 @@ v2.1 — Navigation restructure. Sidebar groups renamed and reorganised. Stabili
 24. [Rounds OneDrive Paths & Round Number Inference](#24-rounds-onedrive-paths--round-number-inference)
 25. [fuelstate.json](#25-fuelstatejson)
 26. [Stability Calculations](#26-stability-calculations)
-27. [Trip Planner](#27-trip-planner)
-23. [Trip Planner](#23-trip-planner)
+27. [Trip Analytics](#27-trip-analytics)
+23. [Trip Planner (Retired)](#23-trip-planner)
 24. [portsconfig.json](#24-portsconfigjson)
 25. [scheduleconfig.json](#25-scheduleconfigjson)
 26. [schedule_draft.json](#26-schedule_draftjson)
@@ -71,6 +75,7 @@ v2.1 — Navigation restructure. Sidebar groups renamed and reorganised. Stabili
 36. [Navigation & Weather](#36-navigation--weather)
 38. [FMEA Module](#38-fmea-module)
 39. [OEE Module](#39-oee-module)
+40. [tripanalyticsconfig.json](#40-tripanalyticsconfigjson)
 
 ---
 
@@ -96,6 +101,7 @@ Documents/IDMS/
 │   ├── scheduleconfig.json         ← Approved crew rotation schedule (current year)
 │   ├── schedule_draft.json         ← Working draft schedule (editable, not crew-visible)
 │   ├── fmeaconfig.json             ← Factory production FMEA failure mode registry
+│   ├── tripanalyticsconfig.json    ← Trip Analytics module config (ports, map colours, offload estimator, active trip)
 │   ├── userprefs-{username}.json   ← Per-user PWA preferences (keypad side, colour mode) — one file per user
 │   └── shells/
 │       ├── factoryshell.json       ← Factory module behaviour
@@ -1037,9 +1043,9 @@ Some modules span departments or are vessel-wide and use a group prefix rather t
 const DEPT_RESOURCES = {
   // ... existing department groups above ...
   'Operations': [
-    { key: 'operations/trip_planner', label: 'Trip Planner',
-      note: 'Admin permission additionally required to open/close trips, record departures, and add mid-trip crew.' },
-    { key: 'operations/schedule',     label: 'Schedule',
+    { key: 'operations/trip_analytics', label: 'Trip Analytics',
+      note: 'Admin permission additionally required to open trips, enter positions, and generate bunker pre-loads.' },
+    { key: 'operations/schedule',       label: 'Schedule',
       note: 'Admin permission additionally required to promote draft to approved, confirm crew assignments, and edit rotation groups.' }
   ],
   'Administration': [
@@ -1051,8 +1057,10 @@ const DEPT_RESOURCES = {
 
 | Key | Group | Label | Access scope |
 |-----|-------|-------|--------------|
-| `operations/trip_planner` | Operations | Trip Planner | Grants view access to all Trip Planner tabs. Admin permission is additionally required to open/close trips, record departures, and add mid-trip crew. |
-| `operations/schedule` | Operations | Schedule | Grants view access to all three Schedule tabs. Admin permission is additionally required to promote draft to approved, confirm crew assignments, and edit rotation groups. |
+| `operations/trip_analytics` | Operations | Trip Analytics | Grants view access to all Trip Analytics tabs. Admin permission is additionally required to open trips, enter positions, and generate bunker pre-loads. |
+| `operations/schedule` | Operations | Schedule | Grants view access to all Schedule tabs. Admin permission is additionally required to promote draft to approved, confirm crew assignments, and edit rotation groups. |
+
+**Migration note (v2.12):** Existing users with `operations/trip_planner` in their `resources` array are automatically migrated to `operations/trip_analytics` at console startup by `migrateUserConfig()` in `users.js`. No manual config update required.
 | `administration/ports` | Administration | Ports | Grants access to the Ports configuration tab (add, edit, remove ports). Admin only. |
 
 ### Resource key format
@@ -1532,11 +1540,12 @@ CREATE TABLE IF NOT EXISTS task_skill_tags (
 | `fuel.js`           | Operations → Fuel & Liquids                                               | Built       |
 | `oilrecord.js`      | Operations → Oil Record Book                                              | Not Built   |
 | `bunker.js`         | Operations → Bunker Pre-Load                                              | Built       |
-| `schedule.js`       | Personnel → Schedule                                                      | Built       |
+| `schedule.js`       | Personnel → Schedule (4 tabs: Schedule, Setup, Trip Reference, Rotation Planner) | Built       |
 | `training.js`       | Personnel → Training & Certs                                              | Not Built   |
 | `crewprofiles.js`   | Personnel → Crew Profiles                                                 | Not Built   |
 | `messages.js`       | Personnel → Messages                                                      | Not Built   |
-| `tripplanner.js`    | Records → Trip History (Tabs 4–5, transitional)                           | Partial     |
+| `tripanalytics.js`  | Overview → Trip Analytics (4 tabs: Current Trip Calculations, Trip History, Fuel Consumption, Analytics Setup) | Built       |
+| `tripplanner.js`    | **RETIRED (v2.12)** — screen retained as empty stub; `data-retired="true"` | Retired     |
 | `eventlogs.js`      | Records → Event Logs                                                      | Built       |
 | `reports.js`        | Records → Reports                                                         | Built       |
 | `vessel.js`         | Config → Vessel Setup (5 tabs: Particulars, Tanks, Machinery, Stability, Tank Layout) | Partial     |
@@ -1550,7 +1559,7 @@ CREATE TABLE IF NOT EXISTS task_skill_tags (
 | `crew.js`           | Embedded in Crew Setup → Crew List tab                                    | Built       |
 | `trainingmatrix.js` | Embedded in Crew Setup → Requirements Matrix tab                          | Built       |
 | `settings.js`       | Config → Settings                                                         | Built       |
-| `overview.js`       | Retired — absorbed into dashboard.js                                      | Partial     |
+| `overview.js`       | Retired — absorbed into `dashboard.js` Zone 7                             | Retired     |
 
 ### Equipment Setup screen — UI behaviour
 
@@ -2317,6 +2326,80 @@ The `data/fuel/` folder does not exist by default and must be created on OneDriv
 
 This section was added in the Phase 5 (Liquid Cargo & Fuel) implementation. No migration of existing files is required — the console scaffolds a default state (all volumes at zero) if `fuelstate.json` is absent on first load.
 
+### SQLite table — `fuel_state_snapshot`
+
+Added in v2.12. Stores the most recently ingested snapshot of `fuelstate.json` in SQLite so that `dashboard.js` and any other future modules can read fuel state without a Graph API call at render time. Only one snapshot is retained — every ingest fully replaces the previous rows.
+
+```sql
+CREATE TABLE IF NOT EXISTS fuel_state_snapshot (
+  tank_id       TEXT    NOT NULL,
+  volume        REAL    NOT NULL DEFAULT 0,
+  category      TEXT    NOT NULL,
+  abbreviation  TEXT,
+  capacity      REAL,
+  ingested_at   TEXT    NOT NULL
+);
+```
+
+| Column        | Notes                                                                                                   |
+|---------------|---------------------------------------------------------------------------------------------------------|
+| `tank_id`     | UUID from `vesselconfig.json → tanks[].tank_id`. Primary lookup key.                                   |
+| `volume`      | Current volume in USG as stored in `fuelstate.json → tanks[].volume`. May be negative (fuel tanks only).|
+| `category`    | Denormalised from `vesselconfig.json → tanks[].category` at ingest time. One of `"fuel"`, `"lube_oil"`, `"waste_oil"`. |
+| `abbreviation`| Denormalised from `vesselconfig.json → tanks[].abbreviation`. Used for display labels.                  |
+| `capacity`    | Denormalised from `vesselconfig.json → tanks[].capacity` in USG. Used for fill-bar percentage.          |
+| `ingested_at` | ISO 8601 UTC. Timestamp of the ingest run that wrote this row.                                          |
+
+There is no primary key constraint — the table is fully rebuilt on every ingest via `DELETE FROM fuel_state_snapshot` followed by a bulk insert in a single transaction. No UNIQUE constraint is required.
+
+### IPC handler — `db:ingestFuelState`
+
+**Called by:** `ingest.js` poll cycle (every `ingest_poll_interval_seconds`) and on demand when `fuel.js` saves `fuelstate.json`.
+
+**Arguments:** `{ fuelState, vesselConfig }` — both objects parsed from OneDrive in the renderer before the IPC call.
+
+**Behaviour:**
+
+1. Builds a lookup map from `vesselConfig.tanks`: `tank_id → { category, abbreviation, capacity }`.
+2. Opens a SQLite transaction.
+3. `DELETE FROM fuel_state_snapshot`.
+4. For each entry in `fuelState.tanks`: inserts one row using the lookup map to populate `category`, `abbreviation`, `capacity`. Tanks not found in `vesselConfig.tanks` are skipped with a console warning.
+5. Commits. Returns `{ ok: true, rows: N }`.
+
+**Renderer call site (ingest.js):**
+
+```javascript
+async function pollFuelState() {
+  const [fuelState, vesselConfig] = await Promise.all([
+    loadFuelState(),       // existing graph.js helper
+    loadVesselConfig()     // existing graph.js helper
+  ]);
+  if (!fuelState || !vesselConfig) return;
+  await window.idms.db.ingestFuelState({ fuelState, vesselConfig });
+}
+```
+
+`pollFuelState()` is added to the main `pollNow()` sequence in `ingest.js` alongside the existing per-department and rounds poll blocks.
+
+**Hook in `fuel.js`:** After a successful `saveFuelState()` call, `fuel.js` calls `db:ingestFuelState` with the just-saved state and the cached `vesselConfig`. This ensures the SQLite snapshot is never more than one operation stale when the user is actively recording transfers.
+
+### Convenience query — `db:getFuelStateSummary`
+
+Returns the data needed by the dashboard fuel zones in a single call. No arguments.
+
+```javascript
+// Returns:
+{
+  fuel_onboard_usg:   number,   // SUM(volume) WHERE category = 'fuel'
+  lube_oil_usg:       number,   // SUM(volume) WHERE category = 'lube_oil'
+  waste_oil_usg:      number,   // SUM(volume) WHERE category = 'waste_oil'
+  tank_rows:          array,    // all rows ordered by abbreviation (natural sort)
+  ingested_at:        string    // MAX(ingested_at) across all rows
+}
+```
+
+`tank_rows` entries: `{ tank_id, volume, category, abbreviation, capacity }` — enough for the tank layout canvas fill bars and the inventory sub-panel.
+
 ---
 
 ## 26. Stability Calculations  *(added v1.8)*
@@ -2444,16 +2527,18 @@ Added in IDMS Console v1.8. No migration required for existing installations —
 
 ---
 
-## 27. Trip Planner
+## 27. Trip Analytics
 
-**Added in:** IDMS Console v1.9 (Phase 6)
-**Screen:** Operations → Trip Planner (after Fuel & Oil Transfers)
-**Tabs:** Overview · Fuel Management · Rotation Planner · Trip History · Season Analytics
+**Added in:** IDMS Console v2.12 (replaces Trip Planner)
+**Screen:** Overview → Trip Analytics (after Rough Log, in Overview sidebar group)
+**Module file:** `tripanalytics.js`
+**Tabs:** Current Trip Calculations · Trip History · Fuel Consumption · Analytics Setup
+**Resource key:** `operations/trip_analytics`
 
-The Trip Planner is the operational lifecycle manager for fishing trips. It is the single source of truth for trip metadata, daily logs, and crew assignments. Downstream modules (Scheduling, Fuel Log) read from this data.
+The Trip Analytics module is the operational lifecycle manager for fishing trips. It is the single source of truth for trip metadata, daily positions, fuel burn, and production tracking. Downstream modules (Schedule, Fuel Log, Bunker Pre-Load) read from this data.
 
-> **Navigation note (v2.1)**  
-> The Trip Planner screen is being dissolved into the new nav structure. Tabs 4–5 (Trip History, Season Analytics) will move to Records → Trip History. Tabs 1–3 will be redistributed to Dashboard, Fuel & Liquids, and Crew Setup respectively. The tripplanner.js module remains operational and is not deleted during this transition — it is marked Partial in the renderer modules table until the refactor is complete.
+> **Migration note (v2.12)**  
+> `tripplanner.js` is retired. Its Rotation Planner tab (formerly Tab 3) has been moved to the Schedule module as Tab 4. All Trip Planner data structures (SQLite tables, OneDrive files) are unchanged — only the renderer and nav location changed. The `operations/trip_planner` resource key is automatically migrated to `operations/trip_analytics` at startup (see §15).
 
 ---
 
@@ -2617,9 +2702,9 @@ The console ingest reads `production_mt` from this file and writes it to `trip_d
 
 ### Resource key
 
-| Key                        | Group       | Label          | Access scope |
-|----------------------------|-------------|----------------|--------------|
-| `operations/trip_planner`  | Operations  | Trip Planner   | Grants view access to all three Trip Planner tabs. Admin permission is additionally required to open/close trips, record departures, and add mid-trip crew. |
+| Key                          | Group       | Label          | Access scope |
+|------------------------------|-------------|----------------|--------------|
+| `operations/trip_analytics`  | Operations  | Trip Analytics | Grants view access to all four Trip Analytics tabs. Admin permission is additionally required to open trips, enter positions, and generate bunker pre-loads. |
 
 ---
 
@@ -2632,7 +2717,7 @@ The console ingest reads `production_mt` from this file and writes it to `trip_d
 | Close trip            | admin only          | Sets `status='closed'`, `close_date`, `closed_by`; updates `consoleconfig.json`; writes `trips.json`. Irreversible. |
 | Record departure      | admin only          | Sets `offboard_date` on a `trip_crew_assignments` row. |
 | Add mid-trip crew     | admin only          | Inserts new `trip_crew_assignments` row with today as `board_date`. |
-| View tabs (all three) | `operations/trip_planner` resource or admin | |
+| View all tabs         | `operations/trip_analytics` resource or admin | |
 
 ---
 
@@ -2645,6 +2730,7 @@ The console ingest reads `production_mt` from this file and writes it to `trip_d
 | `db:getActiveTrip`           | Returns the single row with `status='active'`, or `null`. |
 | `db:getTrips`                | Returns all trips ordered by `open_date DESC`. |
 | `db:getTripDailyLogs`        | Returns all `trip_daily_logs` rows for a given `trip_id`, ordered by `log_date ASC`. |
+| `db:getTripDailyLogsWithGaps` | Returns one row per calendar day between `open_date` and `close_date` (or today for active trips). Days without a `trip_daily_logs` entry are returned as synthetic gap rows: `{ trip_id, log_date, lat: null, lon: null, fuel_burned_usg: null, production_mt: null, gap: 1 }`. Real rows carry `gap: 0`. Args: `{ trip_id, open_date, close_date }`. |
 | `db:upsertDailyPosition`     | Inserts or updates `lat`, `lon`, `position_entered_by` for a given `trip_id` + `log_date`. |
 | `db:getTripCrew`             | Returns all `trip_crew_assignments` rows for a given `trip_id`. |
 | `db:updateCrewOffboard`      | Sets `offboard_date` for a given assignment `id`. |
@@ -2656,6 +2742,48 @@ The console ingest reads `production_mt` from this file and writes it to `trip_d
 | `db:getSeasonSummary`        | Returns one row per year with aggregated totals: `trips`, `days_at_sea`, `fuel_usg`, `prod_mt`, `avg_gpd`. Covers all closed trips. |
 | `db:getFisheryComposition`   | Returns one row per `(year, fishery_target)` pair with `trip_count`. Used by Season Analytics tab fishery breakdown table. |
 | `db:getFuelEfficiencyByYear` | Returns one row per year with `avg_gpd` (average gallons per sea-day across all closed trips in that year). Used by Season Analytics bar chart. |
+
+---
+
+### Trip Analytics UI behaviour
+
+#### Tab 1 — Current Trip Calculations
+
+- **Trip header card:** locked to the active trip (from `tripanalyticsconfig.json → active_trip`); shows trip number, fishery, open date, and days elapsed. Admin-only **Open New Trip** button triggers a modal (trip number entry with YYNN format validation, duplicate check, departure port select); on confirm writes `trips` row and updates `tripanalyticsconfig.json → active_trip.departure_port_id`.
+- **Map panel (320 px):** Leaflet.js map with GeoJSON land polygons (`ne_110m_land.geojson` bundled asset). Confirmed track segments (solid, coloured by `map.track_confirmed_colour`); gap segments (dashed, coloured by `map.track_gap_colour`); position dots with date tooltips; departure and destination port markers; great-circle arc to destination. Gracefully degrades if GeoJSON asset is absent.
+- **Trip metadata grid:** open date, days elapsed, departure port (from `tripanalyticsconfig.json → active_trip.departure_port_id`), destination port select (ports from `tripanalyticsconfig.json → ports`), estimated arrival (haversine NM ÷ steam speed input → steam days + today). Latest known **Latitude** and **Longitude** are editable inline as degrees + decimal-minutes + N/S/E/W select (the standard nautical format); admin-only **Save Position (today)** button calls `db:upsertDailyPosition` with today's date and the converted decimal-degrees value.
+- **Production summary:** processing start (from `factoryconfig.json → production.processing_start_time`), latest entry, average daily MT (from `production_entries`), editable target MT (from `tripanalyticsconfig.json → production.production_target_mt`), estimated complete date, estimated offload date.
+- **Offload Estimator (diesel only as of v2.13):** four-row fuel summary above the desired-fuel input — **Fuel Onboard Trip Start (USG)** (admin-editable, captured at trip open), **Trip Start Time** (admin-editable `datetime-local`, captured at trip open), **Fuel Onboard Now (USG)** (sum of `fuelstate.json` fuel-category tanks), **Daily Avg. Consumption (USG/day)** (`(start − now) / hoursElapsed × 24`, falls back to `trip_daily_logs.fuel_burned_usg` average if either start value is missing). Then: **Est. Fuel Upon Arrival**, **Desired Fuel for Next Trip** input, **Bunkers Required**. Admin-only **Generate Bunker Pre-Load** button — produces a complete bunker plan, writes it to `data/fuel/bunkerplan.json`, and navigates to the Bunker Pre-Load screen. (The Lube Oil tank table that existed in v2.12 was removed in v2.13.)
+
+#### Bunker Pre-Load generator (v2.13)
+
+When the **Generate Bunker Pre-Load** button is clicked:
+
+1. Validates a destination port and steaming speed are set.
+2. Computes `steamDays = haversineNM(lastPos, destPort) / steamSpeedKts / 24`.
+3. Sums current fuel onboard from `fuelstate.json` across all `category: 'fuel'` tanks (handling both legacy `volume_usg` and current `volume` field names).
+4. Picks an effective daily burn — trip-start derived (`(fuelStart − fuelNow) / hoursSinceStart × 24`) when available, else the `trip_daily_logs.fuel_burned_usg` mean.
+5. Computes `bunkersTotal = max(0, round(desiredFuel − (currentOnboard − dailyBurn × steamDays)))`.
+6. Sorts vessel fuel tanks by name with `localeCompare(undefined, { numeric: true, sensitivity: 'base' })` so `Tank 2` precedes `Tank 10`.
+7. Walks the sorted list filling each tank from its current level up to `capacity × max_fill_pct/100`, decrementing `bunkersTotal` until exhausted; tanks not needed produce no row.
+8. Sets `date = today + ceil(steamDays) + 1` (ETA + 1 day) and `transfer_location = destPort.name`.
+9. Loads any existing `bunkerplan.json` to preserve PIC names, delivery rates, delivering facility, and bunker type.
+10. Shows a confirmation dialog with the full breakdown (steam time, fuel onboard, avg burn, fuel on arrival, bunkers required, tanks filled). On confirm calls `saveBunkerPlan()` then navigates to the Bunker Pre-Load screen.
+
+#### Tab 2 — Trip History
+
+Delegates to `initTripHistory()` if that helper is available; otherwise renders a basic closed-trip list table from `db:getTripHistory`.
+
+#### Tab 3 — Fuel Consumption
+
+All trips table, grouped with expandable rows. Clicking a live-trip row expands to show `db:getTripDailyLogsWithGaps` detail sub-table: date, fuel (USG), position. Gap rows are rendered at opacity 0.45. Seed/historical trips (where `opened_by = 'seed_import'`) show a single aggregate row with no expand control.
+
+#### Tab 4 — Analytics Setup
+
+- **Production settings:** editable target MT (saved to `tripanalyticsconfig.json → production.target_mt`).
+- **Map configuration:** text inputs for track confirmed colour, track gap colour, arc colour (hex); live colour swatch preview.
+- **Ports table:** editable reference list (port_id, name, lat, lon). Add/delete rows. Inline validation (unique port_id, lat −90 to 90, lon −180 to 180).
+- **Save to OneDrive / Refresh from OneDrive** buttons with status feedback.
 
 ---
 
@@ -3308,12 +3436,12 @@ All notifications are sent via email using addresses from `userconfig.json`, via
 
 ## §28 — Schedule Module — Console UI
 
-**Added in:** IDMS Console v2.0 (complete rewrite of v1.9 stub)
+**Added in:** IDMS Console v2.0 (complete rewrite of v1.9 stub); Rotation Planner tab added v2.12  
 **Screen:** Personnel → Schedule
 **Access:** `operations/schedule` resource key, or admin permission tier.
 **Module file:** `schedule.js`
 
-The Schedule module renders three tabs via the standard `cs-tab-bar` / `cs-tab` / `cs-tab-content` CSS pattern shared with Crew Setup, Vessel Setup, and Trip Planner.
+The Schedule module renders four tabs via the standard `cs-tab-bar` / `cs-tab` / `cs-tab-content` CSS pattern shared with Crew Setup, Vessel Setup, and Trip Analytics.
 
 ---
 
@@ -3430,6 +3558,28 @@ A read-only logistics table. One row per trip in the current config. Columns:
 | — | `ROTATION` badge if any position assignment differs from the previous trip |
 
 The Ports configuration tab lives under **Administration**, not the Schedule module, since port data is shared infrastructure. Access requires the `administration/ports` resource key.
+
+---
+
+### Tab 4 — Rotation Planner
+
+**Added in:** v2.12 (moved from Trip Planner module Tab 3)
+
+The Rotation Planner gives crew managers a live view of who is currently aboard for the active trip, and lets admins record departures and add mid-trip joiners.
+
+**Aboard table** — rows from `db:getTripCrew` where `offboard_date IS NULL`. Columns: Name, Role, Board Date, Days Aboard. For admin users, each row has a **Departed** button that triggers a departure confirmation modal (date picker defaulting to today); on confirm calls `db:updateCrewOffboard`.
+
+**Departed table** — rows from `db:getTripCrew` where `offboard_date IS NOT NULL`. Columns: Name, Role, Board Date, Depart Date.
+
+**Trip selector** — a dropdown above the tables lists all trips from `db:getTrips` (newest first); selecting a different trip reloads both tables for that trip. Active trip is pre-selected on initial render.
+
+**Add mid-trip crew form** (admin only) — triggered by an **Add Crew Member** button. Form fields:
+- Crew Member — `<select>` populated from `SC.crewList` (loaded from `crewconfig.json` by `initSchedule()`); groups by department.
+- Board Date — `<input type="date">` defaulting to today.
+
+On submit calls `db:addCrewMidTrip` with `{ trip_id, user_id, username, display_name, role, board_date }` and refreshes the Aboard table.
+
+**Permissions:** Viewing is available to any user with the `operations/schedule` resource or admin tier. Departed / Add Mid-Trip actions require admin tier.
 
 ---
 
@@ -3561,26 +3711,331 @@ The initial `crewconfig.json` for F/T Araho was generated from `S:\Engineer's Fi
 **Status:** Not built
 **File:** `dashboard.js`
 **Location:** Overview → Dashboard
+**Layout:** Single scrollable page — no tabs
+**Resource key:** None — visible to all authenticated users
 
-Two tabs: Status and Rough Log (Rough Log tab is a view into §31 data)
+The Dashboard is the primary at-a-glance surface for the console. It aggregates data from across the system into one scrollable page, ordered from broadest operational context (trip/vessel) down to most recent activity (rough log). It reads exclusively from SQLite and the in-memory config cache — no Graph API calls at render time.
 
-**Status tab displays:**
+`overview.js` is retired and absorbed into this module. All content previously rendered by `overview.js` is preserved in Zone 6 (System Health) below.
 
-- Active trip context: trip number, fishery, day count, destination port, distance in nm, ETA
-- Fuel state summary: total fuel remaining, today's burn
-- Tank state: fuel and oil levels at a glance
-- Open tasks: overdue highlighted, due today, assigned to logged-in user's role
-- Tasks closed today
-- Rounds status for current watch
-- Fish produced today (from ICMS)
-- Stability summary block: GM, displacement, trim, two chart images
-- Daily report ready indicator
-- Upcoming crew change flag
-- Cert / training alerts
+---
 
-Daily report is generated from this screen. Auto-compiled at midnight when position is entered. Exported as printable/emailable document. No manual composition.
+### Data prerequisites
 
-**Note:** Vessel profiles (deferred): named loading condition presets (e.g. "Fishing Yellowfin") for variable weight defaults. To be implemented as `vessel_profiles` array in `vesselconfig.json` or `stability.json`.
+The following must be available in SQLite before the dashboard renders correctly:
+
+| Data | Source | Ingest mechanism |
+|------|--------|-----------------|
+| Active trip + daily logs | `trips`, `trip_daily_logs` | `db:getActiveTrip`, `db:getTripDailyLogs` — existing |
+| Trip analytics config | `tripanalyticsconfig.json` (in-memory) | Loaded by `tripanalytics.js` on first entry; cached on `window.TA` |
+| Production entries | `production_entries` | Existing factory ingest cycle |
+| Fuel state snapshot | `fuel_state_snapshot` | New — `db:ingestFuelState` (§25 addendum) |
+| Vessel config | `vesselconfig.json` (in-memory) | Loaded by `vessel.js`; also available via `loadVesselConfig()` |
+| Rough log entries | `rough_log` | Existing roughlog ingest cycle |
+| Events (today) | `events` | Existing department log ingest cycle |
+
+If `fuel_state_snapshot` is empty (first launch before any fuel ingest), Zone 5 renders a "Fuel data not yet available — open Fuel & Oil Transfers to sync" placeholder rather than blank numbers.
+
+---
+
+### Zone 1 — Trip Header Bar
+
+**Position:** Top of page, full width
+**Height:** Single compact card (~64px)
+**Data source:** `db:getActiveTrip` + `tripanalyticsconfig.json` (in-memory, `window.TA?.config`)
+
+A single horizontal band that frames all content below it. Renders in one of two states:
+
+**Active trip state:**
+```
+TRIP 2601  ·  YF  ·  Day 14  ·  Dutch Harbor → Adak  ·  312 nm  ·  ETA Fri 09 May
+```
+
+| Element | Source |
+|---------|--------|
+| Trip number | `trips.trip_number` |
+| Fishery badge | `trips.fishery_target` — coloured pill: YF=blue, Mack=green, Gulf=amber, POP=teal |
+| Day count | `CURRENT_DATE − trips.open_date` in days |
+| Departure port | `tripanalyticsconfig.json → active_trip.departure_port_id` resolved to port name |
+| Destination port | Currently selected destination from `tripanalyticsconfig.json` (the same dropdown value used by Trip Analytics Tab 1) |
+| Distance (NM) | Haversine from last recorded position to destination port lat/lon |
+| ETA | `distance_nm / steam_speed_kts / 24` added to today — steam speed read from `tripanalyticsconfig.json` |
+
+**No active trip state:**
+Muted grey card: `NO ACTIVE TRIP — open Trip Analytics to begin a new trip`. Card is always rendered; the page does not collapse this zone when no trip is active.
+
+---
+
+### Zone 2 — Map + Vital Numbers
+
+**Position:** Below Zone 1
+**Layout:** Two columns — map left (~55% width), vitals grid right (~45% width)
+
+#### Map panel
+
+A read-only embedded instance of the Leaflet map already implemented in `tripanalytics.js`. Renders at a fixed height of approximately 340px.
+
+**Rendering:** Reuses the existing `taInitOrUpdateMap()` function with a separate container element (`#db-map-container`). The same stale-map detection logic applies — on every navigation to the dashboard, `taInitOrUpdateMap()` checks whether the cached map container still matches the live DOM node; if not, the map is destroyed and rebuilt. `invalidateSize()` is deferred one frame on entry to handle 0×0 measurement during tab transitions.
+
+**Map features (read-only — identical to Trip Analytics Tab 1):**
+- Confirmed track polylines (solid, `map.track_color`)
+- Gap segments (dashed, `map.track_gap_color`)
+- Position dots with date tooltips
+- Departure and destination port markers with permanent labels
+- Great-circle arc to destination (`map.great_circle_color`)
+- Vessel marker at last known position (`map.vessel_color`)
+- Bathymetry layers if `map.show_bathymetry = true`
+
+**No position data:** If `trip_daily_logs` contains no rows with non-null lat/lon, the map renders with only the port markers visible and a centred label: `"No positions recorded for this trip"`.
+
+**No active trip:** Map panel renders a static centred view of the North Pacific with no markers and a label: `"No active trip"`.
+
+**Controls:** None. No zoom controls, no position entry. This is a display widget. The full interactive map with position entry is in Trip Analytics Tab 1.
+
+#### Vital numbers grid
+
+Eight stat cells in a 2×4 grid (two columns of four rows). Same card visual language as the existing four summary cards at the top of the current `overview.js` content, but smaller.
+
+| Cell | Value | Data source | Null state |
+|------|-------|-------------|------------|
+| Days at Sea | Integer | `CURRENT_DATE − trips.open_date` | `—` |
+| Distance to Port | `NNN nm` | Haversine(last position → destination) | `—` |
+| ETA | `Day Mon DD` | Same calculation as Zone 1 | `—` |
+| Fuel Onboard | `NNN,NNN usg` | `db:getFuelStateSummary → fuel_onboard_usg` | `— (not synced)` |
+| Daily Avg. Burn | `N,NNN usg/day` | `(fuel_start − fuel_now) / hours_elapsed × 24`; falls back to `trip_daily_logs.fuel_burned_usg` mean if trip-start snapshot is unavailable | `—` |
+| Est. Fuel on Arrival | `NNN,NNN usg` | `fuel_now − (daily_avg_burn × steam_days)` | `—` |
+| Trip Production | `NNN.N mt` | `SUM(trip_daily_logs.production_mt)` for active trip | `—` |
+| Today's Production | `NNN.N mt` | `trip_daily_logs` row for `CURRENT_DATE` | `—` |
+
+Cells for Fuel Onboard, Daily Avg. Burn, and Est. Fuel on Arrival are tappable — clicking navigates to Operations → Fuel & Oil Transfers.
+Cells for Trip Production and Today's Production are tappable — clicking navigates to Overview → Factory Production.
+
+---
+
+### Zone 3 — Production Completion Estimates
+
+**Position:** Below Zone 2
+**Layout:** Single full-width card
+**Data source:** `tripanalyticsconfig.json → production.production_target_mt` + `SUM(trip_daily_logs.production_mt)` + rolling 7-day average from `production_entries`
+
+Answers the two most operationally important forward-looking questions for a factory trawler: *when are we done?* and *when can we offload?*
+
+**Content:**
+
+```
+PRODUCTION PROGRESS
+
+[████████████░░░░░░░░] 183.4 / 350 mt  (52%)
+
+7-day avg: 14.2 mt/day    Trip avg: 13.1 mt/day
+
+Est. completion:   Tue 12 May  (in 11 days)
+Est. offload:      Thu 14 May  (in 13 days)
+```
+
+| Element | Calculation |
+|---------|-------------|
+| Progress bar | `current_mt / target_mt × 100` — clamped to 100% |
+| MT to date | `SUM(trip_daily_logs.production_mt)` for active trip |
+| Target MT | `tripanalyticsconfig.json → production.production_target_mt` |
+| 7-day avg | Average `production_mt` from the last 7 `trip_daily_logs` rows with non-null production |
+| Trip avg | `current_mt / days_with_production_data` |
+| Est. completion | `CURRENT_DATE + ceil((target_mt − current_mt) / avg_daily_mt)` — uses 7-day avg preferentially |
+| Est. offload | `est_completion + ceil(distance_to_port / steam_speed_kts / 24)` |
+
+**Null states:**
+- If `production_target_mt` is null: renders `"No production target set"` with a link that navigates to Trip Analytics → Analytics Setup. The progress bar and date estimates are suppressed.
+- If no production data exists yet for the trip: progress bar shows 0%, date estimates show `"—"`.
+- If no active trip: entire zone renders a muted `"No active trip"` placeholder card. Zone is never hidden.
+
+---
+
+### Zone 4 — Factory Production Widget
+
+**Position:** Below Zone 3
+**Layout:** Single full-width card with two sub-sections
+**Data source:** `production_entries` (today) + DPR ingest metadata
+
+A condensed read-only view of today's factory production. Not a re-implementation of Factory Production — a lightweight summary drawn from the same SQLite data.
+
+#### Sub-section A — DPR Status
+
+A single status row above the production table:
+
+```
+DPR  ·  Last ingested: Today 06:14  ·  Report date: 2026-05-05  ✓ Current
+```
+
+| State | Display |
+|-------|---------|
+| Today's DPR available | Green check — `"Report date: {date}  ✓ Current"` |
+| Most recent DPR is from a prior day | Amber warning — `"Most recent: {date}  ⚠ Not today"` |
+| No DPR ever ingested | Grey — `"No DPR data available"` |
+
+#### Sub-section B — Species Breakdown Table
+
+Today's per-species production from `production_entries`, matching the same columns rendered on the Factory Production Overview tab:
+
+| Species | Daily MT | Trip MT |
+|---------|----------|---------|
+| Yellowfin | 18.2 | 97.4 |
+| … | … | … |
+| **Total** | **18.2** | **183.4** |
+
+- Rows ordered by daily MT descending.
+- Maximum 8 species rows rendered. If more than 8 species are present, remaining rows are collapsed under a `"+ N more"` expander.
+- A `"View Full Production →"` link in the card footer navigates to Overview → Factory Production.
+
+---
+
+### Zone 5 — Fuel & Tank Layout
+
+**Position:** Below Zone 4
+**Layout:** Two columns — fuel summary left (~40% width), tank layout canvas right (~60% width)
+**Data source:** `db:getFuelStateSummary` + `vesselconfig.json → tank_layout` + `vesselconfig.json → tanks`
+
+#### Left sub-panel — Fuel Summary
+
+Four rows mirroring the Offload Estimator summary in Trip Analytics Tab 1, plus the active burn plan tanks:
+
+| Row | Value |
+|-----|-------|
+| Fuel Onboard Now | `fuel_state_snapshot` sum of `category = 'fuel'` |
+| Trip Start Fuel | `tripanalyticsconfig.json → active_trip.fuel_onboard_trip_start_usg` |
+| Daily Avg. Consumption | Same formula as Zone 2 vital cell |
+| Est. Fuel Upon Arrival | Same formula as Zone 2 vital cell |
+| Active Draw Tanks | `fuelstate.json → burn_plan.tank_a_id` / `tank_b_id` resolved to abbreviations |
+
+Read-only. No inputs. A `"Manage Transfers →"` link navigates to Operations → Fuel & Oil Transfers.
+
+Below the fuel rows, a compact two-row lube oil summary:
+
+| Row | Value |
+|-----|-------|
+| Lube Oil Total | `fuel_state_snapshot` sum of `category = 'lube_oil'` |
+| Waste Oil Total | `fuel_state_snapshot` sum of `category = 'waste_oil'` |
+
+#### Right sub-panel — Tank Layout Canvas
+
+The hull preview canvas implemented in `vessel.js` → Tank Layout tab, rendered here at reduced scale as a read-only display widget.
+
+**Rendering:** Calls `renderHullCanvas(container, tankLayout, tanks, fuelState, { readOnly: true, scale: 0.75 })` — the existing canvas rendering function is refactored to accept a container argument and a `readOnly` flag rather than always writing to the Vessel Setup DOM node. The `scale` parameter reduces the canvas dimensions proportionally. All existing rendering logic (fill bars, colour-by-category, volume labels, word-wrapped tank names, second-pass label rendering) is unchanged.
+
+**Prerequisite:** `renderHullCanvas` must be extracted from `vessel.js` into a shared utility (`canvasUtils.js` or similar) so both `vessel.js` and `dashboard.js` can call it without code duplication. This is a build prerequisite for this zone.
+
+If `vesselconfig.json → tank_layout` is absent or empty, the right sub-panel renders a muted `"Tank layout not configured — set up in Vessel Setup"` placeholder.
+
+---
+
+### Zone 6 — Rough Log (Recent Entries)
+
+**Position:** Below Zone 5
+**Layout:** Single full-width card
+**Data source:** `rough_log` SQLite table, `ORDER BY timestamp DESC LIMIT 15`
+
+The 15 most recent rough log entries, read-only. Same column layout as the Rough Log module main table.
+
+| Column | Source |
+|--------|--------|
+| Time | `rough_log.time_label` |
+| Dept. | `rough_log.department` — coloured badge matching Rough Log module colours |
+| Category | `rough_log.category` |
+| Author | `rough_log.display_name` |
+| Entry | `rough_log.body` — truncated to ~120 characters with ellipsis if longer |
+
+No pagination. 15 rows is the hard limit; anyone needing more navigates to Overview → Rough Log.
+
+**`+ New Entry` button:** Rendered in the zone header (right-aligned). Fires the identical new-entry modal used by `roughlog.js` — same form fields, same validation, same `db:saveRoughLogEntry` + OneDrive write sequence. This is the permanent home for the `+ New Entry` button currently shown in the top-right corner of the page header.
+
+---
+
+### Zone 7 — System Health
+
+**Position:** Bottom of page, full width
+**Layout:** Four stat cards (full-width row) above the OneDrive Ingestion Status table
+
+This is the existing `overview.js` content, preserved intact and demoted to the bottom of the dashboard. No changes to the data or rendering logic — only its position on the page changes.
+
+**Stat cards (existing):**
+- Events Today
+- Total Downtime (all departments)
+- Active Timers
+- Last Ingested + next poll countdown
+
+**OneDrive Ingestion Status table (existing):**
+Per-user log file sync status with green/grey dot, username, department, event count, last synced time. "Polling every 2 min" label top-right. Same table currently rendered by `overview.js`.
+
+**Recent Events and System Alerts** sections (existing, below the table) are retained unchanged.
+
+---
+
+### IPC handlers
+
+| Handler | Description |
+|---------|-------------|
+| `db:ingestFuelState` | Rebuilds `fuel_state_snapshot` from `fuelstate.json` + `vesselconfig.json`. See §25 addendum. |
+| `db:getFuelStateSummary` | Returns `{ fuel_onboard_usg, lube_oil_usg, waste_oil_usg, tank_rows, ingested_at }`. See §25 addendum. |
+| `db:getDashboardData` | Convenience aggregator. Single IPC call that returns all Zone 1–7 data in one round trip. See below. |
+
+#### `db:getDashboardData`
+
+A single composite handler that batches all dashboard queries to minimise IPC round trips. No arguments.
+
+**Returns:**
+
+```javascript
+{
+  // Zone 1 + 2 vitals
+  active_trip:        object | null,    // db:getActiveTrip result
+  last_position:      object | null,    // most recent trip_daily_logs row with non-null lat/lon
+  fuel_summary:       object,           // db:getFuelStateSummary result
+
+  // Zone 3
+  production_by_day:  array,            // trip_daily_logs rows for active trip, ordered by log_date ASC
+  today_production:   object | null,    // trip_daily_logs row for CURRENT_DATE
+
+  // Zone 4
+  today_species:      array,            // production_entries rows for CURRENT_DATE, ordered by production_mt DESC
+  dpr_last_ingested:  string | null,    // MAX(ingested_at) from production_entries for CURRENT_DATE
+
+  // Zone 6
+  recent_roughlog:    array,            // rough_log rows ORDER BY timestamp DESC LIMIT 15
+
+  // Zone 7 (existing overview data — same queries as overview.js)
+  events_today:       integer,
+  total_downtime_sec: integer,
+  active_timers:      integer,
+  last_ingested_at:   string | null,
+  user_log_status:    array
+}
+```
+
+The dashboard calls `db:getDashboardData` on every navigation to the screen and on every completed ingest poll cycle (via an existing `ingest-complete` IPC event already fired by `ingest.js`). Map rendering and `tripanalyticsconfig.json` values are read from in-memory state (`window.TA?.config`) without an IPC call.
+
+---
+
+### Render sequence
+
+On every navigation to the dashboard:
+
+1. Call `db:getDashboardData` — populate all zones synchronously from the returned object.
+2. Call `taInitOrUpdateMap('#db-map-container')` — initialise or refresh the map from `window.TA?.config` and the `last_position` from step 1. This is the only potentially slow step and must not block zone 1–7 rendering.
+3. Subscribe to `ingest-complete` IPC event — on receipt, re-call `db:getDashboardData` and re-render all zones except the map (map track updates are deferred to the next full navigation).
+
+On navigation away from the dashboard:
+
+- Unsubscribe from `ingest-complete`.
+- Do not destroy the Leaflet map instance — leave it in the DOM and rely on `taInitOrUpdateMap()` stale detection on next entry.
+
+---
+
+### Build prerequisites
+
+Before `dashboard.js` can be built, the following work must be completed in order:
+
+1. **`db:ingestFuelState` + `fuel_state_snapshot` table** (§25 addendum) — required for Zones 2 and 5.
+2. **`renderHullCanvas` extraction** — refactor the hull canvas renderer in `vessel.js` into a shared utility callable by `dashboard.js` without duplicating rendering code. Required for Zone 5 right sub-panel.
+3. **`overview.js` teardown** — remove `overview.js` as a standalone module. Its content moves to Zone 7 of `dashboard.js`. The sidebar nav entry "Dashboard" replaces the current implicit overview landing. This must happen before `dashboard.js` is wired up to avoid two modules rendering the same ingestion status table simultaneously.
 
 ---
 
@@ -4482,6 +4937,7 @@ The `production` block lives inside `factoryconfig.json` alongside the `equipmen
     "email_subject_filter":    "Daily Production Report",
     "email_source_address":    null,
     "bottleneck_mt_per_day":   null,
+    "processing_start_time":   null,
     "line_sections":           []
   }
 }
@@ -4499,6 +4955,7 @@ The `production` block lives inside `factoryconfig.json` alongside the `equipmen
 | ~~`email_subject_filter`~~ | string | **DEPRECATED in v2.10.** Was used by the old Graph Mail API DPR fetch. The current flow uses Power Automate to filter by subject and drop PDFs into OneDrive. Field is retained in config for backward compatibility but ignored by the renderer. |
 | ~~`email_source_address`~~ | string \| null | **DEPRECATED in v2.10.** Was used to point Graph Mail API requests at a shared mailbox. The current flow reads from the signed-in user's own OneDrive `Daily Production Reports/{YYYY}/` folder. Field is retained for backward compatibility but ignored. |
 | `bottleneck_mt_per_day` | number \| null | Auto-calculated: minimum `theoretical_mt_per_day` across all enabled sections (null sections excluded). Written back on each Setup save. |
+| `processing_start_time` | string (ISO 8601 UTC) \| null | The UTC datetime at which factory production began on the current trip. Set by an admin via the **Processing Start Time** `datetime-local` input in the Production Settings card. The input accepts vessel-local wall time; the console converts to UTC using the vessel timezone via `prodVesselLocalToUtc()` before storing. Used by Trip Analytics Tab 1 (Current Trip Calculations) to compute the production summary. |
 
 **Pan derived values (computed in UI, not stored):**
 
@@ -5017,7 +5474,7 @@ Used in the Overview tab chart (dashed green line) and stat cards.
 
 **Tab: Setup**
 - Collapsible cards: Production Settings, Email Settings, Line Sections (one card per section)
-- **Production Settings card:** Target Species dropdown (auto-populates Species Baseline Avg MT/day from historical logs on selection), Trip Capacity, Species Baseline Avg MT/day (editable override), global Pan Specification block (Pan Volume, Gross Weight, Target Overpack %; derived Density and Net Weight displayed read-only)
+- **Production Settings card:** Target Species dropdown (auto-populates Species Baseline Avg MT/day from historical logs on selection), Trip Capacity, Species Baseline Avg MT/day (editable override), **Processing Start Time** (`datetime-local` input accepting vessel-local wall time; stored as UTC in `factoryconfig.json → production.processing_start_time`; admin-only edit, read-only display for non-admins), global Pan Specification block (Pan Volume, Gross Weight, Target Overpack %; derived Density and Net Weight displayed read-only)
 - **Line section card:** shows section type badge, current theoretical MT/day, Group / Sub-group asset scope selectors, sub-asset list with inline add/remove
 - **Sub-asset row fields:** label, asset code autocomplete, Arrangement dropdown (Series / Parallel / Series_Parallel), Order, Sub-order (visible for series_parallel only), Ranking (visible for series_parallel only), **ISO 14224 Equipment Class dropdown** (validated list — feeds the FMEA modal as a default; see §38), plus type-specific fields (see §37.5.3)
 - Save button writes `factoryconfig.json` to OneDrive, recalculates theoretical MT and bottleneck, saves config snapshot to SQLite
@@ -5494,3 +5951,137 @@ Index added: `CREATE INDEX IF NOT EXISTS idx_cap_obs_oee ON capacity_observation
 - When source filter = `oee`, rows are grouped by `oee_session_id` with a collapsible session header.
 - `source_user` column shows the submitting user's display name.
 - Manual console submissions use `appendObservationsToLogFile` pattern (OneDrive read → merge → write) rather than writing directly to legacy capacity files.
+
+---
+
+## §40 — tripanalyticsconfig.json
+
+**Added in:** v2.12 (schema_version 1) — extended in v2.13 (schema_version 2)
+**Location:** `Documents/IDMS/config/tripanalyticsconfig.json`
+**Edited by:** Admin (via Trip Analytics → Analytics Setup tab and inline edits in Tab 1)
+**Read by:** Console (`tripanalytics.js`, `graph.js` helpers)
+
+Stores Trip Analytics module configuration: port reference list, map display colours and feature toggles, offload estimator settings, production targets, and live state for the active trip (departure port, fuel snapshot at trip start, trip start timestamp).
+
+### Full example
+
+```json
+{
+  "schema_version": 2,
+  "vessel": "F/V Araho",
+  "last_updated": "2026-05-05T00:00:00.000Z",
+
+  "active_trip": {
+    "departure_port_id":            "DUT",
+    "fuel_onboard_trip_start_usg":  82150,
+    "trip_start_at":                "2026-04-22T15:30:00.000Z"
+  },
+
+  "production": {
+    "production_target_mt": null
+  },
+
+  "map": {
+    "tile_provider":      "vector",
+    "show_bathymetry":    true,
+    "ocean_color":        "#5b89b3",
+    "land_color":         "#c8b89a",
+    "track_color":        "#4a90d9",
+    "track_gap_color":    "#a0b8d0",
+    "great_circle_color": "#e8913a",
+    "vessel_color":       "#e84a4a",
+    "dot_color":          "#4a90d9"
+  },
+
+  "ports": [
+    { "port_id": "DUT", "name": "Dutch Harbor, AK", "lat": 53.8957, "lon": -166.5422 },
+    { "port_id": "ADK", "name": "Adak, AK",         "lat": 51.8800, "lon": -176.6580 },
+    { "port_id": "KOD", "name": "Kodiak, AK",       "lat": 57.7900, "lon": -152.4072 },
+    { "port_id": "TOG", "name": "Togiak, AK",       "lat": 59.0539, "lon": -160.3717 },
+    { "port_id": "SEA", "name": "Seattle, WA",      "lat": 47.6558, "lon": -122.3968 }
+  ]
+}
+```
+
+### Top-level field table
+
+| Field            | Type    | Notes |
+|------------------|---------|-------|
+| `schema_version` | integer | `2` as of v2.13. Increment on structural change. |
+| `vessel`         | string  | Vessel name. |
+| `last_updated`   | string  | ISO 8601 UTC timestamp of last write. |
+| `active_trip`    | object  | Active trip pointers and fuel/time snapshots. |
+| `production`     | object  | Production estimator settings. |
+| `map`            | object  | Map display colours and feature toggles. |
+| `ports`          | array   | Port reference list used by the module (separate from `portsconfig.json`). |
+
+### `active_trip` object
+
+| Field                          | Type           | Notes |
+|--------------------------------|----------------|-------|
+| `departure_port_id`            | string \| null | `port_id` from the `ports` array below. Set when a new trip is opened via **Open New Trip**; cleared to `null` on trip close. |
+| `fuel_onboard_trip_start_usg`  | number \| null | (v2.13) Total fuel-category tank volume (USG) snapshotted from `fuelstate.json` at the moment **Open New Trip** was confirmed. Admin-editable on Tab 1 to correct mistakes. Used to derive trip-to-date average daily burn. |
+| `trip_start_at`                | string \| null | (v2.13) ISO 8601 UTC timestamp captured when **Open New Trip** was confirmed. Admin-editable on Tab 1 via a `datetime-local` input. The denominator for trip-to-date average daily burn (`hoursElapsed = now − trip_start_at`). |
+
+### `production` object
+
+| Field                  | Type           | Notes |
+|------------------------|----------------|-------|
+| `production_target_mt` | number \| null | Admin-editable full-trip production target in metric tonnes. Shown in the production summary on Tab 1 and editable from Tab 4 Analytics Setup. |
+
+### `map` object
+
+| Field                | Type    | Default       | Notes |
+|----------------------|---------|---------------|-------|
+| `tile_provider`      | string  | `"vector"`    | Reserved for future tile-source switching. Not currently consumed. |
+| `show_bathymetry`    | boolean | `true`        | (v2.13) When `false`, the 11 `ne_10m_bathymetry_*` GeoJSON layers are skipped at map init. Disable for better performance on slower machines. The map remains usable; the ocean fill takes over for depth shading. |
+| `ocean_color`        | string  | `"#5b89b3"`   | (v2.13) Hex colour applied as the map container background — visible wherever no bathymetry / land polygon paints. Read at map init only; changing requires a Save (which destroys + rebuilds the map on next entry to Tab 1). |
+| `land_color`         | string  | `"#c8b89a"`   | Fill colour for `ne_10m_land` and `ne_10m_minor_islands` polygons. |
+| `track_color`        | string  | `"#4a90d9"`   | Confirmed track polylines and midnight-position dots. |
+| `track_gap_color`    | string  | `"#a0b8d0"`   | Dashed polylines spanning days with no recorded position. |
+| `great_circle_color` | string  | `"#e8913a"`   | Great-circle arc to the destination port and the destination marker fill. |
+| `vessel_color`       | string  | `"#e84a4a"`   | Vessel position marker fill. |
+| `dot_color`          | string  | `"#4a90d9"`   | Midnight-position dot fill (currently shared with `track_color` if not set). |
+
+### Map rendering notes (v2.13)
+
+The map is built on Leaflet 1.9.4 with the following behaviours:
+
+- **Layer z-order via panes.** Ten custom panes are created at map init with explicit `z-index` values, so layer order is independent of the order async fetches complete. From back to front: `ta-bathy` (210), `ta-land` (220), `ta-coastline` (230), `ta-reefs` (240), `ta-graticules` (250), `ta-ne-ports` (260), `ta-seamap` (280, OpenSeaMap tiles), `ta-tracks` (410, polylines + arc), `ta-markers` (600, position dots), `ta-vessel` (620, departure / destination / current vessel — always above land).
+- **Antimeridian wrapping.** `worldCopyJump: true` is enabled; in addition each vector layer is rendered at −360°, 0°, and +360° lon offsets via an `addWrapped()` helper so polygons appear continuous across the date line. Trip tracks, gap segments, and great-circle arcs run through `taUnwrapLons()` first, which keeps consecutive points within ±180° of each other so a date-line crossing draws as a short hop instead of looping the world.
+- **Permanent map labels.** Vessel marker carries a permanent tooltip with the vessel name from `vesselconfig.json → info.vessel_name`; departure and destination markers carry their port name. All three use a shared `.ta-map-label` style (semi-transparent white pill, 10 px bold, thin border, drop shadow) injected once into `<head>` via a `<style>` tag.
+- **Stale-map detection.** When the user navigates away and back, `taInitOrUpdateMap()` checks whether the cached `TA.map.getContainer()` still matches the live `#ta-map-container` DOM node. If not, the map is destroyed and rebuilt against the new container. `invalidateSize()` is also deferred one frame on every entry to handle 0×0 measurement during tab transitions.
+
+### `ports` array — port object fields
+
+| Field     | Type   | Required | Notes |
+|-----------|--------|----------|-------|
+| `port_id` | string | yes      | Short uppercase identifier (e.g. `"DUT"`). Must be unique within the array. |
+| `name`    | string | yes      | Human-readable port name. |
+| `lat`     | number | yes      | Decimal degrees, −90 to 90. |
+| `lon`     | number | yes      | Decimal degrees, −180 to 180. |
+
+### OneDrive path
+
+```
+Documents/IDMS/config/tripanalyticsconfig.json
+```
+
+### graph.js helpers
+
+| Function | Description |
+|---|---|
+| `loadTripAnalyticsConfig()` | `graphGet(ONEDRIVE_BASE + '/config/tripanalyticsconfig.json')` — returns parsed config or `null` if not found. |
+| `saveTripAnalyticsConfig(cfg)` | `graphPut(ONEDRIVE_BASE + '/config/tripanalyticsconfig.json', cfg)` — writes the full config object. |
+
+### Analytics Setup UI
+
+The Analytics Setup tab (`renderTASetup()`) provides an admin interface for editing `tripanalyticsconfig.json`:
+
+- **Production card:** single editable field — Target MT (numeric input). Changes are local until the Save button is clicked.
+- **Map Configuration card:** **Show Bathymetry** checkbox (toggle for the 11 bathy layers; disable for performance), plus seven hex colour inputs (`ocean_color`, `land_color`, `track_color`, `track_gap_color`, `great_circle_color`, `vessel_color`, `dot_color`) each with a live `<span>` swatch preview that updates on `input` event.
+- **Ports card:** a table with one editable row per port (port_id, name, lat, lon). An **Add Port** button appends a blank row. Each row has a **Delete** button (row is removed from DOM immediately). Inline validation highlights cells red: duplicate `port_id`, lat out of −90–90 range, lon out of −180–180 range.
+- **Save to OneDrive:** calls `saveTripAnalyticsConfig()` with the current in-memory config; tears down `TA.map` so the next entry to Tab 1 rebuilds with the new bathymetry / ocean colour. Shows status: "Saved. Map will rebuild on next view."
+- **Refresh from OneDrive:** reloads config from `loadTripAnalyticsConfig()` and re-renders the tab. Prompts a confirmation dialog if unsaved local changes exist.
+
+All write actions are admin-only. Non-admin users see the Setup tab in read-only mode.
