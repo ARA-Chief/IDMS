@@ -24,6 +24,7 @@ const RE = {
   isTablet:     false,
   touchStartX:  0,
   touchStartY:  0,
+  sourceScreen: null,  // screen to return to on exit
 };
 
 // ── Graph API helpers ─────────────────────────────────────────────────────────
@@ -237,9 +238,10 @@ async function reLoadAggregates() {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-async function initRoundsEntry() {
+async function initRoundsEntry(sourceScreen) {
   const el = document.getElementById('screen-roundsentry');
   if (!el) return;
+  RE.sourceScreen = sourceScreen || null;
 
   RE.isTablet = window.innerWidth >= 768;
   el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-secondary);font-size:14px">Loading rounds…</div>';
@@ -849,14 +851,17 @@ function reOnResize() {
 function reExit() {
   reUnbindGestures();
   window.removeEventListener('resize', reOnResize);
-  // Return to the department hub the user came from, not the generic Factory home.
-  // Match flexibly because `currentDepartment` can vary in casing / whitespace.
-  const dept = (typeof currentDepartment === 'string' ? currentDepartment : '').trim().toLowerCase();
-  let target = 'screen-home';
-  if (dept.indexOf('engine') !== -1 && document.getElementById('screen-engine-home')) {
-    target = 'screen-engine-home';
-  } else if (dept.indexOf('deck') !== -1 && document.getElementById('screen-deck-home')) {
-    target = 'screen-deck-home';
+  // Use the explicit source screen set by the caller, falling back to
+  // department inference so direct calls without a sourceScreen still work.
+  let target = RE.sourceScreen;
+  if (!target) {
+    const dept = (typeof currentDepartment === 'string' ? currentDepartment : '').trim().toLowerCase();
+    target = 'screen-home';
+    if (dept.indexOf('engine') !== -1 && document.getElementById('screen-engine-home')) {
+      target = 'screen-engine-home';
+    } else if (dept.indexOf('deck') !== -1 && document.getElementById('screen-deck-home')) {
+      target = 'screen-deck-home';
+    }
   }
   showScreen(target);
 }

@@ -555,7 +555,7 @@
             <rect x="2" y="2" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
           </svg>
         </button>
-        <button class="icon-btn" onclick="showScreen('screen-roundsentry');initRoundsEntry()" aria-label="Rounds" title="Rounds entry">
+        <button class="icon-btn" onclick="showScreen('screen-roundsentry');initRoundsEntry('screen-home')" aria-label="Rounds" title="Rounds entry">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <rect x="3" y="2" width="14" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
             <path d="M6 7h8M6 10h8M6 13h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -970,15 +970,15 @@
     </header>
     <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Engine Room</div>
     <div class="er-hub-grid">
-      <button class="er-hub-tile er-tile-dim" onclick="showScreen('screen-engine-dashboard')">
+      <button class="er-hub-tile" onclick="initEngineRoughLog()">
         <div class="er-hub-tile-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <rect x="3" y="3" width="22" height="22" rx="3" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M8 19l4-6 3 4 3-5 3 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M6 4h16a2 2 0 012 2v20a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M9 11h10M9 16h10M9 21h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
         </div>
-        <div class="er-hub-tile-label">Dashboard</div>
-        <div class="er-hub-tile-sub">Not active yet</div>
+        <div class="er-hub-tile-label">Rough Log</div>
+        <div class="er-hub-tile-sub">Vessel log entries</div>
       </button>
       <button class="er-hub-tile" onclick="openEngineRoundsConfirm()">
         <div class="er-hub-tile-icon">
@@ -1014,30 +1014,8 @@
     </div>
   </div>
 
-  <!-- ── ENGINE ROOM: DASHBOARD (placeholder) ── -->
-  <div class="screen" id="screen-engine-dashboard">
-    <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-engine-home')">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <h2>Dashboard</h2>
-      <div style="width:36px"></div>
-    </div>
-    <div class="placeholder-screen">
-      <div class="placeholder-icon">
-        <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-          <rect x="4" y="4" width="48" height="48" rx="8" stroke="currentColor" stroke-width="2"/>
-          <path d="M14 40l8-14 7 9 5-8 8 13" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <div style="font-size:18px;font-weight:600;color:var(--text-secondary)">Dashboard</div>
-      <p class="placeholder-text">Live operational data for the Engine Room.<br>Not active yet — coming in a future version.</p>
-      <button onclick="showScreen('screen-engine-home')"
-        style="margin-top:8px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 24px;color:var(--text-secondary);font-size:14px;cursor:pointer">
-        Back
-      </button>
-    </div>
-  </div>
+  <!-- ── ENGINE ROOM: ROUGH LOG ── -->
+  <div class="screen" id="screen-engine-roughlog"></div>
 
   <!-- ── ENGINE ROOM: TASKS ── -->
   <div class="screen" id="screen-engine-tasks">
@@ -2044,7 +2022,7 @@ function closeRoundsConfirm() {
 function confirmEngineRounds() {
   closeRoundsConfirm();
   showScreen('screen-roundsentry');
-  initRoundsEntry();
+  initRoundsEntry('screen-engine-home');
 }
 
 // ── ENGINE ROOM: TASKS & MAINTENANCE ─────
@@ -4786,6 +4764,215 @@ function mergeOverlappingIncidents(incidents) {
   // Always init MSAL — it handles the auth flow from here
   initMsal();
 })();
+
+// ── ENGINE ROOM: ROUGH LOG ────────────────────────────────────────────────────
+
+var ERL = {
+  data:  null,   // parsed roughlog-{YYYY}.json
+  year:  null
+};
+
+function erlGraphUrl(year) {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/'
+    + ONEDRIVE_BASE + '/data/roughlog/roughlog-' + year + '.json:/content';
+}
+
+async function erlRefreshToken() {
+  if (graphToken) return;
+  var r = await msalInstance.acquireTokenSilent({ scopes: MSAL_SCOPES, account: msalAccount });
+  graphToken = r.accessToken;
+}
+
+async function initEngineRoughLog() {
+  showScreen('screen-engine-roughlog');
+  ERL.year = new Date().getFullYear();
+  ERL.data = null;
+  erlRenderShell();
+  await erlLoadData();
+}
+
+function erlRenderShell() {
+  var el = document.getElementById('screen-engine-roughlog');
+  if (!el) return;
+  el.innerHTML =
+    '<div class="subscreen-header">' +
+      '<button class="back-btn" onclick="showScreen(\'screen-engine-home\')">' +
+        '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '</button>' +
+      '<h2>Rough Log</h2>' +
+      '<button class="icon-btn" onclick="erlOpenModal()" aria-label="New entry" title="New entry" style="font-size:24px;line-height:1;width:36px;height:36px;padding:0">+</button>' +
+    '</div>' +
+    '<div id="erl-list" style="flex:1;overflow-y:auto;padding:4px 0"></div>' +
+    '<div class="modal-overlay" id="erl-modal" style="display:none">' +
+      '<div class="modal-card" style="max-width:480px;width:calc(100% - 32px);text-align:left">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">' +
+          '<h3 class="modal-title" style="margin:0">New Log Entry</h3>' +
+          '<button onclick="erlCloseModal()" style="background:transparent;border:none;color:var(--text-muted);font-size:24px;cursor:pointer;line-height:1;padding:0 4px">&#215;</button>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">' +
+          '<label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted)">Date' +
+            '<input type="date" id="erl-f-date" style="display:block;width:100%;margin-top:4px;padding:9px 10px;font-size:14px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);box-sizing:border-box">' +
+          '</label>' +
+          '<label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted)">Time' +
+            '<input type="time" id="erl-f-time" style="display:block;width:100%;margin-top:4px;padding:9px 10px;font-size:14px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);box-sizing:border-box">' +
+          '</label>' +
+        '</div>' +
+        '<label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted)">Category' +
+          '<select id="erl-f-category" style="display:block;width:100%;margin-top:4px;padding:9px 10px;font-size:14px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);box-sizing:border-box">' +
+            '<option value="Manual Entry" selected>Manual Entry</option>' +
+            '<option value="Service Report">Service Report</option>' +
+            '<option value="Fuel Transfer">Fuel Transfer</option>' +
+            '<option value="Rounds">Rounds</option>' +
+            '<option value="Trip Event">Trip Event</option>' +
+            '<option value="Reminder">Reminder</option>' +
+          '</select>' +
+        '</label>' +
+        '<label style="display:block;margin-top:12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted)">Entry <span style="color:var(--danger)">*</span>' +
+          '<textarea id="erl-f-body" rows="5" placeholder="Log entry text…" style="display:block;width:100%;margin-top:4px;padding:9px 10px;font-size:14px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>' +
+        '</label>' +
+        '<div id="erl-f-err" style="display:none;color:var(--danger);font-size:12px;margin-top:4px">Entry text is required.</div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">' +
+          '<button onclick="erlCloseModal()" style="padding:10px 20px;font-size:14px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text-secondary);cursor:pointer">Cancel</button>' +
+          '<button id="erl-f-submit" onclick="erlSubmitEntry()" style="padding:10px 20px;font-size:14px;font-weight:600;background:var(--accent);border:none;border-radius:var(--radius-md);color:#fff;cursor:pointer">Save Entry</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+
+async function erlLoadData() {
+  var listEl = document.getElementById('erl-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">Loading…</div>';
+  try {
+    await erlRefreshToken();
+    var resp = await fetch(erlGraphUrl(ERL.year), { headers: { 'Authorization': 'Bearer ' + graphToken } });
+    if (resp.status === 404) {
+      ERL.data = { schema_version: 1, vessel: 'F/V Araho', year: ERL.year, entries: [] };
+    } else if (!resp.ok) {
+      throw new Error('HTTP ' + resp.status);
+    } else {
+      ERL.data = await resp.json();
+      if (!Array.isArray(ERL.data.entries)) ERL.data.entries = [];
+    }
+    erlRenderList();
+  } catch (err) {
+    if (listEl) listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--danger);font-size:13px">Failed to load: ' + erlEsc(err.message) + '</div>';
+  }
+}
+
+function erlRenderList() {
+  var listEl = document.getElementById('erl-list');
+  if (!listEl || !ERL.data) return;
+  var entries = ERL.data.entries.slice().reverse();
+  if (!entries.length) {
+    listEl.innerHTML = '<div style="padding:48px 16px;text-align:center;color:var(--text-muted);font-size:13px">No entries yet. Tap + to add one.</div>';
+    return;
+  }
+  listEl.innerHTML = entries.map(function(e) {
+    return '<div style="padding:12px 16px;border-bottom:1px solid var(--border)">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">' +
+        '<span style="font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums">' + erlEsc(e.date || '') + (e.time_label ? ' · ' + erlEsc(e.time_label) : '') + '</span>' +
+        '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:var(--bg-2);color:var(--text-secondary);border:1px solid var(--border)">' + erlEsc(e.category || 'Manual Entry') + '</span>' +
+        '<span style="font-size:11px;color:var(--text-muted);margin-left:auto">' + erlEsc(e.display_name || e.user || '') + '</span>' +
+      '</div>' +
+      '<div style="font-size:13px;color:var(--text-primary);line-height:1.55;white-space:pre-wrap;word-break:break-word">' + erlEsc(e.body || '') + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function erlOpenModal() {
+  var modal = document.getElementById('erl-modal');
+  if (!modal) return;
+  var now = new Date();
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var dateStr = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+  var timeStr = pad(now.getHours()) + ':' + pad(now.getMinutes());
+  var d = document.getElementById('erl-f-date'); if (d) d.value = dateStr;
+  var t = document.getElementById('erl-f-time'); if (t) t.value = timeStr;
+  var b = document.getElementById('erl-f-body'); if (b) b.value = '';
+  var e = document.getElementById('erl-f-err');  if (e) e.style.display = 'none';
+  modal.style.display = 'flex';
+}
+
+function erlCloseModal() {
+  var modal = document.getElementById('erl-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function erlSubmitEntry() {
+  var bodyEl   = document.getElementById('erl-f-body');
+  var errEl    = document.getElementById('erl-f-err');
+  var submitBtn = document.getElementById('erl-f-submit');
+  var body = bodyEl ? bodyEl.value.trim() : '';
+  if (!body) {
+    if (errEl) errEl.style.display = 'block';
+    if (bodyEl) bodyEl.focus();
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
+  try {
+    var dateEl = document.getElementById('erl-f-date');
+    var timeEl = document.getElementById('erl-f-time');
+    var catEl  = document.getElementById('erl-f-category');
+    var now    = new Date();
+    var pad    = function(n) { return String(n).padStart(2, '0'); };
+    var dateStr = (dateEl && dateEl.value) || (now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()));
+    var timeStr = (timeEl && timeEl.value) || '00:00';
+    var category = (catEl && catEl.value) || 'Manual Entry';
+    var entry = {
+      id:           (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)),
+      timestamp:    new Date(dateStr + 'T' + timeStr + ':00').toISOString(),
+      date:         dateStr,
+      time_label:   timeStr.slice(0, 5),
+      department:   'engine',
+      source:       'pwa',
+      category:     category,
+      user:         currentUser.username || 'unknown',
+      display_name: currentUser.name || currentUser.username || 'Unknown',
+      body:         body,
+      equipment_id: null,
+      ref_id:       null
+    };
+    // Ensure local data structure exists
+    if (!ERL.data) ERL.data = { schema_version: 1, vessel: 'F/V Araho', year: ERL.year, entries: [] };
+    // Read-merge-write: fetch remote to avoid clobbering concurrent writes
+    await erlRefreshToken();
+    var url = erlGraphUrl(ERL.year);
+    var getResp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } });
+    if (getResp.ok) {
+      var remote = await getResp.json();
+      var localIds = new Set((ERL.data.entries || []).map(function(e) { return e.id; }));
+      (remote.entries || []).forEach(function(e) { if (!localIds.has(e.id)) ERL.data.entries.push(e); });
+    }
+    ERL.data.entries.push(entry);
+    ERL.data.entries.sort(function(a, b) { return a.timestamp.localeCompare(b.timestamp); });
+    var putResp = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(ERL.data, null, 2)
+    });
+    if (!putResp.ok) throw new Error('Save failed: HTTP ' + putResp.status);
+    erlCloseModal();
+    erlRenderList();
+  } catch (err) {
+    var card = document.querySelector('#erl-modal .modal-card');
+    if (card) {
+      var existing = card.querySelector('.erl-submit-err');
+      if (existing) existing.remove();
+      var errDiv = document.createElement('div');
+      errDiv.className = 'erl-submit-err';
+      errDiv.style.cssText = 'color:var(--danger);font-size:12px;margin-top:8px;text-align:center';
+      errDiv.textContent = 'Save failed: ' + err.message;
+      card.appendChild(errDiv);
+    }
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save Entry'; }
+  }
+}
+
+function erlEsc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 </script>
 <script src="roundsentry.js"></script>
 </body>

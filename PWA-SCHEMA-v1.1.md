@@ -856,11 +856,11 @@ The entry grid is a 4-column CSS grid rendered as rows within `#screen-roundsent
 ### Keypad layout
 
 ```
- ←   /   *   ▲
+ ←       −   ▲
  7   8   9   ▼
  4   5   6  SEC'D
  1   2   3
- 0  dcml      enter
+ 0   .       ↵
 ```
 
 - **Phone** (< 768 px): fixed to bottom, full width.
