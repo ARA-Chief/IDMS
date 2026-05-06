@@ -522,10 +522,9 @@ function reKeypadHTML() {
     <div class="re-keypad${hidden}" id="re-keypad">
       ${toggle}
       <div class="re-kp-grid">
-        <button class="re-kp-btn re-kp-fn"  onclick="reKpBs()">&#8592;</button>
+        <button class="re-kp-btn re-kp-fn re-kp-bs" onclick="reKpBs()">&#8592;</button>
         <button class="re-kp-btn re-kp-fn"  onclick="reKpMinus()" title="Toggle negative">&#8722;</button>
         <button class="re-kp-btn re-kp-nav" onclick="reNavUp()">&#9650;</button>
-        <div></div>
 
         <button class="re-kp-btn" onclick="reKpKey('7')">7</button>
         <button class="re-kp-btn" onclick="reKpKey('8')">8</button>
@@ -1048,6 +1047,7 @@ function reStylesHTML() {
 .re-kp-btn:active  { filter: brightness(0.8); }
 .re-kp-fn          { font-size: 16px; color: var(--re-text2); }
 .re-kp-nav         { font-size: 14px; color: var(--re-accent); }
+.re-kp-bs          { grid-column: span 2; }
 .re-kp-enter       { background: var(--re-accent); color: var(--re-bg0); grid-row: span 2; font-size: 13px; }
 .re-kp-secd        { font-size: 11px; font-weight: 700; color: var(--re-muted); background: var(--re-bg1); letter-spacing: 0.04em; }
 .re-kp-side-toggle { display: block; width: 100%; background: transparent; border: none; color: var(--re-text2); font-size: 18px; cursor: pointer; text-align: right; margin-bottom: 4px; padding: 0 4px; }
