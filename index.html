@@ -1024,6 +1024,7 @@
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <h2>Tasks &amp; Maintenance</h2>
+      <button class="icon-btn" onclick="openErTaskCreateModal()" aria-label="New Task" title="New Task" style="font-size:20px;font-weight:400;line-height:1">+</button>
       <button class="icon-btn" onclick="loadEngineTasks()" aria-label="Refresh">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <path d="M15 9a6 6 0 11-1.5-3.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -1094,6 +1095,149 @@
       <div class="modal-actions" style="margin-top:18px">
         <button class="modal-btn modal-btn-secondary" onclick="closeErTaskUpdateModal()">Cancel</button>
         <button class="modal-btn modal-btn-primary" id="er-task-update-save" onclick="submitErTaskUpdate()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ENGINE ROOM: CREATE TASK MODAL ── -->
+  <div class="modal-overlay" id="er-task-create-modal" style="display:none">
+    <div class="modal-card" style="max-width:540px;text-align:left;max-height:90vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h3 class="modal-title" style="margin:0">New Task</h3>
+        <button onclick="closeErTaskCreateModal()" style="background:transparent;border:none;color:var(--text-muted);font-size:22px;cursor:pointer;line-height:1;padding:0 4px">×</button>
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Task Name <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="er-create-title" class="er-form-input" placeholder="e.g. Change oil">
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Equipment <span style="color:var(--danger)">*</span></label>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="er-create-equip-input" class="er-form-input" placeholder="Type code and press Enter" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();erCreateAddEquip();}">
+          <button onclick="erCreateAddEquip()" style="padding:7px 12px;background:var(--bg-3,#374151);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:13px;cursor:pointer;white-space:nowrap">Add</button>
+        </div>
+        <div id="er-create-equip-tags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:4px"></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="er-form-row" style="margin-bottom:0">
+          <label class="er-form-label">Category</label>
+          <select id="er-create-category" class="er-form-input">
+            <option value="SRV">SRV — Service Report</option>
+            <option value="ONE">ONE — One-Off</option>
+            <option value="CHK" selected>CHK — Check / Inspection</option>
+            <option value="LUB">LUB — Lubrication</option>
+            <option value="CLN">CLN — Cleaning</option>
+            <option value="RET">RET — Retorque</option>
+            <option value="CAL">CAL — Calibration</option>
+            <option value="REP">REP — Repair</option>
+            <option value="MON">MON — Monitoring</option>
+          </select>
+        </div>
+        <div class="er-form-row" style="margin-bottom:0">
+          <label class="er-form-label">Priority</label>
+          <select id="er-create-priority" class="er-form-input">
+            <option value="Critical">Critical</option>
+            <option value="High">High</option>
+            <option value="Normal" selected>Normal</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+        <div class="er-form-row" style="margin-bottom:0">
+          <label class="er-form-label">Role</label>
+          <input type="text" id="er-create-role" class="er-form-input" placeholder="e.g. Engineer">
+        </div>
+        <div class="er-form-row" style="margin-bottom:0">
+          <label class="er-form-label">Assigned To</label>
+          <input type="text" id="er-create-assigned" class="er-form-input" placeholder="Username">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+        <div class="er-form-row" style="margin-bottom:0">
+          <label class="er-form-label">Initial Failure Mode <span style="color:var(--text-muted);font-weight:400">(ISO 14224)</span></label>
+          <select id="er-create-fm" class="er-form-input">
+            <option value="">— None —</option>
+            <option value="AIR">AIR — Abnormal instrument reading</option>
+            <option value="BRD">BRD — Breakdown</option>
+            <option value="ELP">ELP — External leakage — process medium</option>
+            <option value="ELU">ELU — External leakage — utility medium</option>
+            <option value="ERO">ERO — Erratic output</option>
+            <option value="FCO">FCO — Failure to close on demand</option>
+            <option value="FOF">FOF — Failure to open on demand</option>
+            <option value="FOD">FOD — Failure on demand</option>
+            <option value="HIO">HIO — High output</option>
+            <option value="INL">INL — Internal leakage</option>
+            <option value="LOO">LOO — Low output</option>
+            <option value="NOI">NOI — Noise</option>
+            <option value="OHE">OHE — Overheating</option>
+            <option value="PDE">PDE — Parameter deviation</option>
+            <option value="PLU">PLU — Plugged / choked</option>
+            <option value="SER">SER — Minor in-service problems</option>
+            <option value="STD">STD — Structural deficiency</option>
+            <option value="UST">UST — Spurious stop</option>
+            <option value="VIB">VIB — Vibration</option>
+            <option value="CON">CON — Contamination</option>
+            <option value="LCP">LCP — Loss of containment / process</option>
+            <option value="OTH">OTH — Other</option>
+          </select>
+        </div>
+        <div class="er-form-row" style="margin-bottom:0">
+          <label class="er-form-label">Equipment Hours Interval</label>
+          <input type="number" id="er-create-eq-hours" class="er-form-input" placeholder="Optional" min="0">
+        </div>
+      </div>
+
+      <div class="er-form-row" style="margin-top:10px">
+        <label class="er-form-label">Description / Instructions</label>
+        <textarea id="er-create-desc" class="er-form-input" rows="3" style="resize:vertical;font-family:inherit" placeholder="What the person doing this should know…"></textarea>
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Skill Tags <span style="color:var(--text-muted);font-weight:400">(comma-separated)</span></label>
+        <input type="text" id="er-create-skill-tags" class="er-form-input" placeholder="e.g. hydraulics, welding">
+      </div>
+
+      <div class="er-form-row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-secondary)">
+          <input type="checkbox" id="er-create-recurring" onchange="erCreateToggleRecurring(this.checked)" style="accent-color:var(--accent)">
+          Recurring task
+        </label>
+        <div id="er-create-interval-row" style="display:none;margin-top:8px">
+          <label class="er-form-label">Interval</label>
+          <select id="er-create-interval" class="er-form-input">
+            <option value="7D">7 Days</option>
+            <option value="1W">1 Week</option>
+            <option value="2W">2 Weeks</option>
+            <option value="1M" selected>1 Month</option>
+            <option value="3M">3 Months</option>
+            <option value="6M">6 Months</option>
+            <option value="1Y">1 Year</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Notes <span style="color:var(--text-muted);font-weight:400">(supervisor only)</span></label>
+        <textarea id="er-create-notes" class="er-form-input" rows="2" style="resize:vertical;font-family:inherit" placeholder="Internal notes…"></textarea>
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Photos <span style="color:var(--text-muted);font-weight:400">(optional, up to 5)</span></label>
+        <input type="file" id="er-create-photos" accept="image/*" multiple class="er-form-input" style="padding:6px" onchange="erCreateRenderPhotoPreview()">
+        <div id="er-create-photo-preview" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
+      </div>
+
+      <div id="er-task-create-error" style="display:none;font-size:12px;color:var(--danger);margin-top:8px"></div>
+
+      <div class="modal-actions" style="margin-top:18px">
+        <button class="modal-btn modal-btn-secondary" onclick="closeErTaskCreateModal()">Cancel</button>
+        <button class="modal-btn modal-btn-primary" id="er-task-create-save" onclick="submitErTaskCreate()">Create Task</button>
       </div>
     </div>
   </div>
@@ -1462,6 +1606,10 @@ function submitLogin() {
   btn.disabled    = true;
   updateSyncIndicator('syncing');
 
+  // Always fetch fresh credentials \u2014 bypass the cache so password/user changes
+  // made in the Console take effect immediately rather than waiting up to 5 min.
+  _configCache = null;
+
   loadConfig().then(function(config) {
     // Support both crewconfig format (config.crew) and legacy userconfig (config.users)
     var roster = config.crew || config.users || [];
@@ -1507,7 +1655,8 @@ function submitLogin() {
       initials:        initials,
       role:            match.role_label || match.role || match.role_id || '',
       permission_tier: match.permission_tier || 'standard',
-      departments:     depts
+      departments:     depts,
+      profile_picture: match.profile_picture || null
     };
 
     if (document.getElementById('login-remember').checked) {
@@ -1945,6 +2094,25 @@ function updateUserDisplay() {
   if (erRole)       erRole.textContent       = currentUser.role + ' · F/V Araho';
   if (erMenuName)   erMenuName.textContent   = currentUser.name + ' — ' + currentUser.role;
   if (erSwitchDept) erSwitchDept.style.display = (currentUser.departments && currentUser.departments.length > 1) ? 'block' : 'none';
+
+  // Swap initials for the real profile picture if one is on record
+  var picPath = currentUser.profile_picture && currentUser.profile_picture.path;
+  if (picPath && graphToken) {
+    var picUrl = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/'
+      + encodeURIComponent(picPath).replace(/%2F/g, '/') + ':/content';
+    fetch(picUrl, { headers: { Authorization: 'Bearer ' + graphToken } })
+      .then(function(r) { return r.ok ? r.blob() : null; })
+      .then(function(blob) {
+        if (!blob) return;
+        var blobUrl = URL.createObjectURL(blob);
+        var imgHtml = '<img src="' + blobUrl + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">';
+        ['home-avatar', 'er-home-avatar', 'dept-avatar'].forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el) { el.textContent = ''; el.innerHTML = imgHtml; }
+        });
+      })
+      .catch(function() {});
+  }
 }
 
 // ── PRESET EDITOR ────────────────────────
@@ -2074,6 +2242,7 @@ var ER_TASKS_STATE = {
   deptCodeRanges:  null, // array of code_range prefixes for user's department, or null = all
   loaded:          false,
   editing:         null, // task_id currently in modal
+  eqCfg:           null, // cached equipmentconfig.json (for code_range calc on create)
   expanded:        null  // task_id currently expanded in the list
 };
 
@@ -2120,6 +2289,7 @@ async function loadEngineTasks() {
         var eqResp = await fetch(eqUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
         if (eqResp.ok) {
           var eqCfg = await eqResp.json();
+          ER_TASKS_STATE.eqCfg = eqCfg;
           var deptObj = eqCfg && eqCfg.departments && eqCfg.departments[deptKey];
           if (deptObj && Array.isArray(deptObj.ranges)) {
             ranges = deptObj.ranges.map(function(r) {
@@ -2562,6 +2732,28 @@ async function submitErTaskUpdate() {
 
     closeErTaskUpdateModal();
     renderEngineTasksList();
+
+    var rlTs   = event.occurred_at;
+    var rlParts = [];
+    if (statusChanged) rlParts.push(erTaskStatusLabel(prevStatus) + ' → ' + erTaskStatusLabel(newStatus));
+    if (fmChanged)     rlParts.push('Failure mode: ' + newFm);
+    if (comment)       rlParts.push(comment);
+    var rlEntry = {
+      id:           erUuid(),
+      timestamp:    rlTs,
+      date:         rlTs.slice(0, 10),
+      time_label:   rlTs.slice(11, 16),
+      department:   'engine',
+      source:       'task_update',
+      category:     'Service Report',
+      user:         currentUser.username || 'unknown',
+      display_name: currentUser.name || currentUser.username || 'Unknown',
+      body:         t.title + (rlParts.length ? ' — ' + rlParts.join(' · ') : ''),
+      equipment_id: equipIds[0] || null,
+      ref_id:       taskId
+    };
+    if (attachments.length) rlEntry.attachments = attachments;
+    erWriteTaskRoughLogEntry(rlEntry).catch(function() {});
   } catch (err) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
     if (errEl)   { errEl.textContent = 'Save failed: ' + err.message; errEl.style.display = 'block'; }
@@ -2653,6 +2845,256 @@ function erUuid() {
     var r = Math.random() * 16 | 0;
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
+}
+
+// ── ER Task Rough Log Helper ──────────────────────────────────────────────────
+// Writes a task-generated entry to the OneDrive roughlog file (fire-and-forget safe).
+async function erWriteTaskRoughLogEntry(entry) {
+  if (!graphToken) return;
+  var year = new Date(entry.timestamp || Date.now()).getFullYear();
+  var url  = 'https://graph.microsoft.com/v1.0/me/drive/root:/'
+           + ONEDRIVE_BASE + '/data/roughlog/roughlog-' + year + '.json:/content';
+  var data;
+  try {
+    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+    data = resp.ok ? await resp.json() : { schema_version: 1, vessel: '', year: year, entries: [] };
+    if (!Array.isArray(data.entries)) data.entries = [];
+  } catch(e) {
+    data = { schema_version: 1, vessel: '', year: year, entries: [] };
+  }
+  data.entries = data.entries.filter(function(e) { return e.id !== entry.id; });
+  data.entries.push(entry);
+  data.entries.sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
+  await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data, null, 2)
+  });
+}
+
+// ── ER Task Create Modal ──────────────────────────────────────────────────────
+
+var ER_CREATE_ASSETS = [];
+
+function openErTaskCreateModal() {
+  ER_CREATE_ASSETS = [];
+  var ids = ['er-create-title','er-create-role','er-create-assigned','er-create-skill-tags','er-create-desc','er-create-notes','er-create-eq-hours'];
+  ids.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
+  var catEl = document.getElementById('er-create-category'); if (catEl) catEl.value = 'CHK';
+  var prioEl = document.getElementById('er-create-priority'); if (prioEl) prioEl.value = 'Normal';
+  var fmEl = document.getElementById('er-create-fm'); if (fmEl) fmEl.value = '';
+  var recEl = document.getElementById('er-create-recurring'); if (recEl) recEl.checked = false;
+  erCreateToggleRecurring(false);
+  var tagsEl = document.getElementById('er-create-equip-tags'); if (tagsEl) tagsEl.innerHTML = '';
+  var prevEl = document.getElementById('er-create-photo-preview'); if (prevEl) prevEl.innerHTML = '';
+  var filesEl = document.getElementById('er-create-photos'); if (filesEl) filesEl.value = '';
+  var errEl = document.getElementById('er-task-create-error'); if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  var saveBtn = document.getElementById('er-task-create-save'); if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Create Task'; }
+  var modal = document.getElementById('er-task-create-modal'); if (modal) modal.style.display = 'flex';
+}
+
+function closeErTaskCreateModal() {
+  var modal = document.getElementById('er-task-create-modal'); if (modal) modal.style.display = 'none';
+}
+
+function erCreateAddEquip() {
+  var inp = document.getElementById('er-create-equip-input');
+  if (!inp) return;
+  var code = inp.value.trim().toUpperCase();
+  inp.value = '';
+  if (!code || ER_CREATE_ASSETS.indexOf(code) !== -1) return;
+  ER_CREATE_ASSETS.push(code);
+  erRenderCreateEquipTags();
+}
+
+function erRemoveCreateEquip(code) {
+  ER_CREATE_ASSETS = ER_CREATE_ASSETS.filter(function(c) { return c !== code; });
+  erRenderCreateEquipTags();
+}
+
+function erRenderCreateEquipTags() {
+  var el = document.getElementById('er-create-equip-tags');
+  if (!el) return;
+  el.innerHTML = ER_CREATE_ASSETS.map(function(code) {
+    return '<span style="background:var(--bg-3,#374151);border:1px solid var(--border);border-radius:12px;padding:3px 8px;font-size:12px;display:inline-flex;align-items:center;gap:4px">'
+      + erEscapeHtml(code)
+      + '<button onclick="erRemoveCreateEquip(\'' + erEscapeAttr(code) + '\')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0;font-size:15px;line-height:1">×</button>'
+      + '</span>';
+  }).join('');
+}
+
+function erCreateToggleRecurring(checked) {
+  var row = document.getElementById('er-create-interval-row');
+  if (row) row.style.display = checked ? 'block' : 'none';
+}
+
+function erCreateRenderPhotoPreview() {
+  var filesEl = document.getElementById('er-create-photos');
+  var prevEl  = document.getElementById('er-create-photo-preview');
+  if (!filesEl || !prevEl) return;
+  var files = Array.from(filesEl.files).slice(0, 5);
+  prevEl.innerHTML = files.map(function(f) {
+    var url = URL.createObjectURL(f);
+    return '<img src="' + url + '" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid var(--border)" onload="URL.revokeObjectURL(this.src)">';
+  }).join('');
+}
+
+function erTaskCodeRange(equipIds, eqCfg) {
+  var first = (Array.isArray(equipIds) ? equipIds[0] : '') || '';
+  var top = parseInt((first || '').split('.')[0], 10);
+  if (isNaN(top)) return '000';
+  try {
+    var depts = (eqCfg && eqCfg.departments) || {};
+    for (var dk in depts) {
+      var ranges = depts[dk].ranges || [];
+      for (var i = 0; i < ranges.length; i++) {
+        var r = ranges[i];
+        if (top >= parseInt(r.from, 10) && top <= parseInt(r.to, 10)) return r.from;
+      }
+    }
+  } catch(e) {}
+  return String(top);
+}
+
+async function erTaskCreateInDefinitionsFile(filename, task) {
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/definitions/' + encodeURIComponent(filename) + ':/content';
+  var data;
+  try {
+    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+    if (resp.ok) {
+      data = await resp.json();
+      if (!data || !Array.isArray(data.tasks)) data = { schema_version: 1, vessel: '', code_range: task.code_range, year: task.year, tasks: [] };
+    } else if (resp.status === 404) {
+      data = { schema_version: 1, vessel: '', code_range: task.code_range, year: task.year, tasks: [] };
+    } else {
+      throw new Error('Fetch failed: ' + resp.status);
+    }
+  } catch(e) {
+    if (e.message && e.message.indexOf('Fetch failed') === 0) throw e;
+    data = { schema_version: 1, vessel: '', code_range: task.code_range, year: task.year, tasks: [] };
+  }
+  data.tasks = (data.tasks || []).filter(function(t) { return t.task_id !== task.task_id; });
+  data.tasks.push(task);
+  var putResp = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data, null, 2)
+  });
+  if (!putResp.ok) throw new Error('File save failed: ' + putResp.status);
+}
+
+async function submitErTaskCreate() {
+  var title   = ((document.getElementById('er-create-title') || {}).value || '').trim();
+  var errEl   = document.getElementById('er-task-create-error');
+  var saveBtn = document.getElementById('er-task-create-save');
+
+  if (!title) {
+    if (errEl) { errEl.textContent = 'Task name is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (ER_CREATE_ASSETS.length === 0) {
+    if (errEl) { errEl.textContent = 'At least one equipment item is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+
+  var category  = (document.getElementById('er-create-category')   || {}).value || 'CHK';
+  var priority  = (document.getElementById('er-create-priority')   || {}).value || 'Normal';
+  var role      = ((document.getElementById('er-create-role')      || {}).value || '').trim();
+  var assigned  = ((document.getElementById('er-create-assigned')  || {}).value || '').trim();
+  var fmCode    = (document.getElementById('er-create-fm')         || {}).value || '';
+  var eqHours   = parseInt((document.getElementById('er-create-eq-hours') || {}).value || '', 10) || null;
+  var desc      = ((document.getElementById('er-create-desc')      || {}).value || '').trim();
+  var skillRaw  = ((document.getElementById('er-create-skill-tags')|| {}).value || '').trim();
+  var notes     = ((document.getElementById('er-create-notes')     || {}).value || '').trim();
+  var recurring = !!((document.getElementById('er-create-recurring')|| {}).checked);
+  var interval  = recurring ? ((document.getElementById('er-create-interval') || {}).value || '1M') : null;
+  var filesEl   = document.getElementById('er-create-photos');
+  var files     = filesEl ? Array.from(filesEl.files).slice(0, 5) : [];
+  var skillTags = skillRaw ? skillRaw.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = files.length ? 'Uploading…' : 'Saving…'; }
+
+  try {
+    var eqCfg     = ER_TASKS_STATE.eqCfg;
+    var codeRange = erTaskCodeRange(ER_CREATE_ASSETS, eqCfg);
+    var year      = new Date().getFullYear();
+    var now       = new Date().toISOString();
+    var taskId    = erUuid();
+    var primaryEqId = ER_CREATE_ASSETS[0] || 'misc';
+
+    var attachments = [];
+    for (var i = 0; i < files.length; i++) {
+      try { attachments.push(await erTaskUploadImage(primaryEqId, files[i])); }
+      catch(e) { console.warn('[ER Create] Image upload failed', e); }
+    }
+
+    var events = [];
+    if (attachments.length > 0) {
+      events.push({
+        event_id:    erUuid(),
+        task_id:     taskId,
+        type:        'comment',
+        from_status: null,
+        to_status:   null,
+        comment:     null,
+        actor_user:  currentUser.username || 'unknown',
+        actor_name:  currentUser.name || currentUser.username || 'Unknown',
+        occurred_at: now,
+        attachments: attachments
+      });
+    }
+
+    if (saveBtn && files.length) saveBtn.textContent = 'Saving…';
+
+    var task = {
+      task_id:        taskId,
+      title:          title,
+      equipment_ids:  JSON.stringify(ER_CREATE_ASSETS),
+      category:       category,
+      priority:       priority,
+      role:           role || null,
+      assigned_to:    assigned || null,
+      description:    desc || null,
+      skill_tags:     skillTags.length ? JSON.stringify(skillTags) : null,
+      status:         'open',
+      recurring:      recurring ? 1 : 0,
+      interval:       interval || null,
+      interval_hours: eqHours,
+      created_at:     now,
+      created_by:     currentUser.username || 'unknown',
+      notes:          notes || null,
+      code_range:     codeRange,
+      year:           year,
+      failure_mode:   fmCode || null,
+      events:         events
+    };
+
+    var filename = 'tasks-' + codeRange + '-' + year + '.json';
+    await erTaskCreateInDefinitionsFile(filename, task);
+
+    ER_TASKS_STATE.tasks.push({ task: task, file: filename });
+    closeErTaskCreateModal();
+    renderEngineTasksList();
+
+    erWriteTaskRoughLogEntry({
+      id:           erUuid(),
+      timestamp:    now,
+      date:         now.slice(0, 10),
+      time_label:   now.slice(11, 16),
+      department:   'engine',
+      source:       'task_creation',
+      category:     'Service Report',
+      user:         currentUser.username || 'unknown',
+      display_name: currentUser.name || currentUser.username || 'Unknown',
+      body:         'Task created: ' + title,
+      equipment_id: primaryEqId !== 'misc' ? primaryEqId : null,
+      ref_id:       taskId
+    }).catch(function() {});
+  } catch(err) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Create Task'; }
+    if (errEl) { errEl.textContent = 'Save failed: ' + err.message; errEl.style.display = 'block'; }
+  }
 }
 
 function erEscapeHtml(s) {
@@ -4869,15 +5311,25 @@ function erlRenderList() {
     return;
   }
   listEl.innerHTML = entries.map(function(e) {
+    var atts = Array.isArray(e.attachments) ? e.attachments : [];
+    var thumbsHtml = atts.length
+      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'
+          + atts.map(function(a) {
+              return '<img class="er-event-thumb" data-thumb-path="' + erEscapeAttr(a.thumbnail_path || a.path) + '" data-full-path="' + erEscapeAttr(a.path || '') + '" style="width:72px;height:54px;object-fit:cover;border-radius:3px;opacity:0;transition:opacity 0.2s;cursor:zoom-in" alt="">';
+            }).join('')
+          + '</div>'
+      : '';
     return '<div style="padding:12px 16px;border-bottom:1px solid var(--border)">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap">' +
-        '<span style="font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums">' + erlEsc(e.date || '') + (e.time_label ? ' · ' + erlEsc(e.time_label) : '') + '</span>' +
+        '<span style="font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums">' + erlEsc(e.date || '') + (e.time_label ? ' · ' + erlEsc(e.time_label) : '') + '</span>' +
         '<span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;background:var(--bg-2);color:var(--text-secondary);border:1px solid var(--border)">' + erlEsc(e.category || 'Manual Entry') + '</span>' +
         '<span style="font-size:11px;color:var(--text-muted);margin-left:auto">' + erlEsc(e.display_name || e.user || '') + '</span>' +
       '</div>' +
       '<div style="font-size:13px;color:var(--text-primary);line-height:1.55;white-space:pre-wrap;word-break:break-word">' + erlEsc(e.body || '') + '</div>' +
+      thumbsHtml +
     '</div>';
   }).join('');
+  loadErEventLogThumbnails(listEl);
 }
 
 function erlOpenModal() {
