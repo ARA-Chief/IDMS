@@ -483,10 +483,10 @@
   <!-- ── DEPARTMENT PICKER ── -->
   <div class="screen" id="screen-dept">
     <div style="flex:1;display:flex;flex-direction:column;padding:24px 20px">
-      <div style="text-align:center;margin-bottom:32px">
-        <div class="user-avatar" id="dept-avatar" style="width:52px;height:52px;font-size:16px;margin:0 auto 12px">—</div>
-        <div style="font-size:17px;font-weight:600" id="dept-username">—</div>
-        <div style="font-size:13px;color:var(--text-secondary);margin-top:3px" id="dept-role">—</div>
+      <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:32px">
+        <div class="user-avatar" id="dept-avatar" style="width:52px;height:52px;font-size:16px;margin-bottom:12px">—</div>
+        <div style="font-size:17px;font-weight:600;text-align:center" id="dept-username">—</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin-top:3px;text-align:center" id="dept-role">—</div>
       </div>
       <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px">Select Department</div>
       <div id="dept-btn-grid" style="display:flex;flex-direction:column;gap:10px;flex:1"></div>
@@ -3263,14 +3263,10 @@ function erRenderProfile(el, m) {
   var initials = (m.name || '?').split(/\s+/).filter(Boolean)
     .map(function(w) { return w[0]; }).join('').toUpperCase().slice(0, 2);
 
-  // Build airport options (current value selected; "Other" used when current value isn't a known IATA)
-  var currentAirport = contact.preferred_airport || '';
-  var airportCodes   = ER_US_AIRPORTS.map(function(a) { return a[0]; });
-  var isKnownAirport = currentAirport && airportCodes.indexOf(currentAirport) !== -1;
-  var airportOpts = ER_US_AIRPORTS.map(function(a) {
-    var sel = (isKnownAirport && a[0] === currentAirport) ? ' selected' : '';
-    return '<option value="' + a[0] + '"' + sel + '>' + erEscapeHtml(a[1]) + '</option>';
-  }).join('');
+  var currentAirport  = contact.preferred_airport || '';
+  var airportDatalist = ER_US_AIRPORTS.filter(function(a) { return a[0] !== '__OTHER__'; })
+    .map(function(a) { return '<option value="' + erEscapeAttr(a[0]) + '">' + erEscapeHtml(a[1]) + '</option>'; })
+    .join('');
 
   // Profile picture: <img> if a path is set, otherwise initials
   var picHtml;
@@ -3317,13 +3313,9 @@ function erRenderProfile(el, m) {
     + '</div>'
     + '<div class="er-profile-field">'
     +   '<div class="er-profile-field-label">Preferred Airport</div>'
-    +   '<select id="er-profile-airport-sel" class="er-profile-field-input" onchange="onErAirportChange()">'
-    +     '<option value="">— select —</option>'
-    +     airportOpts
-    +   '</select>'
-    +   '<input type="text" id="er-profile-airport-other" class="er-profile-field-input" placeholder="Type airport / location"'
-    +     ' style="margin-top:6px;display:' + (isKnownAirport || !currentAirport ? 'none' : 'block') + '"'
-    +     ' value="' + (isKnownAirport ? '' : erEscapeAttr(currentAirport)) + '">'
+    +   '<input type="text" id="er-profile-airport" class="er-profile-field-input" list="er-airport-datalist"'
+    +     ' value="' + erEscapeAttr(currentAirport) + '" placeholder="Type code or city…" autocomplete="off">'
+    +   '<datalist id="er-airport-datalist">' + airportDatalist + '</datalist>'
     + '</div>'
     + '<div class="er-profile-field">'
     +   '<div class="er-profile-field-label">WhatsApp</div>'
@@ -3386,18 +3378,6 @@ function erRenderProfile(el, m) {
   }
 }
 
-function onErAirportChange() {
-  var sel   = document.getElementById('er-profile-airport-sel');
-  var other = document.getElementById('er-profile-airport-other');
-  if (!sel || !other) return;
-  if (sel.value === '__OTHER__') {
-    other.style.display = 'block';
-    other.focus();
-  } else {
-    other.style.display = 'none';
-    other.value = '';
-  }
-}
 
 function onErProfilePicSelected(file) {
   if (!file) return;
@@ -3440,9 +3420,7 @@ async function saveErProfile() {
     var email    = ((document.getElementById('er-profile-email')    || {}).value || '').trim();
     var whatsapp = ((document.getElementById('er-profile-whatsapp') || {}).value || '').trim();
     var messenger= ((document.getElementById('er-profile-messenger')|| {}).value || '').trim();
-    var airSel   = (document.getElementById('er-profile-airport-sel')   || {}).value || '';
-    var airOther = ((document.getElementById('er-profile-airport-other')|| {}).value || '').trim();
-    var preferred_airport = (airSel === '__OTHER__' ? airOther : airSel) || '';
+    var preferred_airport = ((document.getElementById('er-profile-airport') || {}).value || '').trim().toUpperCase();
 
     // Optional: upload staged profile pic first (so the path lands in the same write)
     if (ER_PROFILE_STATE.pendingPicFile) {
