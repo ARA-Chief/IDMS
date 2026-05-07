@@ -228,6 +228,9 @@
     .oee-add-actions { flex-shrink: 0; display: flex; flex-direction: column; padding: 0 14px; padding-bottom: calc(14px + env(safe-area-inset-bottom)); gap: 8px; }
     .oee-add-actions .fa-fill-btn { flex: none; min-height: 60px; font-size: 15px; }
     .oee-add-actions .fa-fill-btn-submit { background: var(--accent); color: var(--bg-0); border-color: var(--accent); min-height: 68px; }
+    .oee-timer-row { flex-shrink: 0; display: flex; justify-content: center; align-items: center; padding: 18px 14px 6px; }
+    .oee-timer-display { font-size: 52px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; color: var(--accent); }
+    .oee-field-hint { margin-top: 10px; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
     .fa-fill-grid { flex: 1; display: flex; flex-direction: column; padding: 10px 14px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); gap: 8px; overflow: hidden; }
     .fa-fill-btn { flex: 1; width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; color: var(--text-primary); cursor: pointer; }
     .fa-fill-btn:active { border-color: var(--accent); background: var(--accent-glow); }
@@ -1195,21 +1198,14 @@
     <div class="equip-context-bar" style="flex-shrink:0">
       <span class="equip-context-value" id="oee-form-ctx">—</span>
     </div>
+    <div class="oee-timer-row">
+      <div class="oee-timer-display" id="oee-timer-display">0:00</div>
+    </div>
     <div class="oee-add-body">
-      <div style="display:grid;grid-template-columns:3fr 2fr;gap:10px">
-        <div>
-          <div class="oee-add-field-label">Rate</div>
-          <input type="number" id="oee-add-rate" class="oee-add-input" inputmode="decimal" step="0.01" min="0" placeholder="e.g. 120">
-        </div>
-        <div>
-          <div class="oee-add-field-label">Unit</div>
-          <select id="oee-add-unit" class="oee-add-input" style="appearance:none;-webkit-appearance:none">
-            <option value="mt/day">MT/day</option>
-            <option value="pans/min">pans/min</option>
-            <option value="min/pan">min/pan</option>
-            <option value="sec/pan">sec/pan</option>
-          </select>
-        </div>
+      <div>
+        <div class="oee-add-field-label" id="oee-field-label">Number of</div>
+        <input type="number" id="oee-add-count" class="oee-add-input" inputmode="decimal" step="1" min="0" placeholder="0">
+        <div class="oee-field-hint" id="oee-field-hint" style="display:none"></div>
       </div>
     </div>
     <div class="oee-add-actions">
@@ -2679,12 +2675,15 @@ var OEE = {
 };
 
 var OEE_ADD = {
-  timestamp:    null,   // captured at the moment [+] is pressed
-  sectionId:    null,
-  sectionLabel: null,
-  assetId:      null,
-  assetLabel:   null,
-  hasAssets:    false   // whether the selected section has sub-assets
+  timestamp:     null,   // ISO — captured when asset (or section) is tapped
+  stopTimestamp: null,
+  sectionId:     null,
+  sectionLabel:  null,
+  sectionType:   null,
+  assetId:       null,
+  assetLabel:    null,
+  hasAssets:     false,
+  timerInterval: null
 };
 
 // Helper: local date string YYYY-MM-DD
@@ -2854,13 +2853,15 @@ function renderOeeObsList() {
 
 // ── FACTORY: ADD OBSERVATION ──────────────
 function openFactoryOeeAdd() {
-  // Capture timestamp the moment + is pressed
-  OEE_ADD.timestamp    = new Date().toISOString();
-  OEE_ADD.sectionId    = null;
-  OEE_ADD.sectionLabel = null;
-  OEE_ADD.assetId      = null;
-  OEE_ADD.assetLabel   = null;
-  OEE_ADD.hasAssets    = false;
+  if (OEE_ADD.timerInterval) { clearInterval(OEE_ADD.timerInterval); OEE_ADD.timerInterval = null; }
+  OEE_ADD.timestamp     = null;
+  OEE_ADD.stopTimestamp = null;
+  OEE_ADD.sectionId     = null;
+  OEE_ADD.sectionLabel  = null;
+  OEE_ADD.sectionType   = null;
+  OEE_ADD.assetId       = null;
+  OEE_ADD.assetLabel    = null;
+  OEE_ADD.hasAssets     = false;
 
   // Build section fill-buttons
   var grid = document.getElementById('oee-section-btn-grid');
@@ -2882,12 +2883,14 @@ function openFactoryOeeAdd() {
 function oeeSelectSection(section) {
   OEE_ADD.sectionId    = section.section_id;
   OEE_ADD.sectionLabel = section.label;
+  OEE_ADD.sectionType  = section.type || null;
   var subAssets = section.sub_assets || [];
   OEE_ADD.hasAssets = subAssets.length > 0;
 
   if (!OEE_ADD.hasAssets) {
     OEE_ADD.assetId    = null;
     OEE_ADD.assetLabel = null;
+    OEE_ADD.timestamp  = new Date().toISOString();
     oeeOpenForm();
     return;
   }
@@ -2910,32 +2913,79 @@ function oeeSelectSection(section) {
 }
 
 function oeeSelectAsset(asset) {
-  OEE_ADD.assetId    = asset.id   || null;
+  OEE_ADD.assetId    = asset.id    || null;
   OEE_ADD.assetLabel = asset.label || null;
+  OEE_ADD.timestamp  = new Date().toISOString();
   oeeOpenForm();
 }
 
 function oeeOpenForm() {
+  if (OEE_ADD.timerInterval) { clearInterval(OEE_ADD.timerInterval); OEE_ADD.timerInterval = null; }
+
   var ctx = document.getElementById('oee-form-ctx');
   if (ctx) {
     ctx.textContent = OEE_ADD.assetLabel
       ? OEE_ADD.sectionLabel + '  ›  ' + OEE_ADD.assetLabel
       : OEE_ADD.sectionLabel;
   }
-  var rateEl = document.getElementById('oee-add-rate');
-  if (rateEl) rateEl.value = '';
-  var unitEl = document.getElementById('oee-add-unit');
-  if (unitEl) unitEl.value = 'mt/day';
-  var notesEl = document.getElementById('oee-add-notes');
-  if (notesEl) { notesEl.value = ''; notesEl.style.display = 'none'; }
-  var notesBtnEl = document.getElementById('oee-notes-btn');
-  if (notesBtnEl) notesBtnEl.textContent = 'Notes';
+
+  var type = OEE_ADD.sectionType;
+  var labelText  = 'Number of';
+  var isTimedOnly = false;
+  var hintText   = '';
+
+  if (type === 'throughput') {
+    labelText = 'Number of Pans';
+  } else if (type === 'header') {
+    labelText = 'Number of Fish';
+  } else if (type === 'belt') {
+    labelText = 'Seconds per Meter';
+    isTimedOnly = true;
+  } else if (type === 'packing') {
+    labelText = 'Seconds per Pan';
+    isTimedOnly = true;
+  } else if (type === 'plate_freezer') {
+    labelText = 'Seconds per Complete Push';
+    isTimedOnly = true;
+    hintText = 'The period of time it takes a case from press, to fully loaded, to the next case from press beginning to move.';
+  }
+
+  var fieldLabelEl = document.getElementById('oee-field-label');
+  if (fieldLabelEl) fieldLabelEl.textContent = labelText;
+
+  var countEl = document.getElementById('oee-add-count');
+  if (countEl) {
+    countEl.value       = '';
+    countEl.disabled    = isTimedOnly;
+    countEl.style.opacity = isTimedOnly ? '0.4' : '1';
+    countEl.placeholder = isTimedOnly ? '' : '0';
+  }
+
+  var hintEl = document.getElementById('oee-field-hint');
+  if (hintEl) {
+    hintEl.textContent   = hintText;
+    hintEl.style.display = hintText ? '' : 'none';
+  }
+
   var statusEl = document.getElementById('oee-add-status');
   if (statusEl) statusEl.textContent = '';
+
+  var startMs = OEE_ADD.timestamp ? new Date(OEE_ADD.timestamp).getTime() : Date.now();
+  var timerEl = document.getElementById('oee-timer-display');
+  function tick() {
+    var elapsed = Math.floor((Date.now() - startMs) / 1000);
+    var m = Math.floor(elapsed / 60);
+    var s = elapsed % 60;
+    if (timerEl) timerEl.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  tick();
+  OEE_ADD.timerInterval = setInterval(tick, 1000);
+
   showScreen('screen-factory-oee-add');
 }
 
 function oeeFormGoBack() {
+  if (OEE_ADD.timerInterval) { clearInterval(OEE_ADD.timerInterval); OEE_ADD.timerInterval = null; }
   showScreen(OEE_ADD.hasAssets ? 'screen-oee-add-asset' : 'screen-oee-add-section');
 }
 
@@ -3014,50 +3064,78 @@ function oeeSelectFailmode(isoCode, isoLabel) {
 
 async function submitFactoryOeeObs() {
   var statusEl = document.getElementById('oee-add-status');
+  var type = OEE_ADD.sectionType;
+  var isTimedOnly = (type === 'belt' || type === 'packing' || type === 'plate_freezer');
 
-  var rateRaw = document.getElementById('oee-add-rate').value;
-  var rate    = rateRaw === '' ? null : parseFloat(rateRaw);
-  if (rate === null || isNaN(rate) || rate <= 0) {
-    if (statusEl) statusEl.textContent = 'Please enter a rate.';
-    return;
+  // Validate count before stopping the timer
+  var count = null;
+  if (!isTimedOnly) {
+    var countRaw = document.getElementById('oee-add-count').value;
+    count = countRaw === '' ? null : parseFloat(countRaw);
+    if (count === null || isNaN(count) || count <= 0) {
+      if (statusEl) statusEl.textContent = 'Please enter a count.';
+      return;
+    }
   }
 
-  var enteredUnit = document.getElementById('oee-add-unit').value || 'mt/day';
-  var notes       = '';
+  // Stop timer and record stop time
+  if (OEE_ADD.timerInterval) { clearInterval(OEE_ADD.timerInterval); OEE_ADD.timerInterval = null; }
+  var stopTime   = new Date();
+  var stopISO    = stopTime.toISOString();
+  var startMs    = OEE_ADD.timestamp ? new Date(OEE_ADD.timestamp).getTime() : stopTime.getTime();
+  var elapsedMs  = stopTime.getTime() - startMs;
+  var elapsedSec = elapsedMs / 1000;
 
-  // sec/pan → convert to pans/min for storage
-  var storedRate = rate;
-  var storedUnit = enteredUnit;
-  if (enteredUnit === 'sec/pan') {
-    storedRate = parseFloat((60 / rate).toFixed(4));
-    storedUnit = 'pans/min';
+  // Freeze timer display on final value
+  var timerEl = document.getElementById('oee-timer-display');
+  if (timerEl) {
+    var m = Math.floor(elapsedSec / 60), s = Math.floor(elapsedSec % 60);
+    timerEl.textContent = m + ':' + (s < 10 ? '0' : '') + s;
   }
 
-  var ts       = OEE_ADD.timestamp || new Date().toISOString();
+  // Calculate stored rate
+  var storedRate, storedUnit;
+  if (isTimedOnly) {
+    if (type === 'belt') {
+      storedRate = parseFloat(elapsedSec.toFixed(2));
+      storedUnit = 'sec/m';
+    } else if (type === 'packing') {
+      storedRate = parseFloat((60 / elapsedSec).toFixed(4));
+      storedUnit = 'pans/min';
+    } else {
+      storedRate = parseFloat((300 / elapsedSec).toFixed(4));
+      storedUnit = 'pans/min';
+    }
+  } else {
+    var elapsedMin = elapsedMs / 60000;
+    storedRate = parseFloat((count / elapsedMin).toFixed(4));
+    storedUnit = type === 'header' ? 'fish/min' : 'pans/min';
+  }
+
+  var ts       = OEE_ADD.timestamp || stopISO;
   var dateStr  = ts.slice(0, 10);
   var username = currentUser.username || 'unknown';
 
   var observation = {
-    obs_id:        obsUUID(),
-    obs_timestamp: ts,
-    obs_date:      dateStr,
-    section_id:    OEE_ADD.sectionId,
-    section_label: OEE_ADD.sectionLabel,
-    asset_id:      OEE_ADD.assetId,
-    asset_label:   OEE_ADD.assetLabel,
-    asset_code:    null,
-    observed_rate: storedRate,
-    rate_unit:     storedUnit,
-    entered_rate:  rate,
-    entered_unit:  enteredUnit,
-    operator:      currentUser.name || username,
-    source_user:   username,
-    wind_speed_kt: null,
-    sea_state_ft:  null,
-    notes:         notes,
-    source:        'pwa',
-    oee_session_id:  null,
-    failure_mode_id: 'audit'
+    obs_id:             obsUUID(),
+    obs_timestamp:      ts,
+    obs_stop_timestamp: stopISO,
+    obs_date:           dateStr,
+    elapsed_seconds:    parseFloat(elapsedSec.toFixed(2)),
+    section_id:         OEE_ADD.sectionId,
+    section_label:      OEE_ADD.sectionLabel,
+    section_type:       type,
+    asset_id:           OEE_ADD.assetId,
+    asset_label:        OEE_ADD.assetLabel,
+    asset_code:         null,
+    observed_rate:      storedRate,
+    rate_unit:          storedUnit,
+    entered_value:      isTimedOnly ? parseFloat(elapsedSec.toFixed(2)) : count,
+    operator:           currentUser.name || username,
+    source_user:        username,
+    notes:              '',
+    source:             'pwa',
+    failure_mode_id:    'audit'
   };
 
   if (statusEl) statusEl.textContent = 'Saving…';
