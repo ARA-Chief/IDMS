@@ -1424,6 +1424,17 @@
         </div>
       </div>
 
+      <div class="er-form-row" style="margin-top:10px">
+        <label class="er-form-label">Department <span style="color:var(--danger)">*</span></label>
+        <select id="er-create-dept" class="er-form-input">
+          <option value="">— Select department —</option>
+          <option value="engine">Engine Room</option>
+          <option value="factory">Factory</option>
+          <option value="deck">Deck</option>
+          <option value="vessel">Vessel / General</option>
+        </select>
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
         <div class="er-form-row" style="margin-bottom:0">
           <label class="er-form-label">Role</label>
@@ -3568,16 +3579,21 @@ function openErTaskCreateModal() {
   ER_CREATE_ASSETS = [];
   var ids = ['er-create-title','er-create-role','er-create-assigned','er-create-skill-tags','er-create-desc','er-create-notes','er-create-eq-hours'];
   ids.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
-  var catEl = document.getElementById('er-create-category'); if (catEl) catEl.value = 'CHK';
-  var prioEl = document.getElementById('er-create-priority'); if (prioEl) prioEl.value = 'Normal';
-  var fmEl = document.getElementById('er-create-fm'); if (fmEl) fmEl.value = '';
-  var recEl = document.getElementById('er-create-recurring'); if (recEl) recEl.checked = false;
+  var catEl  = document.getElementById('er-create-category');  if (catEl)  catEl.value  = 'CHK';
+  var prioEl = document.getElementById('er-create-priority');  if (prioEl) prioEl.value = 'Normal';
+  var fmEl   = document.getElementById('er-create-fm');        if (fmEl)   fmEl.value   = '';
+  var recEl  = document.getElementById('er-create-recurring'); if (recEl)  recEl.checked = false;
   erCreateToggleRecurring(false);
-  var tagsEl = document.getElementById('er-create-equip-tags'); if (tagsEl) tagsEl.innerHTML = '';
-  var prevEl = document.getElementById('er-create-photo-preview'); if (prevEl) prevEl.innerHTML = '';
-  var filesEl = document.getElementById('er-create-photos'); if (filesEl) filesEl.value = '';
-  var errEl = document.getElementById('er-task-create-error'); if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-  var saveBtn = document.getElementById('er-task-create-save'); if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Create Task'; }
+  // Default department to current hub
+  var deptEl = document.getElementById('er-create-dept');
+  if (deptEl) deptEl.value = deptKeyForCurrentUser() || '';
+  var tagsEl  = document.getElementById('er-create-equip-tags');    if (tagsEl)  tagsEl.innerHTML  = '';
+  var prevEl  = document.getElementById('er-create-photo-preview'); if (prevEl)  prevEl.innerHTML  = '';
+  var filesEl = document.getElementById('er-create-photos');        if (filesEl) filesEl.value      = '';
+  var errEl   = document.getElementById('er-task-create-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  var saveBtn = document.getElementById('er-task-create-save');
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Create Task'; }
   var modal = document.getElementById('er-task-create-modal'); if (modal) modal.style.display = 'flex';
 }
 
@@ -3676,12 +3692,17 @@ async function submitErTaskCreate() {
   var errEl   = document.getElementById('er-task-create-error');
   var saveBtn = document.getElementById('er-task-create-save');
 
+  var dept = ((document.getElementById('er-create-dept') || {}).value || '').trim();
   if (!title) {
     if (errEl) { errEl.textContent = 'Task name is required.'; errEl.style.display = 'block'; }
     return;
   }
   if (ER_CREATE_ASSETS.length === 0) {
     if (errEl) { errEl.textContent = 'At least one equipment item is required.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (!dept) {
+    if (errEl) { errEl.textContent = 'Please select a department.'; errEl.style.display = 'block'; }
     return;
   }
   if (errEl) errEl.style.display = 'none';
@@ -3738,6 +3759,7 @@ async function submitErTaskCreate() {
     var task = {
       task_id:        taskId,
       title:          title,
+      department:     dept,
       equipment_ids:  JSON.stringify(ER_CREATE_ASSETS),
       category:       category,
       priority:       priority,
@@ -3770,7 +3792,7 @@ async function submitErTaskCreate() {
       timestamp:    now,
       date:         now.slice(0, 10),
       time_label:   now.slice(11, 16),
-      department:   'engine',
+      department:   dept,
       source:       'task_creation',
       category:     'Service Report',
       user:         currentUser.username || 'unknown',
