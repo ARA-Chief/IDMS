@@ -942,6 +942,283 @@
   <!-- ── ROUNDS ENTRY ── -->
   <div class="screen" id="screen-roundsentry"></div>
 
+  <!-- ── FACTORY HUB ── -->
+  <div class="screen" id="screen-factory-home">
+    <header class="topbar">
+      <div class="topbar-left" style="position:relative">
+        <div class="user-avatar" id="fa-home-avatar" onclick="toggleFaUserMenu()" style="cursor:pointer">FA</div>
+        <div class="user-info">
+          <span class="user-name" id="fa-home-username">—</span>
+          <span class="user-role" id="fa-home-role">Factory · F/V Araho</span>
+        </div>
+        <div id="fa-user-menu" style="display:none;position:absolute;top:44px;left:0;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-md);min-width:200px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Signed in as</div>
+            <div id="fa-user-menu-name" style="font-size:14px;font-weight:500;color:var(--text-secondary)">—</div>
+          </div>
+          <button id="fa-menu-btn-switch-dept" onclick="closeFaUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">Switch Department</button>
+          <button onclick="switchUser()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch User</button>
+          <button onclick="signOut()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--danger);cursor:pointer;border-top:1px solid var(--border)">Sign Out</button>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="sync-indicator synced" id="fa-sync-indicator">
+          <span class="sync-dot"></span>
+          <span class="sync-label">Synced</span>
+        </div>
+      </div>
+    </header>
+    <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Factory</div>
+    <div class="er-hub-grid">
+      <button class="er-hub-tile" onclick="openFactoryLogEvents()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M6 7h16M6 12h16M6 17h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="22" cy="19" r="4" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M20.5 19h3M22 17.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Log Events</div>
+        <div class="er-hub-tile-sub">Record downtime events</div>
+      </button>
+      <button class="er-hub-tile" onclick="openFactoryRoundsConfirm()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <rect x="5" y="3" width="18" height="22" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M9 9h10M9 13h10M9 17h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Rounds</div>
+        <div class="er-hub-tile-sub">Start rounds entry</div>
+      </button>
+      <button class="er-hub-tile" onclick="openFactoryOee()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="14" r="10" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M14 8v6l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">OEE Audit</div>
+        <div class="er-hub-tile-sub">Efficiency review</div>
+      </button>
+      <button class="er-hub-tile" onclick="openFactoryProfile()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="10" r="4" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M6 25c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Profile</div>
+        <div class="er-hub-tile-sub">Your crew record</div>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── FACTORY: LOG EVENTS — SECTION PICKER ── -->
+  <div class="screen" id="screen-factory-log-events">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-factory-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Log Events</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div style="padding:12px 14px 4px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Select Line Section</div>
+    <div style="display:flex;flex-direction:column;gap:8px;padding:8px 14px 14px">
+      <button class="category-item" style="font-size:16px;font-weight:600;padding:18px 16px" onclick="openFactoryLeAssets('plate_freezers')">Plate Freezers</button>
+      <button class="category-item" style="font-size:16px;font-weight:600;padding:18px 16px" onclick="openFactoryLeAssets('case_up')">Case-Up</button>
+      <button class="category-item" style="font-size:16px;font-weight:600;padding:18px 16px" onclick="openFactoryLeAssets('pan_breaking')">Pan Breaking</button>
+      <button class="category-item" style="font-size:16px;font-weight:600;padding:18px 16px" onclick="openFactoryLeAssets('other')">Other</button>
+    </div>
+  </div>
+
+  <!-- ── FACTORY: LOG EVENTS — ASSET LIST ── -->
+  <div class="screen" id="screen-factory-le-assets">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-factory-log-events')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 id="fa-le-assets-title">Assets</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div style="padding:12px 14px 4px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Select Asset</div>
+    <div class="equipment-list" id="fa-le-assets-list"></div>
+  </div>
+
+  <!-- ── FACTORY: LOG EVENTS — FAILURE MODE ── -->
+  <div class="screen" id="screen-factory-le-failmode">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-factory-le-assets')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Failure Mode</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="equip-context-bar">
+      <span class="equip-context-label">Asset:</span>
+      <span class="equip-context-value" id="fa-le-fm-asset-label">—</span>
+    </div>
+    <div style="padding:12px 14px 4px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Quick Select</div>
+    <div style="display:flex;flex-direction:column;gap:8px;padding:8px 14px 4px">
+      <button class="category-item" style="font-size:15px;font-weight:600;padding:16px" onclick="startFactoryTimer('PLU','Physical Issue')">Physical Issue <span style="font-size:12px;font-weight:400;opacity:0.7">(PLU)</span></button>
+      <button class="category-item" style="font-size:15px;font-weight:600;padding:16px" onclick="startFactoryTimer('AIR','Sensor')">Sensor <span style="font-size:12px;font-weight:400;opacity:0.7">(AIR)</span></button>
+      <button class="category-item" style="font-size:15px;font-weight:600;padding:16px" onclick="startFactoryTimer('PDE','Misapplied')">Misapplied <span style="font-size:12px;font-weight:400;opacity:0.7">(PDE)</span></button>
+      <button class="category-item" style="font-size:15px;font-weight:600;padding:16px" onclick="startFactoryTimer('OTH','Other Failure')">Other Failure <span style="font-size:12px;font-weight:400;opacity:0.7">(OTH)</span></button>
+    </div>
+    <div style="padding:4px 14px 14px">
+      <button onclick="showScreen('screen-factory-le-fulllist')" style="width:100%;background:transparent;border:1px solid var(--border);border-radius:var(--radius-md);padding:13px 16px;color:var(--text-secondary);font-size:13px;cursor:pointer;text-align:center">Full ISO 14224 List →</button>
+    </div>
+  </div>
+
+  <!-- ── FACTORY: LOG EVENTS — FULL ISO LIST ── -->
+  <div class="screen" id="screen-factory-le-fulllist">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-factory-le-failmode')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>ISO 14224 Failure Modes</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="equip-context-bar">
+      <span class="equip-context-label">Asset:</span>
+      <span class="equip-context-value" id="fa-le-fl-asset-label">—</span>
+    </div>
+    <div class="category-list" id="fa-le-fulllist-body">
+      <!-- OTH first, then rest — built inline for simplicity -->
+      <button class="category-item" onclick="startFactoryTimer('OTH','Other')">OTH — Other</button>
+      <button class="category-item" onclick="startFactoryTimer('AIR','Abnormal instrument reading')">AIR — Abnormal instrument reading</button>
+      <button class="category-item" onclick="startFactoryTimer('BRD','Breakdown')">BRD — Breakdown</button>
+      <button class="category-item" onclick="startFactoryTimer('CON','Contamination')">CON — Contamination</button>
+      <button class="category-item" onclick="startFactoryTimer('ELP','External leakage — process medium')">ELP — External leakage — process medium</button>
+      <button class="category-item" onclick="startFactoryTimer('ELU','External leakage — utility medium')">ELU — External leakage — utility medium</button>
+      <button class="category-item" onclick="startFactoryTimer('ERO','Erratic output')">ERO — Erratic output</button>
+      <button class="category-item" onclick="startFactoryTimer('FCO','Failure to close on demand')">FCO — Failure to close on demand</button>
+      <button class="category-item" onclick="startFactoryTimer('FOD','Failure on demand')">FOD — Failure on demand</button>
+      <button class="category-item" onclick="startFactoryTimer('FOF','Failure to open on demand')">FOF — Failure to open on demand</button>
+      <button class="category-item" onclick="startFactoryTimer('HIO','High output')">HIO — High output</button>
+      <button class="category-item" onclick="startFactoryTimer('INL','Internal leakage')">INL — Internal leakage</button>
+      <button class="category-item" onclick="startFactoryTimer('LCP','Loss of containment / process')">LCP — Loss of containment / process</button>
+      <button class="category-item" onclick="startFactoryTimer('LOO','Low output')">LOO — Low output</button>
+      <button class="category-item" onclick="startFactoryTimer('NOI','Noise')">NOI — Noise</button>
+      <button class="category-item" onclick="startFactoryTimer('OHE','Overheating')">OHE — Overheating</button>
+      <button class="category-item" onclick="startFactoryTimer('PDE','Parameter deviation')">PDE — Parameter deviation</button>
+      <button class="category-item" onclick="startFactoryTimer('PLU','Plugged / choked')">PLU — Plugged / choked</button>
+      <button class="category-item" onclick="startFactoryTimer('SER','Minor in-service problems')">SER — Minor in-service problems</button>
+      <button class="category-item" onclick="startFactoryTimer('STD','Structural deficiency')">STD — Structural deficiency</button>
+      <button class="category-item" onclick="startFactoryTimer('UST','Spurious stop')">UST — Spurious stop</button>
+      <button class="category-item" onclick="startFactoryTimer('VIB','Vibration')">VIB — Vibration</button>
+    </div>
+  </div>
+
+  <!-- ── FACTORY: OEE AUDIT — OBSERVATIONS LIST ── -->
+  <div class="screen" id="screen-factory-oee">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-factory-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>OEE Audit</h2>
+      <button class="icon-btn" onclick="openFactoryOeeAdd()" aria-label="Add observation" title="Add observation" style="font-size:20px;font-weight:400;line-height:1">+</button>
+    </div>
+    <!-- Date navigation bar (reuses existing log-date-bar style) -->
+    <div class="log-date-bar">
+      <button class="log-date-nav" onclick="navigateOeeDate(-1)">&lt;</button>
+      <span class="log-date-label" id="oee-date-label">Today</span>
+      <button class="log-date-nav" id="oee-date-nav-next" onclick="navigateOeeDate(1)">&gt;</button>
+    </div>
+    <!-- Filter row: section + source -->
+    <div style="display:flex;gap:8px;padding:8px 12px 4px;border-bottom:1px solid var(--border)">
+      <select id="oee-filt-section" onchange="renderOeeObsList()" style="flex:1;padding:7px 10px;font-size:13px;background:var(--bg-2);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm)">
+        <option value="">All sections</option>
+      </select>
+      <select id="oee-filt-source" onchange="renderOeeObsList()" style="flex:0 0 auto;padding:7px 10px;font-size:13px;background:var(--bg-2);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm)">
+        <option value="">All sources</option>
+        <option value="pwa">PWA</option>
+        <option value="manual">Manual</option>
+        <option value="oee">OEE</option>
+      </select>
+    </div>
+    <div id="oee-obs-list" style="flex:1;overflow-y:auto">
+      <div style="padding:32px;text-align:center;color:var(--text-muted);font-size:14px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── FACTORY: OEE AUDIT — ADD OBSERVATION ── -->
+  <div class="screen" id="screen-factory-oee-add">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-factory-oee')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Add Observation</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="resolve-card" style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- Section -->
+      <div>
+        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Section <span style="color:var(--danger)">*</span></label>
+        <select id="oee-add-section" style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+          <option value="">— Select section —</option>
+        </select>
+      </div>
+
+      <!-- Rate + Unit in one row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Observed Rate <span style="color:var(--danger)">*</span></label>
+          <input type="number" id="oee-add-rate" step="0.01" min="0" placeholder="e.g. 120"
+                 style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Rate Unit</label>
+          <select id="oee-add-unit" style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+            <option value="mt/day">MT/day</option>
+            <option value="pans/min">pans/min</option>
+            <option value="cases/hr">cases/hr</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Timestamp + Coefficient -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Timestamp <span style="color:var(--danger)">*</span></label>
+          <input type="datetime-local" id="oee-add-timestamp"
+                 style="width:100%;padding:12px 14px;font-size:14px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Coefficient</label>
+          <input type="number" id="oee-add-coeff" step="0.01" min="0" value="1"
+                 style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+        </div>
+      </div>
+
+      <!-- Wind + Sea state -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Wind speed (kt)</label>
+          <input type="number" id="oee-add-wind" step="0.5" min="0" placeholder="Optional"
+                 style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+        </div>
+        <div>
+          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Sea state (ft)</label>
+          <input type="number" id="oee-add-sea" step="0.5" min="0" placeholder="Optional"
+                 style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div>
+        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Notes</label>
+        <input type="text" id="oee-add-notes" maxlength="200" placeholder="Optional — max 200 chars"
+               style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+      </div>
+
+      <!-- Status + Actions -->
+      <div id="oee-add-status" style="text-align:center;font-size:13px;color:var(--text-secondary);min-height:18px"></div>
+      <button class="btn-primary btn-confirm" onclick="submitFactoryOeeObs()">Save Observation</button>
+    </div>
+  </div>
+
   <!-- ── ENGINE ROOM HUB ── -->
   <div class="screen" id="screen-engine-home">
     <header class="topbar">
@@ -1245,7 +1522,7 @@
   <!-- ── ENGINE ROOM: PROFILE ── -->
   <div class="screen" id="screen-engine-profile">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-engine-home')">
+      <button class="back-btn" onclick="showScreen(erProfileBackScreen || 'screen-engine-home')">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <h2>My Profile</h2>
@@ -1319,7 +1596,7 @@
       <p class="modal-body" id="modal-rounds-body">Rounds entry for the current period.</p>
       <div class="modal-actions">
         <button class="modal-btn modal-btn-secondary" onclick="closeRoundsConfirm()">Cancel</button>
-        <button class="modal-btn modal-btn-primary" onclick="confirmEngineRounds()">Begin</button>
+        <button class="modal-btn modal-btn-primary" onclick="confirmRoundsEntry()">Begin</button>
       </div>
     </div>
   </div>
@@ -1829,6 +2106,12 @@ function loadDeptConfig(dept) {
     });
 }
 
+function deptHomeScreen(dept) {
+  if (dept === 'Engine Room') return 'screen-engine-home';
+  if (dept === 'Factory')     return 'screen-factory-home';
+  return 'screen-home';
+}
+
 // ── ENTER DEPARTMENT ─────────────────────
 function enterDepartment(dept) {
   currentDepartment = dept;
@@ -1864,7 +2147,7 @@ function enterDepartment(dept) {
     startSyncTimer();   // begin 5-minute autosync
     // Persist full session so a page reload restores without re-login
     try { localStorage.setItem('fw_session', JSON.stringify({ user: currentUser, department: dept })); } catch(e) {}
-    showScreen(dept === 'Engine Room' ? 'screen-engine-home' : 'screen-home');
+    showScreen(deptHomeScreen(dept));
   }).catch(function(err) {
     console.warn('Dept config load failed (no cache available):', err);
     loadUserPresets();
@@ -1875,7 +2158,7 @@ function enterDepartment(dept) {
     updatePresetButtons();
     renderEventLog();
     updateSyncIndicator('offline');
-    showScreen(dept === 'Engine Room' ? 'screen-engine-home' : 'screen-home');
+    showScreen(deptHomeScreen(dept));
   });
 }
 
@@ -2095,6 +2378,18 @@ function updateUserDisplay() {
   if (erMenuName)   erMenuName.textContent   = currentUser.name + ' — ' + currentUser.role;
   if (erSwitchDept) erSwitchDept.style.display = (currentUser.departments && currentUser.departments.length > 1) ? 'block' : 'none';
 
+  // Factory hub topbar
+  var faAvatar      = document.getElementById('fa-home-avatar');
+  var faUsername    = document.getElementById('fa-home-username');
+  var faRole        = document.getElementById('fa-home-role');
+  var faMenuName    = document.getElementById('fa-user-menu-name');
+  var faSwitchDept  = document.getElementById('fa-menu-btn-switch-dept');
+  if (faAvatar)     faAvatar.textContent     = currentUser.initials;
+  if (faUsername)   faUsername.textContent   = currentUser.name;
+  if (faRole)       faRole.textContent       = currentUser.role + ' · F/V Araho';
+  if (faMenuName)   faMenuName.textContent   = currentUser.name + ' — ' + currentUser.role;
+  if (faSwitchDept) faSwitchDept.style.display = (currentUser.departments && currentUser.departments.length > 1) ? 'block' : 'none';
+
   // Swap initials for the real profile picture if one is on record
   var picPath = currentUser.profile_picture && currentUser.profile_picture.path;
   if (picPath && graphToken) {
@@ -2172,6 +2467,396 @@ document.addEventListener('click', function(e) {
   if (menu && !menu.contains(e.target) && e.target !== avatar) menu.style.display = 'none';
 });
 
+// ── FACTORY HUB: USER MENU ───────────────
+function toggleFaUserMenu() {
+  var menu = document.getElementById('fa-user-menu');
+  if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+function closeFaUserMenu() {
+  var menu = document.getElementById('fa-user-menu');
+  if (menu) menu.style.display = 'none';
+}
+document.addEventListener('click', function(e) {
+  var menu   = document.getElementById('fa-user-menu');
+  var avatar = document.getElementById('fa-home-avatar');
+  if (menu && !menu.contains(e.target) && e.target !== avatar) menu.style.display = 'none';
+});
+
+// ── FACTORY HUB: LOG EVENTS ──────────────
+// State for the current Log Events drill-down selection
+var FA_LE = {
+  sectionKey:   null,  // 'plate_freezers' | 'case_up' | 'pan_breaking' | 'other'
+  sectionLabel: null,  // display label for back-nav header
+  asset:        null   // { id, label } or { label } for Other items
+};
+
+// Section key → line_section label mapping
+var FA_SECTION_LABELS = {
+  plate_freezers: 'Plate Freezers',
+  case_up:        'Case-Up',
+  pan_breaking:   'Pan Breaking',
+  other:          'Other'
+};
+
+// Map section key to the label field in DEPT_CONFIG.production.line_sections
+var FA_SECTION_CONFIG_LABELS = {
+  plate_freezers: 'Plate Freezers',
+  case_up:        'Case-Up',
+  pan_breaking:   'Pan Breaking'
+};
+
+function openFactoryLogEvents() {
+  showScreen('screen-factory-log-events');
+}
+
+function openFactoryLeAssets(sectionKey) {
+  FA_LE.sectionKey   = sectionKey;
+  FA_LE.sectionLabel = FA_SECTION_LABELS[sectionKey] || sectionKey;
+  FA_LE.asset        = null;
+
+  var titleEl = document.getElementById('fa-le-assets-title');
+  var listEl  = document.getElementById('fa-le-assets-list');
+  if (titleEl) titleEl.textContent = FA_LE.sectionLabel;
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  var items = [];
+
+  if (sectionKey === 'other') {
+    // "Other" draws from the full equipment group list in DEPT_CONFIG
+    var groups = (DEPT_CONFIG && DEPT_CONFIG.equipment) ? DEPT_CONFIG.equipment : [];
+    groups.forEach(function(g) {
+      (g.items || []).forEach(function(name) {
+        items.push({ label: name });
+      });
+    });
+  } else {
+    // Line sections — find by label
+    var configLabel = FA_SECTION_CONFIG_LABELS[sectionKey];
+    var sections = (DEPT_CONFIG && DEPT_CONFIG.production && DEPT_CONFIG.production.line_sections) || [];
+    var section = sections.find(function(s) { return s.label === configLabel; });
+    if (section && Array.isArray(section.sub_assets) && section.sub_assets.length) {
+      items = section.sub_assets.map(function(sa) {
+        return { id: sa.id, label: sa.label, asset_code: sa.asset_code };
+      });
+    }
+  }
+
+  if (!items.length) {
+    listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:14px">No assets configured for this section yet.</div>';
+    showScreen('screen-factory-le-assets');
+    return;
+  }
+
+  items.forEach(function(asset) {
+    var btn = document.createElement('button');
+    btn.className = 'equipment-item';
+    btn.textContent = asset.label;
+    btn.onclick = function() { openFactoryLeFailmode(asset); };
+    listEl.appendChild(btn);
+  });
+
+  showScreen('screen-factory-le-assets');
+}
+
+function openFactoryLeFailmode(asset) {
+  FA_LE.asset = asset;
+  var label = asset.label || asset;
+  var fmLabel  = document.getElementById('fa-le-fm-asset-label');
+  var flLabel  = document.getElementById('fa-le-fl-asset-label');
+  if (fmLabel) fmLabel.textContent = label;
+  if (flLabel) flLabel.textContent = label;
+  showScreen('screen-factory-le-failmode');
+}
+
+// ── FACTORY HUB: ROUNDS ──────────────────
+function openFactoryRoundsConfirm() {
+  var bodyEl = document.getElementById('modal-rounds-body');
+  if (bodyEl) {
+    var roundText = (typeof RE !== 'undefined' && RE && RE.roundNum)
+      ? 'Round ' + RE.roundNum + (RE.scheduledTime ? ' · ' + RE.scheduledTime + ' scheduled' : '')
+      : 'Rounds entry for the current period.';
+    bodyEl.textContent = roundText;
+  }
+  document.getElementById('modal-rounds-confirm').style.display = 'flex';
+}
+function confirmFactoryRounds() {
+  closeRoundsConfirm();
+  showScreen('screen-roundsentry');
+  initRoundsEntry('screen-factory-home');
+}
+
+// ── FACTORY HUB: OEE AUDIT ───────────────
+// State for the observations list
+var OEE = {
+  dateStr:  null,   // currently displayed date  YYYY-MM-DD
+  allObs:   [],     // raw observations loaded from OneDrive for this date
+  loading:  false
+};
+
+// Helper: local date string YYYY-MM-DD
+function oeeLocalDate(offset) {
+  var d = new Date();
+  d.setDate(d.getDate() + (offset || 0));
+  return d.getFullYear() + '-' + padTwo(d.getMonth() + 1) + '-' + padTwo(d.getDate());
+}
+
+// Helper: local datetime-local string for <input type="datetime-local">
+function oeeLocalNowInput() {
+  var d = new Date();
+  return d.getFullYear() + '-' + padTwo(d.getMonth() + 1) + '-' + padTwo(d.getDate())
+       + 'T' + padTwo(d.getHours()) + ':' + padTwo(d.getMinutes());
+}
+
+// Helper: build Graph URL for a OneDrive path
+function oeeGraphUrl(path) {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/'
+       + encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+}
+function oeeGraphChildrenUrl(path) {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/'
+       + encodeURIComponent(path).replace(/%2F/g, '/') + ':/children?$select=id,name';
+}
+
+// Helper: simple source badge HTML
+function oeeBadge(src) {
+  if (src === 'pwa')    return '<span style="background:#f97316;color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-right:4px">PWA</span>';
+  if (src === 'oee')    return '<span style="background:#3b82f6;color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-right:4px">OEE</span>';
+  if (src === 'manual') return '<span style="background:#6b7280;color:#fff;font-size:10px;padding:1px 5px;border-radius:3px;margin-right:4px">Manual</span>';
+  return '';
+}
+
+function openFactoryOee() {
+  OEE.dateStr = oeeLocalDate(0);
+  showScreen('screen-factory-oee');
+  oeeUpdateDateBar();
+  oeePopulateSectionFilter();
+  loadFactoryOeeObs(OEE.dateStr);
+}
+
+function navigateOeeDate(delta) {
+  var d = new Date(OEE.dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  OEE.dateStr = d.getFullYear() + '-' + padTwo(d.getMonth() + 1) + '-' + padTwo(d.getDate());
+  oeeUpdateDateBar();
+  loadFactoryOeeObs(OEE.dateStr);
+}
+
+function oeeUpdateDateBar() {
+  var today = oeeLocalDate(0);
+  var label = document.getElementById('oee-date-label');
+  var nextBtn = document.getElementById('oee-date-nav-next');
+  if (label) label.textContent = (OEE.dateStr === today) ? 'Today' : OEE.dateStr;
+  if (nextBtn) nextBtn.disabled = (OEE.dateStr >= today);
+}
+
+function oeePopulateSectionFilter() {
+  var sel = document.getElementById('oee-filt-section');
+  if (!sel) return;
+  var sections = (DEPT_CONFIG && DEPT_CONFIG.production && DEPT_CONFIG.production.line_sections) || [];
+  sel.innerHTML = '<option value="">All sections</option>';
+  sections.forEach(function(s) {
+    if (s.enabled === false) return;
+    var o = document.createElement('option');
+    o.value = s.section_id;
+    o.textContent = s.label;
+    sel.appendChild(o);
+  });
+}
+
+async function loadFactoryOeeObs(dateStr) {
+  if (OEE.loading) return;
+  OEE.loading = true;
+  var listEl = document.getElementById('oee-obs-list');
+  if (listEl) listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:14px">Loading…</div>';
+
+  try {
+    await obsRefreshToken();  // uses the existing token-refresh helper
+    // List all files in the factory/logs folder
+    var folderPath = ONEDRIVE_BASE + '/data/factory/logs';
+    var childrenUrl = oeeGraphChildrenUrl(folderPath);
+    var resp = await fetch(childrenUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
+    var allFiles = (resp.ok ? (await resp.json()).value : []) || [];
+
+    // Filter to files matching report-{dateStr}-*.json
+    var pattern = 'report-' + dateStr + '-';
+    var matchingFiles = allFiles.filter(function(f) {
+      return f.name && f.name.startsWith(pattern) && f.name.endsWith('.json');
+    });
+
+    // Fetch each file and collect observations
+    var merged = [];
+    await Promise.all(matchingFiles.map(async function(f) {
+      try {
+        var fileUrl = oeeGraphUrl(folderPath + '/' + f.name);
+        var r = await fetch(fileUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
+        if (!r.ok) return;
+        var data = await r.json();
+        var obs = Array.isArray(data.observations) ? data.observations : [];
+        // Tag each observation with the username from the filename
+        var parts = f.name.replace('.json', '').split('-');
+        var sourceUser = parts.slice(4).join('-') || '';  // report-YYYY-MM-DD-{username}
+        obs.forEach(function(o) {
+          if (!o.source_user) o.source_user = sourceUser;
+          merged.push(o);
+        });
+      } catch (_) {}
+    }));
+
+    // Sort by timestamp ascending
+    merged.sort(function(a, b) { return (a.obs_timestamp || '') < (b.obs_timestamp || '') ? -1 : 1; });
+    OEE.allObs = merged;
+    renderOeeObsList();
+
+  } catch (err) {
+    OEE.allObs = [];
+    if (listEl) listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--danger);font-size:14px">Failed to load observations.<br><small style="color:var(--text-muted)">' + escapeHtml(err.message) + '</small></div>';
+  } finally {
+    OEE.loading = false;
+  }
+}
+
+function renderOeeObsList() {
+  var listEl = document.getElementById('oee-obs-list');
+  if (!listEl) return;
+
+  var filtSection = (document.getElementById('oee-filt-section') || {}).value || '';
+  var filtSource  = (document.getElementById('oee-filt-source')  || {}).value || '';
+
+  var obs = OEE.allObs.slice();
+  if (filtSection) obs = obs.filter(function(o) { return o.section_id === filtSection; });
+  if (filtSource)  obs = obs.filter(function(o) { return o.source     === filtSource;  });
+
+  if (!obs.length) {
+    listEl.innerHTML = '<div style="padding:48px;text-align:center;color:var(--text-muted);font-size:14px">No observations for this date.</div>';
+    return;
+  }
+
+  var html = obs.map(function(o) {
+    // Time portion from obs_timestamp (local-naive ISO)
+    var timePart = o.obs_timestamp ? o.obs_timestamp.slice(11, 16) : '—';
+    var rateStr  = (o.observed_rate != null) ? (o.observed_rate + ' ' + (o.rate_unit || '')) : '—';
+    var coeffStr = (o.coefficient != null && o.coefficient !== 1) ? ' · coeff ' + o.coefficient : '';
+    var envStr   = [];
+    if (o.wind_speed_kt != null) envStr.push(o.wind_speed_kt + ' kt');
+    if (o.sea_state_ft  != null) envStr.push(o.sea_state_ft  + ' ft');
+    var envHtml  = envStr.length ? '<span style="font-size:11px;color:var(--text-muted)"> · ' + envStr.join(', ') + '</span>' : '';
+    var notesHtml = o.notes ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">' + escapeHtml(o.notes) + '</div>' : '';
+    var userHtml  = o.source_user ? '<span style="font-size:11px;color:var(--text-muted)"> · ' + escapeHtml(o.source_user) + '</span>' : '';
+
+    return '<div style="padding:12px 14px;border-bottom:1px solid var(--border)">'
+         + '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'
+         + '<span style="font-size:13px;font-weight:600;color:var(--text-primary);min-width:42px">' + escapeHtml(timePart) + '</span>'
+         + oeeBadge(o.source || 'pwa')
+         + '<span style="font-size:13px;color:var(--text-secondary)">' + escapeHtml(o.section_label || '—') + '</span>'
+         + '<span style="font-size:14px;font-weight:600;color:var(--text-primary);margin-left:auto">' + escapeHtml(rateStr) + '</span>'
+         + '</div>'
+         + '<div style="font-size:12px;color:var(--text-muted);margin-top:3px">' + escapeHtml(coeffStr.replace(' · ', '')) + envHtml + userHtml + '</div>'
+         + notesHtml
+         + '</div>';
+  }).join('');
+
+  listEl.innerHTML = html;
+}
+
+// ── FACTORY: ADD OBSERVATION ──────────────
+function openFactoryOeeAdd() {
+  // Populate section dropdown
+  var sel = document.getElementById('oee-add-section');
+  if (sel) {
+    var sections = (DEPT_CONFIG && DEPT_CONFIG.production && DEPT_CONFIG.production.line_sections) || [];
+    sel.innerHTML = '<option value="">— Select section —</option>';
+    sections.forEach(function(s) {
+      if (s.enabled === false) return;
+      var o = document.createElement('option');
+      o.value = s.section_id;
+      o.dataset.label = s.label;
+      o.textContent = s.label;
+      sel.appendChild(o);
+    });
+  }
+  // Reset fields
+  var tsEl = document.getElementById('oee-add-timestamp');
+  if (tsEl) tsEl.value = oeeLocalNowInput();
+  var coeffEl = document.getElementById('oee-add-coeff');
+  if (coeffEl) coeffEl.value = '1';
+  ['oee-add-rate','oee-add-wind','oee-add-sea','oee-add-notes'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  var statusEl = document.getElementById('oee-add-status');
+  if (statusEl) statusEl.textContent = '';
+  showScreen('screen-factory-oee-add');
+}
+
+async function submitFactoryOeeObs() {
+  var statusEl = document.getElementById('oee-add-status');
+  var sel      = document.getElementById('oee-add-section');
+  var sectionId    = sel ? sel.value : '';
+  var sectionLabel = (sel && sel.options[sel.selectedIndex]) ? (sel.options[sel.selectedIndex].dataset.label || sectionId) : sectionId;
+  if (!sectionId) { if (statusEl) statusEl.textContent = 'Please select a section.'; return; }
+
+  var rateRaw = document.getElementById('oee-add-rate').value;
+  var rate    = rateRaw === '' ? null : parseFloat(rateRaw);
+  if (rate === null || isNaN(rate)) { if (statusEl) statusEl.textContent = 'Please enter an observed rate.'; return; }
+
+  var tsRaw = document.getElementById('oee-add-timestamp').value;
+  if (!tsRaw) { if (statusEl) statusEl.textContent = 'Please set a timestamp.'; return; }
+
+  var unit    = document.getElementById('oee-add-unit').value  || 'mt/day';
+  var coeff   = parseFloat(document.getElementById('oee-add-coeff').value) || 1;
+  var wind    = document.getElementById('oee-add-wind').value;
+  var sea     = document.getElementById('oee-add-sea').value;
+  var notes   = document.getElementById('oee-add-notes').value.trim();
+  var dateStr = tsRaw.slice(0, 10);  // YYYY-MM-DD from datetime-local value
+  var username = currentUser.username || 'unknown';
+
+  var observation = {
+    obs_id:        obsUUID(),
+    obs_timestamp: tsRaw.length === 16 ? tsRaw + ':00' : tsRaw,
+    obs_date:      dateStr,
+    section_id:    sectionId,
+    section_label: sectionLabel,
+    asset_code:    null,
+    observed_rate: rate,
+    rate_unit:     unit,
+    coefficient:   coeff,
+    operator:      currentUser.name || username,
+    source_user:   username,
+    wind_speed_kt: wind === '' ? null : parseFloat(wind),
+    sea_state_ft:  sea  === '' ? null : parseFloat(sea),
+    notes:         notes,
+    source:        'pwa',
+    oee_session_id: null,
+    failure_mode_id: null
+  };
+
+  if (statusEl) statusEl.textContent = 'Saving…';
+
+  try {
+    await pushObservationToOneDrive(username, dateStr, observation);
+    await flushObservationQueue(username);
+    if (statusEl) statusEl.textContent = 'Saved.';
+    // Refresh the list date to match what was just submitted, then go back
+    OEE.dateStr = dateStr;
+    setTimeout(function() {
+      oeeUpdateDateBar();
+      loadFactoryOeeObs(dateStr);
+      showScreen('screen-factory-oee');
+    }, 600);
+  } catch (err) {
+    queueObservation(username, dateStr, observation);
+    if (statusEl) statusEl.textContent = 'Saved offline — will sync when reconnected.';
+    // Still go back and show the date — locally we can't display it until synced
+    setTimeout(function() { showScreen('screen-factory-oee'); }, 1100);
+  }
+}
+
+// ── FACTORY HUB: PROFILE ─────────────────
+function openFactoryProfile() {
+  openEngineProfile('screen-factory-home');
+}
+
 // ── ENGINE ROOM: ROUNDS ──────────────────
 function openEngineRoundsConfirm() {
   var bodyEl = document.getElementById('modal-rounds-body');
@@ -2186,6 +2871,9 @@ function openEngineRoundsConfirm() {
 }
 function closeRoundsConfirm() {
   document.getElementById('modal-rounds-confirm').style.display = 'none';
+}
+function confirmRoundsEntry() {
+  if (currentDepartment === 'Factory') { confirmFactoryRounds(); } else { confirmEngineRounds(); }
 }
 function confirmEngineRounds() {
   closeRoundsConfirm();
@@ -3191,8 +3879,10 @@ var ER_PROFILE_STATE = {
   certTypes:      [],    // from trainingmatrix.json
   pendingPicFile: null   // staged profile pic blob, uploaded on save
 };
+var erProfileBackScreen = 'screen-engine-home';
 
-function openEngineProfile() {
+function openEngineProfile(backScreen) {
+  erProfileBackScreen = backScreen || 'screen-engine-home';
   showScreen('screen-engine-profile');
   var loadEl    = document.getElementById('er-profile-loading');
   var contentEl = document.getElementById('er-profile-content');
@@ -3868,11 +4558,32 @@ function findIncident(id) {
   return activeIncidents.find(function(i) { return i.id === id; });
 }
 
+// ── START TIMER — FACTORY LOG EVENTS PATH ─
+// Called from the asset → failure-mode drill-down.
+// Stores iso_failure_code and asset_id on the incident for Events log display.
+function startFactoryTimer(isoCode, isoLabel) {
+  var asset    = FA_LE.asset;
+  var equip    = asset ? (asset.label || asset) : 'Unknown';
+  var category = isoLabel + ' (' + isoCode + ')';
+  var extras   = {
+    iso_failure_code: isoCode,
+    asset_id:         asset && asset.id ? asset.id : null
+  };
+
+  if (activeIncidents.length > 0) {
+    pendingConcurrent = { equipment: equip, category: category, extras: extras };
+    showConcurrentModal();
+    return;
+  }
+  startTimer(equip, category, extras);
+}
+
 // ── START TIMER — CORE ───────────────────
 // Both paths above lead here.
 // Creates an incident object and adds it
 // to the activeIncidents array.
-function startTimer(equipment, category) {
+// Optional extras object merges additional fields (e.g. iso_failure_code, asset_id).
+function startTimer(equipment, category, extras) {
   var now      = new Date();
   var incident = {
     id:           Date.now(),      // unique number based on current timestamp
@@ -3883,6 +4594,9 @@ function startTimer(equipment, category) {
     warningShown: false,
     notes:        ''
   };
+  if (extras) {
+    Object.keys(extras).forEach(function(k) { incident[k] = extras[k]; });
+  }
   activeIncidents.push(incident);
   saveState();            // persist to localStorage
   openTimerScreen(incident.id);
@@ -4524,7 +5238,7 @@ function dismissConcurrent() {
 }
 function confirmConcurrent() {
   document.getElementById('modal-concurrent').style.display = 'none';
-  if (pendingConcurrent) { startTimer(pendingConcurrent.equipment, pendingConcurrent.category); pendingConcurrent = null; }
+  if (pendingConcurrent) { startTimer(pendingConcurrent.equipment, pendingConcurrent.category, pendingConcurrent.extras || null); pendingConcurrent = null; }
 }
 
 
