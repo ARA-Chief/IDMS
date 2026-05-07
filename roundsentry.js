@@ -271,6 +271,16 @@ async function initRoundsEntry(sourceScreen) {
 
   RE.flatItems = reFilterItems(cfg, RE.roundNum, reLocalDow());
   RE.navItems  = RE.flatItems.filter(r => r.item.type !== 'heading');
+
+  if (!RE.navItems.length) {
+    const dept   = (typeof currentDepartment !== 'undefined' && currentDepartment) || 'this department';
+    const target = RE.sourceScreen || 'screen-home';
+    el.innerHTML = '';
+    alert('No rounds are configured for ' + dept + ' at this time.');
+    if (typeof showScreen === 'function') showScreen(target);
+    return;
+  }
+
   RE.cursorIdx = 0;
   RE.values    = {};
   RE.secd      = {};
