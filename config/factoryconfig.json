@@ -78,7 +78,13 @@
         "type":                    "plate_freezer",
         "equipment_group_code":    null,
         "equipment_subgroup_code": null,
-        "sub_assets":              [],
+        "sub_assets": [
+          { "id": "pf-001", "label": "Plate Freezer #1", "asset_code": "PF01" },
+          { "id": "pf-002", "label": "Plate Freezer #2", "asset_code": "PF02" },
+          { "id": "pf-003", "label": "Plate Freezer #3", "asset_code": "PF03" },
+          { "id": "pf-004", "label": "Plate Freezer #4", "asset_code": "PF04" },
+          { "id": "pf-005", "label": "Plate Freezer #5", "asset_code": "PF05" }
+        ],
         "enabled":                 true,
         "theoretical_mt_per_day":  null
       },
@@ -100,7 +106,10 @@
         "type":                    "throughput",
         "equipment_group_code":    null,
         "equipment_subgroup_code": null,
-        "sub_assets":              [],
+        "sub_assets": [
+          { "id": "pb-001", "label": "Ejector #1", "asset_code": "EJ01" },
+          { "id": "pb-002", "label": "Ejector #2", "asset_code": "EJ02" }
+        ],
         "enabled":                 true,
         "theoretical_mt_per_day":  null
       },
@@ -110,7 +119,13 @@
         "type":                    "throughput",
         "equipment_group_code":    null,
         "equipment_subgroup_code": null,
-        "sub_assets":              [],
+        "sub_assets": [
+          { "id": "cu-001", "label": "Bagger",   "asset_code": "BAG" },
+          { "id": "cu-002", "label": "Welder",   "asset_code": "WLD" },
+          { "id": "cu-003", "label": "Labeler",  "asset_code": "LBL" },
+          { "id": "cu-004", "label": "Scale",    "asset_code": "SCL" },
+          { "id": "cu-005", "label": "Elevator", "asset_code": "ELV" }
+        ],
         "enabled":                 true,
         "theoretical_mt_per_day":  null
       },

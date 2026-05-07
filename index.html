@@ -217,6 +217,11 @@
     #group-item-list { flex: 1; display: flex; flex-direction: column; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); gap: 6px; overflow: hidden; }
     #group-item-list .equip-item { flex: 1; margin-bottom: 0; }
 
+    /* Section picker — stretch 4 buttons to fill screen */
+    #screen-factory-log-events { overflow: hidden; }
+    #fa-le-section-btns { flex: 1; display: flex; flex-direction: column; padding: 8px 14px; padding-bottom: calc(14px + env(safe-area-inset-bottom)); gap: 8px; overflow: hidden; }
+    #fa-le-section-btns .category-item { flex: 1; margin-bottom: 0; display: flex; align-items: center; font-size: 16px; font-weight: 600; }
+
     /* ── CATEGORY ── */
     .equip-context-bar { padding: 10px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border); display: flex; gap: 8px; font-size: 13px; flex-shrink: 0; }
     .equip-context-label { color: var(--text-secondary); }
@@ -1023,12 +1028,11 @@
       <h2>Log Events</h2>
       <div style="width:36px"></div>
     </div>
-    <div style="padding:12px 14px 4px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Select Line Section</div>
-    <div style="display:flex;flex-direction:column;gap:8px;padding:8px 14px 14px">
-      <button class="category-item" style="font-size:16px;font-weight:600;padding:18px 16px" onclick="openFactoryLeAssets('plate_freezers')">Plate Freezers</button>
-      <button class="category-item" style="font-size:16px;font-weight:600;padding:18px 16px" onclick="openFactoryLeAssets('case_up')">Case-Up</button>
-      <button class="category-item" style="font-size:16px;font-weight:600;padding:18px 16px" onclick="openFactoryLeAssets('pan_breaking')">Pan Breaking</button>
-      <button class="category-item" style="font-size:16px;font-weight:600;padding:18px 16px" onclick="openFactoryLeAssets('other')">Other</button>
+    <div id="fa-le-section-btns">
+      <button class="category-item" onclick="openFactoryLeAssets('plate_freezers')">Plate Freezers</button>
+      <button class="category-item" onclick="openFactoryLeAssets('case_up')">Case-Up</button>
+      <button class="category-item" onclick="openFactoryLeAssets('pan_breaking')">Pan Breaking</button>
+      <button class="category-item" onclick="openFactoryLeAssets('other')">Other</button>
     </div>
   </div>
 
@@ -2534,15 +2538,46 @@ function openFactoryLeAssets(sectionKey) {
   var items = [];
 
   if (sectionKey === 'other') {
-    // "Other" draws from the full equipment group list in DEPT_CONFIG
-    var groups = (DEPT_CONFIG && DEPT_CONFIG.equipment) ? DEPT_CONFIG.equipment : [];
-    groups.forEach(function(g) {
-      (g.items || []).forEach(function(name) {
-        items.push({ label: name });
-      });
+    // "Other" shows all line sections with their sub-assets, grouped by section.
+    // Sections without sub-assets appear as a single selectable item.
+    var sections = (DEPT_CONFIG && DEPT_CONFIG.production && DEPT_CONFIG.production.line_sections) || [];
+    sections.forEach(function(section) {
+      if (!section.enabled) return;
+      var groupEl = document.createElement('div');
+      groupEl.className = 'equip-group';
+      var labelEl = document.createElement('div');
+      labelEl.className = 'equip-group-label';
+      labelEl.textContent = section.label;
+      groupEl.appendChild(labelEl);
+
+      var subAssets = section.sub_assets || [];
+      if (subAssets.length) {
+        subAssets.forEach(function(sa) {
+          var btn = document.createElement('button');
+          btn.className = 'equip-item';
+          btn.innerHTML = '<span class="equip-name">' + sa.label + '</span>' +
+            '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
+            '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+          btn.onclick = (function(a) { return function() { openFactoryLeFailmode(a); }; })(sa);
+          groupEl.appendChild(btn);
+        });
+      } else {
+        var btn = document.createElement('button');
+        btn.className = 'equip-item';
+        var sectionAsset = { id: section.section_id, label: section.label };
+        btn.innerHTML = '<span class="equip-name">' + section.label + '</span>' +
+          '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
+          '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+        btn.onclick = (function(a) { return function() { openFactoryLeFailmode(a); }; })(sectionAsset);
+        groupEl.appendChild(btn);
+      }
+
+      listEl.appendChild(groupEl);
     });
+    showScreen('screen-factory-le-assets');
+    return;
   } else {
-    // Line sections — find by label
+    // Named sections — find by label and load sub-assets
     var configLabel = FA_SECTION_CONFIG_LABELS[sectionKey];
     var sections = (DEPT_CONFIG && DEPT_CONFIG.production && DEPT_CONFIG.production.line_sections) || [];
     var section = sections.find(function(s) { return s.label === configLabel; });
@@ -2561,9 +2596,11 @@ function openFactoryLeAssets(sectionKey) {
 
   items.forEach(function(asset) {
     var btn = document.createElement('button');
-    btn.className = 'equipment-item';
-    btn.textContent = asset.label;
-    btn.onclick = function() { openFactoryLeFailmode(asset); };
+    btn.className = 'equip-item';
+    btn.innerHTML = '<span class="equip-name">' + asset.label + '</span>' +
+      '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
+      '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+    btn.onclick = (function(a) { return function() { openFactoryLeFailmode(a); }; })(asset);
     listEl.appendChild(btn);
   });
 
