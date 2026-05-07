@@ -217,10 +217,15 @@
     #group-item-list { flex: 1; display: flex; flex-direction: column; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); gap: 6px; overflow: hidden; }
     #group-item-list .equip-item { flex: 1; margin-bottom: 0; }
 
-    /* Section picker — stretch 4 buttons to fill screen */
-    #screen-factory-log-events { overflow: hidden; }
-    #fa-le-section-btns { flex: 1; display: flex; flex-direction: column; padding: 8px 14px; padding-bottom: calc(14px + env(safe-area-inset-bottom)); gap: 8px; overflow: hidden; }
-    #fa-le-section-btns .category-item { flex: 1; margin-bottom: 0; display: flex; align-items: center; font-size: 16px; font-weight: 600; }
+    /* Factory Log Events — fill-screen button layout */
+    #screen-factory-log-events, #screen-factory-le-assets { overflow: hidden; }
+    .fa-fill-grid { flex: 1; display: flex; flex-direction: column; padding: 10px 14px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); gap: 8px; overflow: hidden; }
+    .fa-fill-btn { flex: 1; width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; color: var(--text-primary); cursor: pointer; }
+    .fa-fill-btn:active { border-color: var(--accent); background: var(--accent-glow); }
+    #fa-le-assets-list { flex: 1; overflow: hidden; padding: 0; }
+    .fa-asset-scroll { height: 100%; overflow-y: auto; padding: 8px 14px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); box-sizing: border-box; }
+    .fa-asset-scroll .fa-fill-btn { flex: none; min-height: 60px; margin-bottom: 8px; }
+    .fa-asset-scroll .equip-group { margin-bottom: 4px; }
 
     /* ── CATEGORY ── */
     .equip-context-bar { padding: 10px 16px; background: var(--bg-2); border-bottom: 1px solid var(--border); display: flex; gap: 8px; font-size: 13px; flex-shrink: 0; }
@@ -1028,11 +1033,11 @@
       <h2>Log Events</h2>
       <div style="width:36px"></div>
     </div>
-    <div id="fa-le-section-btns">
-      <button class="category-item" onclick="openFactoryLeAssets('plate_freezers')">Plate Freezers</button>
-      <button class="category-item" onclick="openFactoryLeAssets('case_up')">Case-Up</button>
-      <button class="category-item" onclick="openFactoryLeAssets('pan_breaking')">Pan Breaking</button>
-      <button class="category-item" onclick="openFactoryLeAssets('other')">Other</button>
+    <div class="fa-fill-grid" id="fa-le-section-btns">
+      <button class="fa-fill-btn" onclick="openFactoryLeAssets('plate_freezers')">Plate Freezers</button>
+      <button class="fa-fill-btn" onclick="openFactoryLeAssets('case_up')">Case-Up</button>
+      <button class="fa-fill-btn" onclick="openFactoryLeAssets('pan_breaking')">Pan Breaking</button>
+      <button class="fa-fill-btn" onclick="openFactoryLeAssets('other')">Other</button>
     </div>
   </div>
 
@@ -1045,8 +1050,7 @@
       <h2 id="fa-le-assets-title">Assets</h2>
       <div style="width:36px"></div>
     </div>
-    <div style="padding:12px 14px 4px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Select Asset</div>
-    <div class="equipment-list" id="fa-le-assets-list"></div>
+    <div id="fa-le-assets-list"></div>
   </div>
 
   <!-- ── FACTORY: LOG EVENTS — FAILURE MODE ── -->
@@ -2538,9 +2542,11 @@ function openFactoryLeAssets(sectionKey) {
   var items = [];
 
   if (sectionKey === 'other') {
-    // "Other" shows all line sections with their sub-assets, grouped by section.
-    // Sections without sub-assets appear as a single selectable item.
+    // "Other" — scrollable grouped list of all line sections + their sub-assets.
     var sections = (DEPT_CONFIG && DEPT_CONFIG.production && DEPT_CONFIG.production.line_sections) || [];
+    var scroll = document.createElement('div');
+    scroll.className = 'fa-asset-scroll';
+
     sections.forEach(function(section) {
       if (!section.enabled) return;
       var groupEl = document.createElement('div');
@@ -2551,41 +2557,34 @@ function openFactoryLeAssets(sectionKey) {
       groupEl.appendChild(labelEl);
 
       var subAssets = section.sub_assets || [];
-      if (subAssets.length) {
-        subAssets.forEach(function(sa) {
-          var btn = document.createElement('button');
-          btn.className = 'equip-item';
-          btn.innerHTML = '<span class="equip-name">' + sa.label + '</span>' +
-            '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
-            '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-          btn.onclick = (function(a) { return function() { openFactoryLeFailmode(a); }; })(sa);
-          groupEl.appendChild(btn);
-        });
-      } else {
-        var btn = document.createElement('button');
-        btn.className = 'equip-item';
-        var sectionAsset = { id: section.section_id, label: section.label };
-        btn.innerHTML = '<span class="equip-name">' + section.label + '</span>' +
-          '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
-          '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-        btn.onclick = (function(a) { return function() { openFactoryLeFailmode(a); }; })(sectionAsset);
-        groupEl.appendChild(btn);
-      }
+      var assetList = subAssets.length
+        ? subAssets.map(function(sa) { return { id: sa.id, label: sa.label, asset_code: sa.asset_code }; })
+        : [{ id: section.section_id, label: section.label }];
 
-      listEl.appendChild(groupEl);
+      assetList.forEach(function(a) {
+        var btn = document.createElement('button');
+        btn.className = 'fa-fill-btn';
+        btn.textContent = a.label;
+        btn.onclick = (function(asset) { return function() { openFactoryLeFailmode(asset); }; })(a);
+        groupEl.appendChild(btn);
+      });
+
+      scroll.appendChild(groupEl);
     });
+
+    listEl.appendChild(scroll);
     showScreen('screen-factory-le-assets');
     return;
-  } else {
-    // Named sections — find by label and load sub-assets
-    var configLabel = FA_SECTION_CONFIG_LABELS[sectionKey];
-    var sections = (DEPT_CONFIG && DEPT_CONFIG.production && DEPT_CONFIG.production.line_sections) || [];
-    var section = sections.find(function(s) { return s.label === configLabel; });
-    if (section && Array.isArray(section.sub_assets) && section.sub_assets.length) {
-      items = section.sub_assets.map(function(sa) {
-        return { id: sa.id, label: sa.label, asset_code: sa.asset_code };
-      });
-    }
+  }
+
+  // Named section — fill-height buttons
+  var configLabel = FA_SECTION_CONFIG_LABELS[sectionKey];
+  var allSections = (DEPT_CONFIG && DEPT_CONFIG.production && DEPT_CONFIG.production.line_sections) || [];
+  var section = allSections.find(function(s) { return s.label === configLabel; });
+  if (section && Array.isArray(section.sub_assets) && section.sub_assets.length) {
+    items = section.sub_assets.map(function(sa) {
+      return { id: sa.id, label: sa.label, asset_code: sa.asset_code };
+    });
   }
 
   if (!items.length) {
@@ -2594,15 +2593,16 @@ function openFactoryLeAssets(sectionKey) {
     return;
   }
 
+  var grid = document.createElement('div');
+  grid.className = 'fa-fill-grid';
   items.forEach(function(asset) {
     var btn = document.createElement('button');
-    btn.className = 'equip-item';
-    btn.innerHTML = '<span class="equip-name">' + asset.label + '</span>' +
-      '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
-      '<path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+    btn.className = 'fa-fill-btn';
+    btn.textContent = asset.label;
     btn.onclick = (function(a) { return function() { openFactoryLeFailmode(a); }; })(asset);
-    listEl.appendChild(btn);
+    grid.appendChild(btn);
   });
+  listEl.appendChild(grid);
 
   showScreen('screen-factory-le-assets');
 }
