@@ -1,5 +1,9 @@
 # IDMS Schema Specification
-**Version 2.14 — F/V Araho**  
+**Version 2.16 — F/V Araho**  
+v2.16 — Trip History tab (§27) expanded. **New columns:** Total Prod (MT) added between Fishery and Open; Avg Daily Burn (USG) added between Close and Total Fuel Burned; "Total Fuel (USG)" column renamed to "Total Fuel Burned (USG)". Column order: Trip # · Fishery · Total Prod (MT) · Open · Close · Avg Daily Burn (USG) · Total Fuel Burned (USG) · [actions]. **Admin topbar controls:** "+ New Trip" button (modal: trip number YYNN, open date, fishery) and "Close Active Trip" button (modal: close date, offload port; irreversible warning; only shown when an active trip exists). **Per-row delete:** × button alongside Edit; confirmation dialog; deletes trip + all daily logs + crew assignments in a single transaction; clears `TA.activeTrip` if the active trip is deleted. Active trip row highlighted with subtle background and "● Active" badge. **New IPC handlers:** `db:getTripsWithTotals` (replaces `db:getTrips` in the Trip History renderer — LEFT JOIN with `trip_daily_logs` to return aggregated `total_fuel_usg`, `total_production_mt`, `fuel_log_days`); `db:deleteTrip` (transactional delete of trips + daily logs + crew assignments). **Avg Daily Burn calculation:** seed/historical trips use `notes.gpd` (falling back to `fuel_total_usg / days_at_sea`); live trips use `total_fuel_usg / fuel_log_days`. Client-side `taParseNotes()` utility added to `tripanalytics.js` (mirrors `parseNotes()` in `main.js`).
+
+v2.15 — Trip Analytics UI revised (§27). "Trip History" tab (old Tab 2, delegating to `initTripHistory`) removed — it was a null-destination stub offering no value. "Fuel Consumption" tab renamed to **Trip History** (internal key `fuel` unchanged) — this is the accurate description of what the tab shows. Tab count: 4 → 3 (`Current Trip Calculations · Trip History · Analytics Setup`). Trip History tab gains admin-only **Edit** button per trip row: opens an inline edit panel with Trip Details (fishery, open date, close date, offload port) and a Daily Logs table (editable Fuel Burned (USG), Production (MT), Lat, Lon per day). "Fuel Burned" is explicitly labelled as settling-tank draw (fuel consumed that day, not fuel onboard). Edit panel supports **+ Add day** (date picker, rejects duplicates) and per-row **× delete** (staged — rows dim to 35% opacity and are only deleted on Save, togglable before confirming). Save sequence: header update → staged deletes → daily log upserts (blank rows skipped). Three new IPC handlers: `db:updateTrip`, `db:updateTripDailyLog`, `db:deleteTripDailyLog` (see §27 IPC handlers).
+
 v2.14 — Rounds module hardened (Console + PWA). **Year subfolders:** user entry log files are now stored under `data/rounds/logs/{username}/{YYYY}/` (year subfolder added); the Console `listRoundsLogFilesForUser` scans current and previous year. **`round_number` / `scheduled_time` at payload level:** in the §22 file these fields are canonical at the top-level payload and echoed into each entry for backward compatibility — the Console ingest now reads from payload level, not per-entry level. **Actual submission time:** `rounds_aggregates` overview now exposes `actual_time` (earliest `submitted` timestamp across all contributing users) displayed in the Rounds Log "Actual" column. **Rounds Log detail view** layout changed to Section / Item / Value / Unit / Delta -1 / Delta -2; contributing user names appear in the panel header alongside Round # and Date; row order follows Rounds Setup config order (using SQLite window-function `MIN(id) OVER (PARTITION BY section_id, item_id)`). **Sync column:** "OD Status" renamed to "Sync"; badge values: `complete` → "Synced", `failed` → "Failed", `pending` → "Pending"; rows with no `round_number` show "—" instead of a badge. **Add Oil zero = null:** `add_oil` items with a summed value of `0` or `0.00` produce `display_value: null` (`—`) in the detail view, delta columns, and Add Oil Summary — only actual volumes > 0 are recorded. **Add Oil excluded from incomplete count:** `add_oil` type items are never counted as "not yet checked" in the PWA submit-incomplete warning. **Weekly cleanup:** after a successful aggregate write, the Console deletes individual user OneDrive submission files older than 7 days (runs at most once per 24 hours per ingest session). New IPC handler `rounds:getSyncedSourceFiles`. New Graph helper `graphDelete` / `deleteRoundsUserFile`. **PWA keypad layout** updated: row 1 = ← − ▲; row 2 = 7 8 9 ▼; row 3 = 4 5 6 SEC'D; row 4 = 1 2 3 (enter, spans rows 4–5); row 5 = 0 dcml (enter continues). **First-keystroke-replaces:** navigating to a field (click or arrow key) sets a `freshCursor` flag; the next keypad digit/decimal replaces the existing value rather than appending. **Submit flow change (PWA):** incomplete rounds show an OK / Cancel modal — crew can submit a partial round; submission is no longer blocked.
 
 v2.13 — Trip Analytics module expanded. Map upgraded to a full nautical-chart presentation: Leaflet panes give bathymetry / land / coastline / reefs / graticules / OpenSeaMap tile overlay deterministic z-order independent of async fetch order; antimeridian wrapping via `worldCopyJump` plus 3-world vector rendering and longitude-unwrapping for tracks; permanent map labels for vessel (from `vesselconfig.json → info.vessel_name`), departure port, and destination port; departure / destination markers now render in the topmost `ta-vessel` pane so they sit above land. CSP updated to allow `https://tiles.openseamap.org` and `https://*.tile.openstreetmap.org`. New high-resolution natural-earth assets bundled (`ne_10m_land`, `ne_10m_coastline`, `ne_10m_minor_islands`, `ne_10m_reefs`, `ne_10m_graticules_5`, `ne_10m_ports`, full `ne_10m_bathymetry_*` set). `tripanalyticsconfig.json` schema_version bumped to 2 (§40): `map.show_bathymetry` (boolean toggle for performance), `map.ocean_color`, `active_trip.fuel_onboard_trip_start_usg`, `active_trip.trip_start_at`. Three additional default Alaska ports auto-injected if missing: Adak (ADK), Kodiak (KOD), Togiak (TOG); Dutch Harbor / Seattle renamed with state suffix. Trip Metadata lat/lon now editable in degrees + decimal-minutes with N/S/E/W select; admin-only **Save Position (today)** button calls `db:upsertDailyPosition`. Offload Estimator gains **Fuel Onboard Trip Start (USG)**, **Fuel Onboard Now (USG)**, and **Daily Avg. Consumption (USG/day)** rows above Est. Fuel Upon Arrival; the trip-start fuel snapshot and timestamp are captured automatically when **Open New Trip** confirms, and both are admin-editable to correct mistakes. Daily burn calculation now prefers the trip-start derivation (`(start − now) / hours × 24`) and falls back to the fuel-log average when not available. **Generate Bunker Pre-Load** button now produces a real plan: builds rows by walking fuel tanks in `localeCompare(numeric)` order, filling each from current level to `capacity × max_fill_pct/100` until `desiredFuel − (currentOnboard − dailyBurn × steamDays)` is satisfied; sets `date = ETA + 1 day`; preserves PIC names / delivery rates from any existing `bunkerplan.json`; writes via `saveBunkerPlan()` then navigates. Lube Oil block removed from Tab 1 (diesel-only). Numeric inputs in Tab 1 now commit on blur or Enter (no per-keystroke re-renders); a `rerender()` helper preserves scroll position and focus on the editing field. Stale-map detection on tab re-entry rebuilds the map when its container has been re-rendered; `invalidateSize()` deferred one frame to handle 0×0 measurement during tab transitions. Bug fix: tripanalytics.js was reading `fuelstate.json` tank entries as `volume_usg` instead of `volume`, leaving Est. Fuel Upon Arrival blank.
@@ -1547,7 +1551,7 @@ CREATE TABLE IF NOT EXISTS task_skill_tags (
 | `training.js`       | Personnel → Training & Certs                                              | Not Built   |
 | `crewprofiles.js`   | Personnel → Crew Profiles                                                 | Not Built   |
 | `messages.js`       | Personnel → Messages                                                      | Not Built   |
-| `tripanalytics.js`  | Overview → Trip Analytics (4 tabs: Current Trip Calculations, Trip History, Fuel Consumption, Analytics Setup) | Built       |
+| `tripanalytics.js`  | Overview → Trip Analytics (3 tabs: Current Trip Calculations, Trip History, Analytics Setup) | Built       |
 | `tripplanner.js`    | **RETIRED (v2.12)** — screen retained as empty stub; `data-retired="true"` | Retired     |
 | `eventlogs.js`      | Records → Event Logs                                                      | Built       |
 | `reports.js`        | Records → Reports                                                         | Built       |
@@ -2539,7 +2543,7 @@ Added in IDMS Console v1.8. No migration required for existing installations —
 **Added in:** IDMS Console v2.12 (replaces Trip Planner)
 **Screen:** Overview → Trip Analytics (after Rough Log, in Overview sidebar group)
 **Module file:** `tripanalytics.js`
-**Tabs:** Current Trip Calculations · Trip History · Fuel Consumption · Analytics Setup
+**Tabs:** Current Trip Calculations · Trip History · Analytics Setup
 **Resource key:** `operations/trip_analytics`
 
 The Trip Analytics module is the operational lifecycle manager for fishing trips. It is the single source of truth for trip metadata, daily positions, fuel burn, and production tracking. Downstream modules (Schedule, Fuel Log, Bunker Pre-Load) read from this data.
@@ -2711,7 +2715,7 @@ The console ingest reads `production_mt` from this file and writes it to `trip_d
 
 | Key                          | Group       | Label          | Access scope |
 |------------------------------|-------------|----------------|--------------|
-| `operations/trip_analytics`  | Operations  | Trip Analytics | Grants view access to all four Trip Analytics tabs. Admin permission is additionally required to open trips, enter positions, and generate bunker pre-loads. |
+| `operations/trip_analytics`  | Operations  | Trip Analytics | Grants view access to all three Trip Analytics tabs. Admin permission is additionally required to open trips, enter positions, generate bunker pre-loads, and use the Trip History edit panel. |
 
 ---
 
@@ -2744,6 +2748,11 @@ The console ingest reads `production_mt` from this file and writes it to `trip_d
 | `db:addCrewMidTrip`          | Inserts a new assignment row for an active trip. |
 | `db:upsertTripFuelBurn`      | Inserts or updates `fuel_burned_usg` for `trip_id` + `log_date`. Called by ingest cycle. |
 | `db:upsertTripProduction`    | Inserts or updates `production_mt` for `trip_id` + `log_date`. Called by ingest cycle. |
+| `db:updateTrip`              | Manual correction of `trips` header fields. Accepts `{ trip_id, fields }` where `fields` is a subset of `{ fishery_target, open_date, close_date, offload_port, status, notes }`. Field whitelist enforced in handler. Returns `{ ok, trip }`. Admin only (enforced in renderer). |
+| `db:updateTripDailyLog`      | Full upsert of a `trip_daily_logs` row for a given `trip_id` + `log_date`. Accepts `{ trip_id, log_date, fuel_burned_usg, production_mt, lat, lon }`. All value fields nullable. Uses `ON CONFLICT` to update existing rows. Admin only (enforced in renderer). |
+| `db:deleteTripDailyLog`      | Deletes the `trip_daily_logs` row matching `{ trip_id, log_date }`. Admin only (enforced in renderer). |
+| `db:getTripsWithTotals`      | Returns all trips (ordered `open_date DESC`) with LEFT JOIN aggregates from `trip_daily_logs`: `total_fuel_usg`, `total_production_mt`, `fuel_log_days` (days with a non-null fuel value). Used by Trip History tab instead of `db:getTrips`. |
+| `db:deleteTrip`              | Transactional delete of a trip and all its `trip_daily_logs` and `trip_crew_assignments` rows. Args: `{ trip_id }`. Returns `{ ok }`. Admin only (enforced in renderer). |
 | `db:getTripFuelAvgByFishery` | Returns `{ avg_daily_usg, sample_days }` for all closed trips matching a fishery target. Used by Fuel Management tab comparison line. |
 | `db:getTripHistory`          | Returns paginated closed trips with optional filters (`year`, `fishery`, `search`, `page`, `pageSize`). Returns `{ rows, total, pages }`. Historical trips use notes-parsed `days_at_sea`; live trips derive it from `COUNT(DISTINCT log_date)`. |
 | `db:getSeasonSummary`        | Returns one row per year with aggregated totals: `trips`, `days_at_sea`, `fuel_usg`, `prod_mt`, `avg_gpd`. Covers all closed trips. |
@@ -2779,13 +2788,28 @@ When the **Generate Bunker Pre-Load** button is clicked:
 
 #### Tab 2 — Trip History
 
-Delegates to `initTripHistory()` if that helper is available; otherwise renders a basic closed-trip list table from `db:getTripHistory`.
+All trips table (internal key: `fuel`). All users see an expandable read-only view; admin users additionally see an **Edit** button column.
 
-#### Tab 3 — Fuel Consumption
+**Table columns:** Trip # · Fishery · Total Prod (MT) · Open · Close · Avg Daily Burn (USG) · Total Fuel Burned (USG) · [actions]. Active trip row has a subtle background highlight and a "● Active" badge next to the trip number. All fuel and production totals come from `db:getTripsWithTotals`. Avg Daily Burn: seed trips use `notes.gpd` (falling back to `fuel_total_usg / days_at_sea`); live trips use `total_fuel_usg / fuel_log_days`.
 
-All trips table, grouped with expandable rows. Clicking a live-trip row expands to show `db:getTripDailyLogsWithGaps` detail sub-table: date, fuel (USG), position. Gap rows are rendered at opacity 0.45. Seed/historical trips (where `opened_by = 'seed_import'`) show a single aggregate row with no expand control.
+**Topbar controls (admin only):**
+- **+ New Trip** — modal: trip number (4-digit YYNN, validated), open date, fishery select. Calls `db:openTrip`. Re-renders tab on success.
+- **Close Active Trip** — only shown when an active trip exists. Modal: close date (required), offload port (optional). Irreversible-action styling. Calls `db:closeTrip`. Clears `TA.activeTrip` and re-renders on success.
 
-#### Tab 4 — Analytics Setup
+**Per-row actions (admin only):** Edit button (opens edit panel — see below) and × delete button. Delete triggers a confirmation dialog; if the active trip is deleted, `TA.activeTrip` is cleared. Calls `db:deleteTrip`.
+
+**Read-only expand:** clicking a live-trip row expands a detail sub-table via `db:getTripDailyLogsWithGaps`: date, fuel burned (USG), position. Gap days (no `trip_daily_logs` entry) render at opacity 0.45. Seed/historical trips (`opened_by = 'seed_import'`) show a single aggregate row with no expand control.
+
+**Edit panel (admin only):** opens below the trip row. Contains two sections:
+
+- *Trip Details* — editable fields: Fishery (select: YF / Mack / Gulf / POP / STEAM / none), Open Date, Close Date, Offload Port. Saved via `db:updateTrip`.
+- *Daily Logs* — editable table: **Fuel Burned (USG)** (settling-tank draw = fuel consumed that day, not fuel onboard), **Production (MT)**, **Lat**, **Lon**. Lat and Lon are entered as degrees + decimal-minutes + N/S/E/W hemisphere select (matching the Tab 1 position entry format); converted to/from decimal degrees via `taDDtoDM()` / `taDMtoDD()` on render/save. Saved via `db:updateTripDailyLog` per row (blank rows skipped). Delete control (×) per row: staged at 35% opacity, only committed to `db:deleteTripDailyLog` on Save (toggleable before confirming). **+ Add day** control: date picker appended below the table; duplicate dates rejected with red outline flash.
+
+Save sequence: header update → staged deletes → daily log upserts. Errors surface inline without closing the panel. On success, panel transitions to read-only detail view after 800 ms.
+
+**Data source:** SQLite `trips` + `trip_daily_logs` tables. `fuel_burned_usg` written daily by `ingest.js` from `fuelstate.json → burn_log` settling-tank transfers. `production_mt` written daily by `ingest.js` from ICMS production files. Both are editable via the edit panel. OneDrive mirror at `data/trips/trips.json` and `data/trips/daily/`.
+
+#### Tab 3 — Analytics Setup
 
 - **Production settings:** editable target MT (saved to `tripanalyticsconfig.json → production.target_mt`).
 - **Map configuration:** text inputs for track confirmed colour, track gap colour, arc colour (hex); live colour swatch preview.
