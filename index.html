@@ -217,12 +217,21 @@
     #group-item-list { flex: 1; display: flex; flex-direction: column; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); gap: 6px; overflow: hidden; }
     #group-item-list .equip-item { flex: 1; margin-bottom: 0; }
 
-    /* Factory Log Events — fill-screen button layout */
-    #screen-factory-log-events, #screen-factory-le-assets { overflow: hidden; }
+    /* Factory Log Events + OEE Add — fill-screen button layout */
+    #screen-factory-log-events, #screen-factory-le-assets,
+    #screen-oee-add-section, #screen-oee-add-asset, #screen-factory-oee-add { overflow: hidden; }
+    /* OEE Add form */
+    .oee-add-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 14px; gap: 12px; }
+    .oee-add-input { width: 100%; padding: 14px; font-size: 16px; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-md); box-sizing: border-box; outline: none; }
+    .oee-add-input:focus { border-color: var(--accent); }
+    .oee-add-field-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px; }
+    .oee-add-actions { flex-shrink: 0; display: flex; flex-direction: column; padding: 0 14px; padding-bottom: calc(14px + env(safe-area-inset-bottom)); gap: 8px; }
+    .oee-add-actions .fa-fill-btn { flex: none; min-height: 60px; font-size: 15px; }
+    .oee-add-actions .fa-fill-btn-submit { background: var(--accent); color: var(--bg-0); border-color: var(--accent); min-height: 68px; }
     .fa-fill-grid { flex: 1; display: flex; flex-direction: column; padding: 10px 14px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); gap: 8px; overflow: hidden; }
     .fa-fill-btn { flex: 1; width: 100%; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; color: var(--text-primary); cursor: pointer; }
     .fa-fill-btn:active { border-color: var(--accent); background: var(--accent-glow); }
-    #fa-le-assets-list { flex: 1; overflow: hidden; padding: 0; }
+    #fa-le-assets-list { flex: 1; overflow: hidden; padding: 0; display: flex; flex-direction: column; }
     .fa-asset-scroll { height: 100%; overflow-y: auto; padding: 8px 14px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); box-sizing: border-box; }
     .fa-asset-scroll .fa-fill-btn { flex: none; min-height: 60px; margin-bottom: 8px; }
     .fa-asset-scroll .equip-group { margin-bottom: 4px; }
@@ -1150,80 +1159,101 @@
     </div>
   </div>
 
-  <!-- ── FACTORY: OEE AUDIT — ADD OBSERVATION ── -->
-  <div class="screen" id="screen-factory-oee-add">
+  <!-- ── OEE: ADD — SECTION PICKER ── -->
+  <div class="screen" id="screen-oee-add-section">
     <div class="subscreen-header">
       <button class="back-btn" onclick="showScreen('screen-factory-oee')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Select Section</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="fa-fill-grid" id="oee-section-btn-grid"></div>
+  </div>
+
+  <!-- ── OEE: ADD — ASSET PICKER ── -->
+  <div class="screen" id="screen-oee-add-asset">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-oee-add-section')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2 id="oee-asset-screen-title">Assets</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="fa-fill-grid" id="oee-asset-btn-grid"></div>
+  </div>
+
+  <!-- ── FACTORY: OEE AUDIT — ADD OBSERVATION ── -->
+  <div class="screen" id="screen-factory-oee-add">
+    <div class="subscreen-header" style="flex-shrink:0">
+      <button class="back-btn" onclick="oeeFormGoBack()">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <h2>Add Observation</h2>
       <div style="width:36px"></div>
     </div>
-    <div class="resolve-card" style="display:flex;flex-direction:column;gap:14px">
-
-      <!-- Section -->
-      <div>
-        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Section <span style="color:var(--danger)">*</span></label>
-        <select id="oee-add-section" style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
-          <option value="">— Select section —</option>
-        </select>
-      </div>
-
-      <!-- Rate + Unit in one row -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div class="equip-context-bar" style="flex-shrink:0">
+      <span class="equip-context-value" id="oee-form-ctx">—</span>
+    </div>
+    <div class="oee-add-body">
+      <div style="display:grid;grid-template-columns:3fr 2fr;gap:10px">
         <div>
-          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Observed Rate <span style="color:var(--danger)">*</span></label>
-          <input type="number" id="oee-add-rate" step="0.01" min="0" placeholder="e.g. 120"
-                 style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+          <div class="oee-add-field-label">Rate</div>
+          <input type="number" id="oee-add-rate" class="oee-add-input" inputmode="decimal" step="0.01" min="0" placeholder="e.g. 120">
         </div>
         <div>
-          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Rate Unit</label>
-          <select id="oee-add-unit" style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
+          <div class="oee-add-field-label">Unit</div>
+          <select id="oee-add-unit" class="oee-add-input" style="appearance:none;-webkit-appearance:none">
             <option value="mt/day">MT/day</option>
             <option value="pans/min">pans/min</option>
-            <option value="cases/hr">cases/hr</option>
+            <option value="min/pan">min/pan</option>
+            <option value="sec/pan">sec/pan</option>
           </select>
         </div>
       </div>
+    </div>
+    <div class="oee-add-actions">
+      <div id="oee-add-status" style="text-align:center;font-size:13px;color:var(--text-secondary);min-height:16px"></div>
+      <button class="fa-fill-btn" onclick="openOeeFailmodeScreen()">Failure Mode</button>
+      <button class="fa-fill-btn fa-fill-btn-submit" onclick="submitFactoryOeeObs()">Submit Observation</button>
+    </div>
+  </div>
 
-      <!-- Timestamp + Coefficient -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div>
-          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Timestamp <span style="color:var(--danger)">*</span></label>
-          <input type="datetime-local" id="oee-add-timestamp"
-                 style="width:100%;padding:12px 14px;font-size:14px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
-        </div>
-        <div>
-          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Coefficient</label>
-          <input type="number" id="oee-add-coeff" step="0.01" min="0" value="1"
-                 style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
-        </div>
-      </div>
-
-      <!-- Wind + Sea state -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div>
-          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Wind speed (kt)</label>
-          <input type="number" id="oee-add-wind" step="0.5" min="0" placeholder="Optional"
-                 style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
-        </div>
-        <div>
-          <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Sea state (ft)</label>
-          <input type="number" id="oee-add-sea" step="0.5" min="0" placeholder="Optional"
-                 style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
-        </div>
-      </div>
-
-      <!-- Notes -->
-      <div>
-        <label style="display:block;font-size:13px;color:var(--text-secondary);margin-bottom:6px">Notes</label>
-        <input type="text" id="oee-add-notes" maxlength="200" placeholder="Optional — max 200 chars"
-               style="width:100%;padding:12px 14px;font-size:15px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-md)">
-      </div>
-
-      <!-- Status + Actions -->
-      <div id="oee-add-status" style="text-align:center;font-size:13px;color:var(--text-secondary);min-height:18px"></div>
-      <button class="btn-primary btn-confirm" onclick="submitFactoryOeeObs()">Save Observation</button>
+  <!-- ── OEE: ADD — FAILURE MODE PICKER ── -->
+  <div class="screen" id="screen-oee-failmode">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-factory-oee-add')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Failure Mode</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div class="equip-context-bar">
+      <span class="equip-context-value" id="oee-fm-ctx">—</span>
+    </div>
+    <div class="category-list">
+      <button class="category-item" onclick="oeeSelectFailmode('OTH','Other')">OTH — Other</button>
+      <button class="category-item" onclick="oeeSelectFailmode('AIR','Abnormal instrument reading')">AIR — Abnormal instrument reading</button>
+      <button class="category-item" onclick="oeeSelectFailmode('BRD','Breakdown')">BRD — Breakdown</button>
+      <button class="category-item" onclick="oeeSelectFailmode('CON','Contamination')">CON — Contamination</button>
+      <button class="category-item" onclick="oeeSelectFailmode('ELP','External leakage — process medium')">ELP — External leakage — process medium</button>
+      <button class="category-item" onclick="oeeSelectFailmode('ELU','External leakage — utility medium')">ELU — External leakage — utility medium</button>
+      <button class="category-item" onclick="oeeSelectFailmode('ERO','Erratic output')">ERO — Erratic output</button>
+      <button class="category-item" onclick="oeeSelectFailmode('FCO','Failure to close on demand')">FCO — Failure to close on demand</button>
+      <button class="category-item" onclick="oeeSelectFailmode('FOD','Failure on demand')">FOD — Failure on demand</button>
+      <button class="category-item" onclick="oeeSelectFailmode('FOF','Failure to open on demand')">FOF — Failure to open on demand</button>
+      <button class="category-item" onclick="oeeSelectFailmode('HIO','High output')">HIO — High output</button>
+      <button class="category-item" onclick="oeeSelectFailmode('INL','Internal leakage')">INL — Internal leakage</button>
+      <button class="category-item" onclick="oeeSelectFailmode('LCP','Loss of containment / process')">LCP — Loss of containment / process</button>
+      <button class="category-item" onclick="oeeSelectFailmode('LOO','Low output')">LOO — Low output</button>
+      <button class="category-item" onclick="oeeSelectFailmode('NOI','Noise')">NOI — Noise</button>
+      <button class="category-item" onclick="oeeSelectFailmode('OHE','Overheating')">OHE — Overheating</button>
+      <button class="category-item" onclick="oeeSelectFailmode('PDE','Parameter deviation')">PDE — Parameter deviation</button>
+      <button class="category-item" onclick="oeeSelectFailmode('PLU','Plugged / choked')">PLU — Plugged / choked</button>
+      <button class="category-item" onclick="oeeSelectFailmode('SER','Minor in-service problems')">SER — Minor in-service problems</button>
+      <button class="category-item" onclick="oeeSelectFailmode('STD','Structural deficiency')">STD — Structural deficiency</button>
+      <button class="category-item" onclick="oeeSelectFailmode('UST','Spurious stop')">UST — Spurious stop</button>
+      <button class="category-item" onclick="oeeSelectFailmode('VIB','Vibration')">VIB — Vibration</button>
     </div>
   </div>
 
@@ -2006,7 +2036,14 @@ function showDeptPicker() {
   var grid = document.getElementById('dept-btn-grid');
   grid.innerHTML = '';
 
-  currentUser.departments.forEach(function(dept) {
+  var seen = {};
+  var depts = (currentUser.departments || []).filter(function(d) {
+    if (seen[d]) return false;
+    seen[d] = true;
+    return true;
+  });
+
+  depts.forEach(function(dept) {
     var isActive = ACTIVE_MODULES.indexOf(dept) !== -1;
     var btn = document.createElement('button');
     btn.style.cssText = [
@@ -2642,6 +2679,15 @@ var OEE = {
   loading:  false
 };
 
+var OEE_ADD = {
+  timestamp:    null,   // captured at the moment [+] is pressed
+  sectionId:    null,
+  sectionLabel: null,
+  assetId:      null,
+  assetLabel:   null,
+  hasAssets:    false   // whether the selected section has sub-assets
+};
+
 // Helper: local date string YYYY-MM-DD
 function oeeLocalDate(offset) {
   var d = new Date();
@@ -2809,74 +2855,210 @@ function renderOeeObsList() {
 
 // ── FACTORY: ADD OBSERVATION ──────────────
 function openFactoryOeeAdd() {
-  // Populate section dropdown
-  var sel = document.getElementById('oee-add-section');
-  if (sel) {
+  // Capture timestamp the moment + is pressed
+  OEE_ADD.timestamp    = new Date().toISOString();
+  OEE_ADD.sectionId    = null;
+  OEE_ADD.sectionLabel = null;
+  OEE_ADD.assetId      = null;
+  OEE_ADD.assetLabel   = null;
+  OEE_ADD.hasAssets    = false;
+
+  // Build section fill-buttons
+  var grid = document.getElementById('oee-section-btn-grid');
+  if (grid) {
+    grid.innerHTML = '';
     var sections = (DEPT_CONFIG && DEPT_CONFIG.production && DEPT_CONFIG.production.line_sections) || [];
-    sel.innerHTML = '<option value="">— Select section —</option>';
     sections.forEach(function(s) {
       if (s.enabled === false) return;
-      var o = document.createElement('option');
-      o.value = s.section_id;
-      o.dataset.label = s.label;
-      o.textContent = s.label;
-      sel.appendChild(o);
+      var btn = document.createElement('button');
+      btn.className   = 'fa-fill-btn';
+      btn.textContent = s.label;
+      btn.onclick = (function(sec) { return function() { oeeSelectSection(sec); }; })(s);
+      grid.appendChild(btn);
     });
   }
-  // Reset fields
-  var tsEl = document.getElementById('oee-add-timestamp');
-  if (tsEl) tsEl.value = oeeLocalNowInput();
-  var coeffEl = document.getElementById('oee-add-coeff');
-  if (coeffEl) coeffEl.value = '1';
-  ['oee-add-rate','oee-add-wind','oee-add-sea','oee-add-notes'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.value = '';
-  });
+  showScreen('screen-oee-add-section');
+}
+
+function oeeSelectSection(section) {
+  OEE_ADD.sectionId    = section.section_id;
+  OEE_ADD.sectionLabel = section.label;
+  var subAssets = section.sub_assets || [];
+  OEE_ADD.hasAssets = subAssets.length > 0;
+
+  if (!OEE_ADD.hasAssets) {
+    OEE_ADD.assetId    = null;
+    OEE_ADD.assetLabel = null;
+    oeeOpenForm();
+    return;
+  }
+
+  var titleEl = document.getElementById('oee-asset-screen-title');
+  if (titleEl) titleEl.textContent = section.label;
+
+  var grid = document.getElementById('oee-asset-btn-grid');
+  if (grid) {
+    grid.innerHTML = '';
+    subAssets.forEach(function(sa) {
+      var btn = document.createElement('button');
+      btn.className   = 'fa-fill-btn';
+      btn.textContent = sa.label;
+      btn.onclick = (function(a) { return function() { oeeSelectAsset(a); }; })(sa);
+      grid.appendChild(btn);
+    });
+  }
+  showScreen('screen-oee-add-asset');
+}
+
+function oeeSelectAsset(asset) {
+  OEE_ADD.assetId    = asset.id   || null;
+  OEE_ADD.assetLabel = asset.label || null;
+  oeeOpenForm();
+}
+
+function oeeOpenForm() {
+  var ctx = document.getElementById('oee-form-ctx');
+  if (ctx) {
+    ctx.textContent = OEE_ADD.assetLabel
+      ? OEE_ADD.sectionLabel + '  ›  ' + OEE_ADD.assetLabel
+      : OEE_ADD.sectionLabel;
+  }
+  var rateEl = document.getElementById('oee-add-rate');
+  if (rateEl) rateEl.value = '';
+  var unitEl = document.getElementById('oee-add-unit');
+  if (unitEl) unitEl.value = 'mt/day';
+  var notesEl = document.getElementById('oee-add-notes');
+  if (notesEl) { notesEl.value = ''; notesEl.style.display = 'none'; }
+  var notesBtnEl = document.getElementById('oee-notes-btn');
+  if (notesBtnEl) notesBtnEl.textContent = 'Notes';
   var statusEl = document.getElementById('oee-add-status');
   if (statusEl) statusEl.textContent = '';
   showScreen('screen-factory-oee-add');
 }
 
+function oeeFormGoBack() {
+  showScreen(OEE_ADD.hasAssets ? 'screen-oee-add-asset' : 'screen-oee-add-section');
+}
+
+function openOeeFailmodeScreen() {
+  var rateRaw = document.getElementById('oee-add-rate').value;
+  var rate    = parseFloat(rateRaw);
+  if (!rateRaw || isNaN(rate) || rate <= 0) {
+    var statusEl = document.getElementById('oee-add-status');
+    if (statusEl) statusEl.textContent = 'Enter a rate before selecting a failure mode.';
+    return;
+  }
+  var ctx = document.getElementById('oee-fm-ctx');
+  if (ctx) {
+    ctx.textContent = OEE_ADD.assetLabel
+      ? OEE_ADD.sectionLabel + '  ›  ' + OEE_ADD.assetLabel
+      : OEE_ADD.sectionLabel;
+  }
+  showScreen('screen-oee-failmode');
+}
+
+function oeeSelectFailmode(isoCode, isoLabel) {
+  var rateRaw     = document.getElementById('oee-add-rate').value;
+  var rate        = parseFloat(rateRaw);
+  var enteredUnit = document.getElementById('oee-add-unit').value || 'mt/day';
+  var storedRate  = rate;
+  var storedUnit  = enteredUnit;
+  if (enteredUnit === 'sec/pan') {
+    storedRate = parseFloat((60 / rate).toFixed(4));
+    storedUnit = 'pans/min';
+  }
+
+  var ts       = OEE_ADD.timestamp || new Date().toISOString();
+  var dateStr  = ts.slice(0, 10);
+  var username = currentUser.username || 'unknown';
+
+  var observation = {
+    obs_id:          obsUUID(),
+    obs_timestamp:   ts,
+    obs_date:        dateStr,
+    section_id:      OEE_ADD.sectionId,
+    section_label:   OEE_ADD.sectionLabel,
+    asset_id:        OEE_ADD.assetId,
+    asset_label:     OEE_ADD.assetLabel,
+    asset_code:      null,
+    observed_rate:   storedRate,
+    rate_unit:       storedUnit,
+    entered_rate:    rate,
+    entered_unit:    enteredUnit,
+    operator:        currentUser.name || username,
+    source_user:     username,
+    wind_speed_kt:   null,
+    sea_state_ft:    null,
+    notes:           '',
+    source:          'pwa',
+    oee_session_id:  null,
+    failure_mode_id: isoCode
+  };
+
+  // Push observation in background — don't block the timer start
+  pushObservationToOneDrive(username, dateStr, observation).catch(function() {
+    queueObservation(username, dateStr, observation);
+  });
+
+  // Start a factory-style timer from the moment [+] was originally pressed
+  var equipment = OEE_ADD.assetLabel || OEE_ADD.sectionLabel || 'OEE Asset';
+  var category  = isoLabel + ' (' + isoCode + ')';
+  var extras    = { iso_failure_code: isoCode, asset_id: OEE_ADD.assetId };
+
+  if (activeIncidents.length > 0) {
+    pendingConcurrent = { equipment: equipment, category: category, extras: extras, startTimeISO: ts };
+    showConcurrentModal();
+    return;
+  }
+  startTimer(equipment, category, extras, ts);
+}
+
 async function submitFactoryOeeObs() {
   var statusEl = document.getElementById('oee-add-status');
-  var sel      = document.getElementById('oee-add-section');
-  var sectionId    = sel ? sel.value : '';
-  var sectionLabel = (sel && sel.options[sel.selectedIndex]) ? (sel.options[sel.selectedIndex].dataset.label || sectionId) : sectionId;
-  if (!sectionId) { if (statusEl) statusEl.textContent = 'Please select a section.'; return; }
 
   var rateRaw = document.getElementById('oee-add-rate').value;
   var rate    = rateRaw === '' ? null : parseFloat(rateRaw);
-  if (rate === null || isNaN(rate)) { if (statusEl) statusEl.textContent = 'Please enter an observed rate.'; return; }
+  if (rate === null || isNaN(rate) || rate <= 0) {
+    if (statusEl) statusEl.textContent = 'Please enter a rate.';
+    return;
+  }
 
-  var tsRaw = document.getElementById('oee-add-timestamp').value;
-  if (!tsRaw) { if (statusEl) statusEl.textContent = 'Please set a timestamp.'; return; }
+  var enteredUnit = document.getElementById('oee-add-unit').value || 'mt/day';
+  var notes       = '';
 
-  var unit    = document.getElementById('oee-add-unit').value  || 'mt/day';
-  var coeff   = parseFloat(document.getElementById('oee-add-coeff').value) || 1;
-  var wind    = document.getElementById('oee-add-wind').value;
-  var sea     = document.getElementById('oee-add-sea').value;
-  var notes   = document.getElementById('oee-add-notes').value.trim();
-  var dateStr = tsRaw.slice(0, 10);  // YYYY-MM-DD from datetime-local value
+  // sec/pan → convert to pans/min for storage
+  var storedRate = rate;
+  var storedUnit = enteredUnit;
+  if (enteredUnit === 'sec/pan') {
+    storedRate = parseFloat((60 / rate).toFixed(4));
+    storedUnit = 'pans/min';
+  }
+
+  var ts       = OEE_ADD.timestamp || new Date().toISOString();
+  var dateStr  = ts.slice(0, 10);
   var username = currentUser.username || 'unknown';
 
   var observation = {
     obs_id:        obsUUID(),
-    obs_timestamp: tsRaw.length === 16 ? tsRaw + ':00' : tsRaw,
+    obs_timestamp: ts,
     obs_date:      dateStr,
-    section_id:    sectionId,
-    section_label: sectionLabel,
+    section_id:    OEE_ADD.sectionId,
+    section_label: OEE_ADD.sectionLabel,
+    asset_id:      OEE_ADD.assetId,
+    asset_label:   OEE_ADD.assetLabel,
     asset_code:    null,
-    observed_rate: rate,
-    rate_unit:     unit,
-    coefficient:   coeff,
+    observed_rate: storedRate,
+    rate_unit:     storedUnit,
+    entered_rate:  rate,
+    entered_unit:  enteredUnit,
     operator:      currentUser.name || username,
     source_user:   username,
-    wind_speed_kt: wind === '' ? null : parseFloat(wind),
-    sea_state_ft:  sea  === '' ? null : parseFloat(sea),
+    wind_speed_kt: null,
+    sea_state_ft:  null,
     notes:         notes,
     source:        'pwa',
-    oee_session_id: null,
-    failure_mode_id: null
+    oee_session_id:  null,
+    failure_mode_id: 'audit'
   };
 
   if (statusEl) statusEl.textContent = 'Saving…';
@@ -2885,7 +3067,6 @@ async function submitFactoryOeeObs() {
     await pushObservationToOneDrive(username, dateStr, observation);
     await flushObservationQueue(username);
     if (statusEl) statusEl.textContent = 'Saved.';
-    // Refresh the list date to match what was just submitted, then go back
     OEE.dateStr = dateStr;
     setTimeout(function() {
       oeeUpdateDateBar();
@@ -2895,7 +3076,6 @@ async function submitFactoryOeeObs() {
   } catch (err) {
     queueObservation(username, dateStr, observation);
     if (statusEl) statusEl.textContent = 'Saved offline — will sync when reconnected.';
-    // Still go back and show the date — locally we can't display it until synced
     setTimeout(function() { showScreen('screen-factory-oee'); }, 1100);
   }
 }
@@ -4642,14 +4822,14 @@ function startFactoryTimer(isoCode, isoLabel) {
 // Creates an incident object and adds it
 // to the activeIncidents array.
 // Optional extras object merges additional fields (e.g. iso_failure_code, asset_id).
-function startTimer(equipment, category, extras) {
-  var now      = new Date();
+function startTimer(equipment, category, extras, startTimeISO) {
+  var start    = startTimeISO ? new Date(startTimeISO) : new Date();
   var incident = {
-    id:           Date.now(),      // unique number based on current timestamp
+    id:           Date.now(),
     equipment:    equipment,
     category:     category,
-    startTime:    now,             // Date object — used for elapsed calculations
-    startLabel:   formatTime(now), // "14:32" — used for display
+    startTime:    start,
+    startLabel:   formatTime(start),
     warningShown: false,
     notes:        ''
   };
@@ -5297,7 +5477,7 @@ function dismissConcurrent() {
 }
 function confirmConcurrent() {
   document.getElementById('modal-concurrent').style.display = 'none';
-  if (pendingConcurrent) { startTimer(pendingConcurrent.equipment, pendingConcurrent.category, pendingConcurrent.extras || null); pendingConcurrent = null; }
+  if (pendingConcurrent) { startTimer(pendingConcurrent.equipment, pendingConcurrent.category, pendingConcurrent.extras || null, pendingConcurrent.startTimeISO || null); pendingConcurrent = null; }
 }
 
 
