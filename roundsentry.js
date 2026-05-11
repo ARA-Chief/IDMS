@@ -293,7 +293,7 @@ async function initRoundsEntry(sourceScreen) {
   reRenderScreen();
   reBindGestures();
   window.addEventListener('resize', reOnResize);
-  reRequestFullscreen();
+  reExpandFrame();
 
   // Load history non-blocking; refresh grid when done
   reLoadAggregates().then(() => reRenderGrid());
@@ -932,15 +932,34 @@ function reToggleKpSide() {
 
 // ── Resize / exit ─────────────────────────────────────────────────────────────
 
-function reRequestFullscreen() {
+function reExpandFrame() {
   if (window.innerWidth < 768) return;
-  const el  = document.documentElement;
-  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+
+  // Inject override styles once
+  if (!document.getElementById('re-expand-style')) {
+    const s = document.createElement('style');
+    s.id = 're-expand-style';
+    s.textContent = [
+      'body.re-rounds-expanded { display: block !important; background: var(--bg-0) !important; }',
+      'body.re-rounds-expanded .phone-frame {',
+      '  width: 100vw !important; height: 100vh !important; height: 100dvh !important;',
+      '  border-radius: 0 !important; border: none !important;',
+      '  box-shadow: none !important; position: fixed !important; inset: 0 !important;',
+      '}',
+    ].join('\n');
+    document.head.appendChild(s);
+  }
+  document.body.classList.add('re-rounds-expanded');
+
+  // Also try browser fullscreen (requires a user gesture; silently ignored if unavailable)
+  const root = document.documentElement;
+  const req  = root.requestFullscreen || root.webkitRequestFullscreen || root.mozRequestFullScreen || root.msRequestFullscreen;
   const already = document.fullscreenElement || document.webkitFullscreenElement;
-  if (req && !already) req.call(el).catch(() => {});
+  if (req && !already) req.call(root).catch(() => {});
 }
 
-function reExitFullscreen() {
+function reCollapseFrame() {
+  document.body.classList.remove('re-rounds-expanded');
   const active = document.fullscreenElement || document.webkitFullscreenElement;
   if (!active) return;
   const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
@@ -952,13 +971,13 @@ function reOnResize() {
   RE.isTablet = window.innerWidth >= 768;
   if (was !== RE.isTablet) {
     reRenderScreen();
-    if (RE.isTablet) reRequestFullscreen();
-    else reExitFullscreen();
+    if (RE.isTablet) reExpandFrame();
+    else reCollapseFrame();
   }
 }
 
 function reExit() {
-  reExitFullscreen();
+  reCollapseFrame();
   reUnbindGestures();
   window.removeEventListener('resize', reOnResize);
   // Use the explicit source screen set by the caller, falling back to
