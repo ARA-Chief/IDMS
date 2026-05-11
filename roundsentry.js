@@ -1202,7 +1202,7 @@ function reStylesHTML() {
 }
 .re-kp-btn {
   background: var(--re-kp-btn); border: 1px solid var(--re-border); border-radius: 8px;
-  color: var(--re-text); font-size: 18px; font-weight: 500; padding: 14px 0;
+  color: var(--re-text); font-size: 18px; font-weight: 500; padding: 28px 0;
   cursor: pointer; text-align: center; user-select: none; -webkit-user-select: none;
 }
 .re-kp-btn:active  { filter: brightness(0.8); }
