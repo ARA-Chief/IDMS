@@ -1246,6 +1246,18 @@ function reStylesHTML() {
     padding: 12px 8px;
     display: flex; flex-direction: column; justify-content: center;
   }
+
+  /* Tablet font-size bump — grid rows only */
+  .re-col-headers > div    { font-size: 12px; }
+  .re-heading-text         { font-size: 12px; }
+  .re-section-text         { font-size: 16px; }
+  .re-col-label            { font-size: 15px; }
+  .re-col-hist             { font-size: 14px; }
+  .re-num                  { font-size: 17px; }
+  .re-unit                 { font-size: 12px; }
+  .re-text-inp             { font-size: 15px; }
+  .re-custom-sel           { font-size: 13px; }
+  .re-secd-cell            { font-size: 12px; }
 }
 
 /* Modal */

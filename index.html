@@ -463,7 +463,7 @@
           Sign in with Microsoft
         </button>
       </div>
-      <p class="login-footer">IDMS v0.7 · F/V Araho</p>
+      <p class="login-footer">IDMS v1.0 · F/V Araho</p>
     </div>
   </div>
 
@@ -498,7 +498,7 @@
 
         <button class="btn-primary" id="login-btn" onclick="submitLogin()">Sign In</button>
       </div>
-      <p class="login-footer">IDMS v0.6 · F/V Araho</p>
+      <p class="login-footer">IDMS v1.0 · F/V Araho</p>
     </div>
   </div>
 
@@ -512,7 +512,7 @@
       </div>
       <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px">Select Department</div>
       <div id="dept-btn-grid" style="display:flex;flex-direction:column;gap:10px;flex:1"></div>
-      <button onclick="signOut()" style="margin-top:24px;background:transparent;border:none;color:var(--text-muted);font-size:13px;cursor:pointer;padding:8px">Sign Out</button>
+      <button onclick="switchUser()" style="margin-top:24px;background:transparent;border:none;color:var(--text-muted);font-size:13px;cursor:pointer;padding:8px">Sign Out</button>
     </div>
   </div>
 
@@ -2024,9 +2024,28 @@ function routeAfterLogin() {
 
 // ── DEPARTMENT PICKER ────────────────────
 function showDeptPicker() {
-  document.getElementById('dept-avatar').textContent   = currentUser.initials;
+  var deptAv = document.getElementById('dept-avatar');
+  deptAv.textContent = currentUser.initials;
   document.getElementById('dept-username').textContent = currentUser.name;
   document.getElementById('dept-role').textContent     = currentUser.role;
+
+  var picPath = currentUser.profile_picture && currentUser.profile_picture.path;
+  if (picPath && graphToken) {
+    var picUrl = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/'
+      + encodeURIComponent(picPath).replace(/%2F/g, '/') + ':/content';
+    fetch(picUrl, { headers: { Authorization: 'Bearer ' + graphToken } })
+      .then(function(r) { return r.ok ? r.blob() : null; })
+      .then(function(blob) {
+        if (!blob) return;
+        var blobUrl = URL.createObjectURL(blob);
+        var el = document.getElementById('dept-avatar');
+        if (el) {
+          el.textContent = '';
+          el.innerHTML = '<img src="' + blobUrl + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block">';
+        }
+      })
+      .catch(function() {});
+  }
 
   var grid = document.getElementById('dept-btn-grid');
   grid.innerHTML = '';
