@@ -311,10 +311,14 @@ function reRenderScreen() {
     : '';
 
   el.setAttribute('data-re-colour', RE.prefs.colour_mode === 'light' ? 'light' : 'dark');
+  const sidePanel = RE.isTablet
+    ? `<div class="re-side-panel">${reHeaderHTML()}${reKeypadHTML()}</div>`
+    : reKeypadHTML();
+
   el.innerHTML = `
     ${reStylesHTML()}
     <div class="re-root ${reEsc(tabClass)}" id="re-root">
-      ${reHeaderHTML()}
+      ${RE.isTablet ? '' : reHeaderHTML()}
       <div class="re-main">
         ${reColHeadersHTML()}
         <div class="re-grid-scroll" id="re-grid-scroll">
@@ -324,7 +328,7 @@ function reRenderScreen() {
           <button class="re-submit-btn" id="re-submit-btn" onclick="reHandleSubmit()">Submit Rounds</button>
         </div>
       </div>
-      ${reKeypadHTML()}
+      ${sidePanel}
       <div class="re-modal-overlay" id="re-modal-overlay" style="display:none"></div>
     </div>
   `;
@@ -1210,20 +1214,32 @@ function reStylesHTML() {
 .re-kp-secd        { font-size: 11px; font-weight: 700; color: var(--re-muted); background: var(--re-bg1); letter-spacing: 0.04em; }
 .re-kp-side-toggle { display: block; width: 100%; background: transparent; border: none; color: var(--re-text2); font-size: 18px; cursor: pointer; text-align: right; margin-bottom: 4px; padding: 0 4px; }
 
-/* Tablet layout — keypad on right side */
+/* Tablet layout — header + keypad in right side panel */
 @media (min-width: 768px) {
-  .re-kp-right, .re-kp-left {
-    flex-direction: row;
-  }
-  .re-kp-right .re-keypad {
-    width: 220px; flex-shrink: 0; border-top: none;
+  .re-kp-right, .re-kp-left { flex-direction: row; }
+
+  .re-side-panel {
+    display: flex; flex-direction: column;
+    width: 260px; flex-shrink: 0;
     border-left: 2px solid var(--re-border);
-    padding: 12px 8px; display: flex; flex-direction: column; justify-content: center;
   }
-  .re-kp-left .re-keypad {
-    order: -1; width: 220px; flex-shrink: 0; border-top: none;
+  .re-kp-left .re-side-panel {
+    order: -1;
+    border-left: none;
     border-right: 2px solid var(--re-border);
-    padding: 12px 8px; display: flex; flex-direction: column; justify-content: center;
+  }
+
+  /* Header inside the side panel */
+  .re-side-panel .re-header {
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--re-border);
+  }
+
+  /* Keypad fills remaining side-panel height */
+  .re-side-panel .re-keypad {
+    flex: 1; border-top: none;
+    padding: 12px 8px;
+    display: flex; flex-direction: column; justify-content: center;
   }
 }
 
