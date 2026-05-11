@@ -4264,6 +4264,28 @@ function erFetchOneDriveJson(path) {
     });
 }
 
+function erDroRowHtml(from, to) {
+  return '<div class="er-dro-row" style="display:flex;align-items:center;gap:8px;padding:4px 16px">'
+    + '<input type="date" class="er-dro-from er-profile-field-input" value="' + erEscapeAttr(from) + '" style="flex:1;min-width:0">'
+    + '<span style="color:var(--text-muted);font-size:12px;white-space:nowrap">to</span>'
+    + '<input type="date" class="er-dro-to er-profile-field-input" value="' + erEscapeAttr(to) + '" style="flex:1;min-width:0">'
+    + '<button class="er-profile-cert-delete" onclick="erRemoveDroRow(this)" title="Remove">✕</button>'
+    + '</div>';
+}
+
+function erAddDroRow() {
+  var container = document.getElementById('er-dro-rows');
+  if (!container) return;
+  var tmp = document.createElement('div');
+  tmp.innerHTML = erDroRowHtml('', '');
+  container.appendChild(tmp.firstChild);
+}
+
+function erRemoveDroRow(btn) {
+  var row = btn.closest ? btn.closest('.er-dro-row') : btn.parentNode;
+  if (row) row.remove();
+}
+
 function erRenderProfile(el, m) {
   var contact = m.contact || {};
   var initials = (m.name || '?').split(/\s+/).filter(Boolean)
@@ -4272,6 +4294,22 @@ function erRenderProfile(el, m) {
   var currentAirport  = contact.preferred_airport || '';
   var airportDatalist = ER_US_AIRPORTS.filter(function(a) { return a[0] !== '__OTHER__'; })
     .map(function(a) { return '<option value="' + erEscapeAttr(a[0]) + '">' + erEscapeHtml(a[1]) + '</option>'; })
+    .join('');
+
+  // Linked relief dropdown — all active crew except self
+  var allCrew = (ER_PROFILE_STATE.crewConfig && ER_PROFILE_STATE.crewConfig.crew) || [];
+  var reliefOpts = '<option value="">— none —</option>';
+  allCrew.forEach(function(c) {
+    if (c.username === m.username || c.status !== 'active') return;
+    var sel = m.linked_relief && m.linked_relief === c.crew_id ? ' selected' : '';
+    reliefOpts += '<option value="' + erEscapeAttr(c.crew_id || '') + '"' + sel + '>' + erEscapeHtml(c.name || c.username || '') + '</option>';
+  });
+
+  // Dates requested off — prune expired before rendering
+  var todayIso = new Date().toISOString().slice(0, 10);
+  var droRows = (m.dates_requested_off || [])
+    .filter(function(d) { return (d.to || d.from) >= todayIso; })
+    .map(function(d) { return erDroRowHtml(d.from || '', d.to || ''); })
     .join('');
 
   // Profile picture: <img> if a path is set, otherwise initials
@@ -4332,6 +4370,25 @@ function erRenderProfile(el, m) {
     +   '<input type="text" id="er-profile-messenger" class="er-profile-field-input" value="' + erEscapeAttr(contact.messenger || '') + '" placeholder="Facebook Messenger handle">'
     + '</div>'
 
+    + '<div class="er-profile-section-label">Appearance</div>'
+    + '<div class="er-profile-field">'
+    +   '<div class="er-profile-field-label">Favorite Color</div>'
+    +   '<div style="display:flex;align-items:center;gap:10px;padding:2px 0">'
+    +     '<input type="color" id="er-profile-favorite-color" value="' + erEscapeAttr(m.favorite_color || '#888888') + '" style="width:40px;height:32px;padding:2px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer">'
+    +     '<span id="er-profile-color-label" style="font-size:12px;color:var(--text-muted)">' + erEscapeHtml(m.favorite_color || '') + '</span>'
+    +   '</div>'
+    + '</div>'
+
+    + '<div class="er-profile-section-label">Relief</div>'
+    + '<div class="er-profile-field">'
+    +   '<div class="er-profile-field-label">Linked Relief</div>'
+    +   '<select id="er-profile-linked-relief" class="er-profile-field-input">' + reliefOpts + '</select>'
+    + '</div>'
+
+    + '<div class="er-profile-section-label">Requested Time Off</div>'
+    + '<div id="er-dro-rows">' + droRows + '</div>'
+    + '<button class="er-profile-add-cert-btn" onclick="erAddDroRow()" style="margin-bottom:4px">+ Add Date Range</button>'
+
     + '<div class="er-profile-section-label">Certificates</div>';
 
   var certs = m.certificates || [];
@@ -4382,6 +4439,15 @@ function erRenderProfile(el, m) {
   if (picImg && picImg.tagName === 'IMG' && picImg.dataset.path) {
     erLoadProfilePicture(picImg, picImg.dataset.path);
   }
+
+  // Wire favorite color label
+  var colorInput = document.getElementById('er-profile-favorite-color');
+  var colorLabel = document.getElementById('er-profile-color-label');
+  if (colorInput && colorLabel) {
+    colorInput.addEventListener('input', function() {
+      colorLabel.textContent = colorInput.value;
+    });
+  }
 }
 
 
@@ -4421,12 +4487,24 @@ async function saveErProfile() {
 
   try {
     // Read form values
-    var password = (document.getElementById('er-profile-password') || {}).value || '';
-    var phone    = ((document.getElementById('er-profile-phone')    || {}).value || '').trim();
-    var email    = ((document.getElementById('er-profile-email')    || {}).value || '').trim();
-    var whatsapp = ((document.getElementById('er-profile-whatsapp') || {}).value || '').trim();
-    var messenger= ((document.getElementById('er-profile-messenger')|| {}).value || '').trim();
+    var password  = (document.getElementById('er-profile-password') || {}).value || '';
+    var phone     = ((document.getElementById('er-profile-phone')    || {}).value || '').trim();
+    var email     = ((document.getElementById('er-profile-email')    || {}).value || '').trim();
+    var whatsapp  = ((document.getElementById('er-profile-whatsapp') || {}).value || '').trim();
+    var messenger = ((document.getElementById('er-profile-messenger')|| {}).value || '').trim();
     var preferred_airport = ((document.getElementById('er-profile-airport') || {}).value || '').trim().toUpperCase();
+    var favorite_color    = ((document.getElementById('er-profile-favorite-color') || {}).value || '').trim();
+    var linked_relief     = ((document.getElementById('er-profile-linked-relief')  || {}).value || '').trim() || null;
+
+    var _todayIso = new Date().toISOString().slice(0, 10);
+    var dates_requested_off = Array.prototype.slice.call(document.querySelectorAll('#er-dro-rows .er-dro-row'))
+      .map(function(row) {
+        return {
+          from: ((row.querySelector('.er-dro-from') || {}).value || '').trim(),
+          to:   ((row.querySelector('.er-dro-to')   || {}).value || '').trim()
+        };
+      })
+      .filter(function(d) { return d.from && (d.to || d.from) >= _todayIso; });
 
     // Optional: upload staged profile pic first (so the path lands in the same write)
     if (ER_PROFILE_STATE.pendingPicFile) {
@@ -4443,6 +4521,9 @@ async function saveErProfile() {
     m.contact.preferred_airport = preferred_airport;
     m.contact.whatsapp          = whatsapp;
     m.contact.messenger         = messenger;
+    if (favorite_color)  m.favorite_color      = favorite_color;
+    m.linked_relief       = linked_relief;
+    m.dates_requested_off = dates_requested_off;
 
     // Persist back. We re-fetch first to merge with any concurrent admin edits.
     await erSaveCrewConfigForUser(m.username, function(fileMember) {
@@ -4453,6 +4534,9 @@ async function saveErProfile() {
       fileMember.contact.preferred_airport = preferred_airport;
       fileMember.contact.whatsapp          = whatsapp;
       fileMember.contact.messenger         = messenger;
+      if (favorite_color) fileMember.favorite_color      = favorite_color;
+      fileMember.linked_relief       = linked_relief;
+      fileMember.dates_requested_off = dates_requested_off;
       if (m.profile_picture) fileMember.profile_picture = m.profile_picture;
     });
 

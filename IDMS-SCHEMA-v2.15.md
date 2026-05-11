@@ -5435,6 +5435,8 @@ Returned shape:
   tripCases:   17219,
   tripNumber:  "ARA2607",
   tripDay:     5,
+  area:        543,                    // fishing area — passed through from parseDPRText
+  weather:     "15 kts",              // weather string — passed through from parseDPRText
   species:     [ ... ]                 // full structured array from parseDPRText
 }
 ```
@@ -5444,11 +5446,30 @@ Returned shape:
 `idle` → `fetching` → `found` | `notfound` | `error` → (on save) `saving` → `idle`
 
 **`found` rendering** (Overview panel):
+
+Header rows:
 - If `!isToday`: yellow notice — `Today's report not available. Showing {date}.`
 - Report Date: `{date}`
 - Trip: `{tripNumber} — Day {tripDay}`
+- Area: `{area}`
+- Weather: `{weather}`
 - Daily Total: `{midnight_mt.toFixed(2)} MT ({dailyCases.toLocaleString()} cases)` — bolded
 - Trip Total: `{tripMT.toFixed(2)} MT ({tripCases.toLocaleString()} cases)`
+
+Species breakdown (computed from `emailResult.species`):
+
+Rank species by `total.dailyPct` descending. Render the top 3 with their size distribution. Label: `#1`, `#2`, `#3`.
+
+For each ranked species:
+- **Species line:** `#{rank}  {name}  ({total.dailyPct}%)`
+- **Size line:** Take the species' `grades[]`, filter to those with `dailyPct > 0`, sort by `dailyPct` descending and take the top 4 (the "central" sizes — tail grades near 0% are dropped). Re-sort that top-4 subset by canonical size order (largest → smallest: XL, 3L, 2L, L, M, S, XS) for left-to-right display. Render as a pipe-separated row:
+
+  ```
+  3L  25%  |  2L  39%  |  L  25%  |  M  12%
+  ```
+
+  The highest `dailyPct` value among the displayed grades is **bolded** (or highlighted) as a quick visual reference.
+
 - Buttons: *Save to trip log* / *Cancel*
 
 **Error / not-found cases:**
