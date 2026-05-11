@@ -353,6 +353,7 @@ function reHeaderHTML() {
         <span class="re-header-title">Rounds</span>
         <span class="re-header-sub">Round ${RE.roundNum}&nbsp;&middot;&nbsp;${reEsc(RE.scheduledTime)}</span>
       </div>
+      ${RE.isTablet ? `<button class="re-switch-sides-btn" onclick="reToggleKpSide()" title="Switch keypad side">&#8644; Switch Sides</button>` : ''}
       <button class="re-mode-btn" onclick="reToggleColourMode()" title="${dark ? 'Light mode' : 'Dark mode'}">${modeIcon}</button>
     </div>
   `;
@@ -586,9 +587,7 @@ function reNavDown() { if (RE.cursorIdx < RE.navItems.length - 1) reCursorTo(RE.
 function reKeypadHTML() {
   const type   = RE.navItems[RE.cursorIdx]?.item?.type;
   const hidden = (type === 'custom' || type === 'text' || type === 'latlon') ? ' re-kp-hidden' : '';
-  const toggle = RE.isTablet
-    ? `<button class="re-kp-side-toggle" onclick="reToggleKpSide()">${RE.prefs.keypad_side === 'left' ? '&#8594;' : '&#8592;'}</button>`
-    : '';
+  const toggle = '';
   return `
     <div class="re-keypad${hidden}" id="re-keypad">
       ${toggle}
@@ -1212,7 +1211,13 @@ function reStylesHTML() {
 .re-kp-bs          { grid-column: span 2; }
 .re-kp-enter       { background: var(--re-accent); color: var(--re-bg0); grid-row: span 2; font-size: 13px; }
 .re-kp-secd        { font-size: 11px; font-weight: 700; color: var(--re-muted); background: var(--re-bg1); letter-spacing: 0.04em; }
-.re-kp-side-toggle { display: block; width: 100%; background: transparent; border: none; color: var(--re-text2); font-size: 18px; cursor: pointer; text-align: right; margin-bottom: 4px; padding: 0 4px; }
+.re-kp-side-toggle { display: none; }
+.re-switch-sides-btn {
+  flex-shrink: 0; background: var(--re-bg2); border: 1px solid var(--re-border);
+  border-radius: 8px; color: var(--re-text2); font-size: 13px; font-weight: 500;
+  padding: 6px 10px; cursor: pointer; white-space: nowrap;
+}
+.re-switch-sides-btn:active { filter: brightness(0.8); }
 
 /* Tablet layout — header + keypad in right side panel */
 @media (min-width: 768px) {
@@ -1220,7 +1225,7 @@ function reStylesHTML() {
 
   .re-side-panel {
     display: flex; flex-direction: column;
-    width: 260px; flex-shrink: 0;
+    width: 520px; flex-shrink: 0;
     border-left: 2px solid var(--re-border);
   }
   .re-kp-left .re-side-panel {
