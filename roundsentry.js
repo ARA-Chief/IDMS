@@ -293,6 +293,7 @@ async function initRoundsEntry(sourceScreen) {
   reRenderScreen();
   reBindGestures();
   window.addEventListener('resize', reOnResize);
+  reRequestFullscreen();
 
   // Load history non-blocking; refresh grid when done
   reLoadAggregates().then(() => reRenderGrid());
@@ -381,6 +382,8 @@ function reAllRowsHTML() {
     }
     if (r.item.type === 'heading') {
       out.push(reHeadingRowHTML(r));
+    } else if (r.item.type === 'latlon') {
+      out.push(reLatLonRowHTML(r, RE.navItems.indexOf(r)));
     } else {
       out.push(reDataRowHTML(r, RE.navItems.indexOf(r)));
     }
@@ -413,6 +416,54 @@ function reDataRowHTML(r, ni) {
       <div class="re-col-hist">${reEsc(h1)}</div>
       <div class="re-col-hist">${reEsc(h2)}</div>
       ${reEntryCellHTML(r, ni, active, secd, val)}
+    </div>`;
+}
+
+function reLatLonRowHTML(r, ni) {
+  const active = ni === RE.cursorIdx;
+  const iid    = r.item.item_id;
+  const done   = reItemComplete(r.item, iid);
+  const val    = RE.values[iid] || '';
+  const parts  = val.split('|');
+  const latDeg = parts[0] || '';
+  const latMin = parts[1] || '';
+  const latHemi= parts[2] || 'N';
+  const lonDeg = parts[3] || '';
+  const lonMin = parts[4] || '';
+  const lonHemi= parts[5] || 'W';
+
+  return `
+    <div class="re-row re-latlon-row${active ? ' re-active-row' : ''}${done ? ' re-done' : ''}"
+         id="re-row-${ni}" data-ni="${ni}" data-iid-latlon="${reEsc(iid)}">
+      <div class="re-latlon-label">${reEsc(r.item.label)}</div>
+      <div class="re-latlon-inputs">
+        <div class="re-latlon-pair">
+          <span class="re-latlon-tag">LAT</span>
+          <input class="re-latlon-deg" type="number" inputmode="decimal" min="0" max="90" step="1"
+                 placeholder="DD" value="${reEsc(latDeg)}" oninput="reLatLonUpdate('${reEsc(iid)}')">
+          <span class="re-latlon-sep">°</span>
+          <input class="re-latlon-min" type="number" inputmode="decimal" min="0" max="60" step="0.001"
+                 placeholder="MM.mmm" value="${reEsc(latMin)}" oninput="reLatLonUpdate('${reEsc(iid)}')">
+          <span class="re-latlon-sep">'</span>
+          <select class="re-latlon-hemi" onchange="reLatLonUpdate('${reEsc(iid)}')">
+            <option value="N" ${latHemi === 'N' ? 'selected' : ''}>N</option>
+            <option value="S" ${latHemi === 'S' ? 'selected' : ''}>S</option>
+          </select>
+        </div>
+        <div class="re-latlon-pair">
+          <span class="re-latlon-tag">LON</span>
+          <input class="re-latlon-deg" type="number" inputmode="decimal" min="0" max="180" step="1"
+                 placeholder="DDD" value="${reEsc(lonDeg)}" oninput="reLatLonUpdate('${reEsc(iid)}')">
+          <span class="re-latlon-sep">°</span>
+          <input class="re-latlon-min" type="number" inputmode="decimal" min="0" max="60" step="0.001"
+                 placeholder="MM.mmm" value="${reEsc(lonMin)}" oninput="reLatLonUpdate('${reEsc(iid)}')">
+          <span class="re-latlon-sep">'</span>
+          <select class="re-latlon-hemi" onchange="reLatLonUpdate('${reEsc(iid)}')">
+            <option value="E" ${lonHemi === 'E' ? 'selected' : ''}>E</option>
+            <option value="W" ${lonHemi === 'W' ? 'selected' : ''}>W</option>
+          </select>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -460,6 +511,11 @@ function reItemComplete(item, iid) {
   if (item.type === 'text')     return true;
   if (item.type === 'checkbox') return v === 'true' || v === 'false';
   if (item.type === 'custom')   return !!v;
+  if (item.type === 'latlon') {
+    if (!v) return false;
+    const p = v.split('|');
+    return p.length === 6 && p[0] !== '' && p[1] !== '' && p[3] !== '' && p[4] !== '';
+  }
   return v !== '' && v !== null && v !== undefined;
 }
 
@@ -506,12 +562,13 @@ function reCursorTo(ni) {
   // Keypad visibility
   const type = RE.navItems[ni]?.item?.type;
   const kp = document.getElementById('re-keypad');
-  if (kp) kp.classList.toggle('re-kp-hidden', type === 'custom' || type === 'text');
+  if (kp) kp.classList.toggle('re-kp-hidden', type === 'custom' || type === 'text' || type === 'latlon');
 
   // Focus native inputs
   if (newRow) {
     if (type === 'text')   { const inp = newRow.querySelector('.re-text-inp'); if (inp) inp.focus(); }
     if (type === 'custom') { const sel = newRow.querySelector('.re-custom-sel'); if (sel) sel.focus(); }
+    if (type === 'latlon') { const inp = newRow.querySelector('.re-latlon-deg'); if (inp) inp.focus(); }
   }
 
   reScrollToActive();
@@ -524,7 +581,7 @@ function reNavDown() { if (RE.cursorIdx < RE.navItems.length - 1) reCursorTo(RE.
 
 function reKeypadHTML() {
   const type   = RE.navItems[RE.cursorIdx]?.item?.type;
-  const hidden = (type === 'custom' || type === 'text') ? ' re-kp-hidden' : '';
+  const hidden = (type === 'custom' || type === 'text' || type === 'latlon') ? ' re-kp-hidden' : '';
   const toggle = RE.isTablet
     ? `<button class="re-kp-side-toggle" onclick="reToggleKpSide()">${RE.prefs.keypad_side === 'left' ? '&#8594;' : '&#8592;'}</button>`
     : '';
@@ -675,6 +732,17 @@ function reTextKd(e, ni) {
   if (e.key === 'Enter') { e.preventDefault(); reNavDown(); }
 }
 
+function reLatLonUpdate(iid) {
+  const row = document.querySelector(`[data-iid-latlon="${iid}"]`);
+  if (!row) return;
+  const inputs = row.querySelectorAll('.re-latlon-deg, .re-latlon-min, .re-latlon-hemi');
+  const vals   = Array.from(inputs).map(i => i.value || '');
+  RE.values[iid] = vals.join('|');
+  const ni  = RE.navItems.findIndex(r => r.item.item_id === iid);
+  const r2  = document.getElementById('re-row-' + ni);
+  if (r2 && ni >= 0) r2.classList.toggle('re-done', reItemComplete(RE.navItems[ni].item, iid));
+}
+
 // ── SEC'D ─────────────────────────────────────────────────────────────────────
 
 function reSecD() {
@@ -725,7 +793,7 @@ function reSecD() {
   const kp = document.getElementById('re-keypad');
   if (kp) {
     const t = RE.navItems[RE.cursorIdx]?.item?.type;
-    kp.classList.toggle('re-kp-hidden', t === 'custom' || t === 'text');
+    kp.classList.toggle('re-kp-hidden', t === 'custom' || t === 'text' || t === 'latlon');
   }
 }
 
@@ -864,13 +932,33 @@ function reToggleKpSide() {
 
 // ── Resize / exit ─────────────────────────────────────────────────────────────
 
+function reRequestFullscreen() {
+  if (window.innerWidth < 768) return;
+  const el  = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+  const already = document.fullscreenElement || document.webkitFullscreenElement;
+  if (req && !already) req.call(el).catch(() => {});
+}
+
+function reExitFullscreen() {
+  const active = document.fullscreenElement || document.webkitFullscreenElement;
+  if (!active) return;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+  if (exit) exit.call(document).catch(() => {});
+}
+
 function reOnResize() {
   const was = RE.isTablet;
   RE.isTablet = window.innerWidth >= 768;
-  if (was !== RE.isTablet) reRenderScreen();
+  if (was !== RE.isTablet) {
+    reRenderScreen();
+    if (RE.isTablet) reRequestFullscreen();
+    else reExitFullscreen();
+  }
 }
 
 function reExit() {
+  reExitFullscreen();
   reUnbindGestures();
   window.removeEventListener('resize', reOnResize);
   // Use the explicit source screen set by the caller, falling back to
@@ -1031,6 +1119,47 @@ function reStylesHTML() {
 }
 .re-checkbox.re-checked { background: var(--re-accent); border-color: var(--re-accent); }
 .re-checkbox.re-checked::after { content: '✓'; font-size: 15px; color: var(--re-bg0); font-weight: 700; }
+
+/* Lat/Lon row */
+.re-latlon-row {
+  display: flex; flex-direction: column; padding: 8px 6px; gap: 6px; min-height: 80px;
+}
+.re-latlon-label {
+  font-size: 12px; font-weight: 600; color: var(--re-text2);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.re-latlon-row.re-done .re-latlon-label { color: var(--re-done-text); }
+.re-latlon-inputs { display: flex; flex-direction: column; gap: 5px; }
+.re-latlon-pair {
+  display: flex; align-items: center; gap: 4px;
+}
+.re-latlon-tag {
+  font-size: 10px; font-weight: 700; color: var(--re-muted);
+  letter-spacing: 0.06em; width: 28px; flex-shrink: 0;
+}
+.re-latlon-sep { font-size: 13px; color: var(--re-muted); flex-shrink: 0; }
+.re-latlon-deg {
+  width: 52px; background: var(--re-bg2); border: 1px solid var(--re-border);
+  border-radius: 6px; color: var(--re-text); font-size: 14px; font-family: monospace;
+  padding: 5px 6px; text-align: center; -moz-appearance: textfield;
+}
+.re-latlon-min {
+  width: 76px; background: var(--re-bg2); border: 1px solid var(--re-border);
+  border-radius: 6px; color: var(--re-text); font-size: 14px; font-family: monospace;
+  padding: 5px 6px; text-align: center; -moz-appearance: textfield;
+}
+.re-latlon-hemi {
+  width: 50px; background: var(--re-bg2); border: 1px solid var(--re-border);
+  border-radius: 6px; color: var(--re-text); font-size: 14px;
+  padding: 5px 4px; text-align: center; cursor: pointer;
+}
+.re-latlon-deg::-webkit-inner-spin-button,
+.re-latlon-deg::-webkit-outer-spin-button,
+.re-latlon-min::-webkit-inner-spin-button,
+.re-latlon-min::-webkit-outer-spin-button { -webkit-appearance: none; }
+.re-latlon-deg:focus, .re-latlon-min:focus, .re-latlon-hemi:focus {
+  outline: none; border-color: var(--re-accent);
+}
 
 /* Submit bar */
 .re-submit-bar { padding: 8px 12px; background: var(--re-bg1); border-top: 1px solid var(--re-border); flex-shrink: 0; }

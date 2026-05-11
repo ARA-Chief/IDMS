@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.16 — F/V Araho**  
+**Version 2.17 — F/V Araho**  
+v2.17 — Trip History tab (§27) gains admin-only **↑ ↓ reorder controls** on each trip row. `trips` table gains `sort_order INTEGER` column (added via `ALTER TABLE` migration on startup; populated once from `open_date DESC` row rank for rows that have `NULL`). `db:getTripsWithTotals` ORDER BY changed from `open_date DESC` to `COALESCE(sort_order, 999999) ASC, open_date DESC`. New IPC handler `db:swapTripOrder` (`{ trip_id_a, trip_id_b }`) swaps the `sort_order` values of two trips in a transaction; re-renders the Trip History tab on success. ↑ button suppressed on first row; ↓ button suppressed on last row; reorder buttons are spacers (not buttons) when disabled. Row-expand click guard updated to ignore `.ta-reorder-btn` clicks. New handler exposed in `preload.js` as `swapTripOrder`.
+
 v2.16 — Trip History tab (§27) expanded. **New columns:** Total Prod (MT) added between Fishery and Open; Avg Daily Burn (USG) added between Close and Total Fuel Burned; "Total Fuel (USG)" column renamed to "Total Fuel Burned (USG)". Column order: Trip # · Fishery · Total Prod (MT) · Open · Close · Avg Daily Burn (USG) · Total Fuel Burned (USG) · [actions]. **Admin topbar controls:** "+ New Trip" button (modal: trip number YYNN, open date, fishery) and "Close Active Trip" button (modal: close date, offload port; irreversible warning; only shown when an active trip exists). **Per-row delete:** × button alongside Edit; confirmation dialog; deletes trip + all daily logs + crew assignments in a single transaction; clears `TA.activeTrip` if the active trip is deleted. Active trip row highlighted with subtle background and "● Active" badge. **New IPC handlers:** `db:getTripsWithTotals` (replaces `db:getTrips` in the Trip History renderer — LEFT JOIN with `trip_daily_logs` to return aggregated `total_fuel_usg`, `total_production_mt`, `fuel_log_days`); `db:deleteTrip` (transactional delete of trips + daily logs + crew assignments). **Avg Daily Burn calculation:** seed/historical trips use `notes.gpd` (falling back to `fuel_total_usg / days_at_sea`); live trips use `total_fuel_usg / fuel_log_days`. Client-side `taParseNotes()` utility added to `tripanalytics.js` (mirrors `parseNotes()` in `main.js`).
 
 v2.15 — Trip Analytics UI revised (§27). "Trip History" tab (old Tab 2, delegating to `initTripHistory`) removed — it was a null-destination stub offering no value. "Fuel Consumption" tab renamed to **Trip History** (internal key `fuel` unchanged) — this is the accurate description of what the tab shows. Tab count: 4 → 3 (`Current Trip Calculations · Trip History · Analytics Setup`). Trip History tab gains admin-only **Edit** button per trip row: opens an inline edit panel with Trip Details (fishery, open date, close date, offload port) and a Daily Logs table (editable Fuel Burned (USG), Production (MT), Lat, Lon per day). "Fuel Burned" is explicitly labelled as settling-tank draw (fuel consumed that day, not fuel onboard). Edit panel supports **+ Add day** (date picker, rejects duplicates) and per-row **× delete** (staged — rows dim to 35% opacity and are only deleted on Save, togglable before confirming). Save sequence: header update → staged deletes → daily log upserts (blank rows skipped). Three new IPC handlers: `db:updateTrip`, `db:updateTripDailyLog`, `db:deleteTripDailyLog` (see §27 IPC handlers).
@@ -2574,6 +2576,7 @@ One row per fishing trip.
 | `opened_by`      | TEXT    | NOT NULL             | Username from userconfig.json. `'seed_import'` for historical trips inserted by the seed script. |
 | `closed_by`      | TEXT    | nullable             | Username; null until closed. `'seed_import'` for historical trips. |
 | `notes`          | TEXT    | nullable             | Semicolon-delimited `key=value` pairs. See **notes field format** below. |
+| `sort_order`     | INTEGER | nullable             | Display position in Trip History list. Lower numbers appear first. Null rows sort last. Populated on startup from `open_date DESC` rank for legacy rows; swapped in pairs by `db:swapTripOrder` when admin uses ↑ ↓ controls. |
 
 #### `trip_daily_logs`
 
@@ -2751,8 +2754,9 @@ The console ingest reads `production_mt` from this file and writes it to `trip_d
 | `db:updateTrip`              | Manual correction of `trips` header fields. Accepts `{ trip_id, fields }` where `fields` is a subset of `{ fishery_target, open_date, close_date, offload_port, status, notes }`. Field whitelist enforced in handler. Returns `{ ok, trip }`. Admin only (enforced in renderer). |
 | `db:updateTripDailyLog`      | Full upsert of a `trip_daily_logs` row for a given `trip_id` + `log_date`. Accepts `{ trip_id, log_date, fuel_burned_usg, production_mt, lat, lon }`. All value fields nullable. Uses `ON CONFLICT` to update existing rows. Admin only (enforced in renderer). |
 | `db:deleteTripDailyLog`      | Deletes the `trip_daily_logs` row matching `{ trip_id, log_date }`. Admin only (enforced in renderer). |
-| `db:getTripsWithTotals`      | Returns all trips (ordered `open_date DESC`) with LEFT JOIN aggregates from `trip_daily_logs`: `total_fuel_usg`, `total_production_mt`, `fuel_log_days` (days with a non-null fuel value). Used by Trip History tab instead of `db:getTrips`. |
+| `db:getTripsWithTotals`      | Returns all trips ordered `COALESCE(sort_order, 999999) ASC, open_date DESC` with LEFT JOIN aggregates from `trip_daily_logs`: `total_fuel_usg`, `total_production_mt`, `fuel_log_days` (days with a non-null fuel value). Used by Trip History tab instead of `db:getTrips`. |
 | `db:deleteTrip`              | Transactional delete of a trip and all its `trip_daily_logs` and `trip_crew_assignments` rows. Args: `{ trip_id }`. Returns `{ ok }`. Admin only (enforced in renderer). |
+| `db:swapTripOrder`           | Swaps the `sort_order` values of two trips in a single transaction. Args: `{ trip_id_a, trip_id_b }`. Returns `{ ok }`. Used by ↑ ↓ reorder controls in Trip History. Admin only (enforced in renderer). |
 | `db:getTripFuelAvgByFishery` | Returns `{ avg_daily_usg, sample_days }` for all closed trips matching a fishery target. Used by Fuel Management tab comparison line. |
 | `db:getTripHistory`          | Returns paginated closed trips with optional filters (`year`, `fishery`, `search`, `page`, `pageSize`). Returns `{ rows, total, pages }`. Historical trips use notes-parsed `days_at_sea`; live trips derive it from `COUNT(DISTINCT log_date)`. |
 | `db:getSeasonSummary`        | Returns one row per year with aggregated totals: `trips`, `days_at_sea`, `fuel_usg`, `prod_mt`, `avg_gpd`. Covers all closed trips. |
@@ -2796,7 +2800,7 @@ All trips table (internal key: `fuel`). All users see an expandable read-only vi
 - **+ New Trip** — modal: trip number (4-digit YYNN, validated), open date, fishery select. Calls `db:openTrip`. Re-renders tab on success.
 - **Close Active Trip** — only shown when an active trip exists. Modal: close date (required), offload port (optional). Irreversible-action styling. Calls `db:closeTrip`. Clears `TA.activeTrip` and re-renders on success.
 
-**Per-row actions (admin only):** Edit button (opens edit panel — see below) and × delete button. Delete triggers a confirmation dialog; if the active trip is deleted, `TA.activeTrip` is cleared. Calls `db:deleteTrip`.
+**Per-row actions (admin only):** **↑ ↓ reorder buttons** (first row has no ↑; last row has no ↓ — disabled positions render as spacers). Clicking ↑ or ↓ calls `db:swapTripOrder` with the adjacent trip IDs and re-renders. **Edit button** (opens edit panel — see below). **× delete button** — triggers a confirmation dialog; if the active trip is deleted, `TA.activeTrip` is cleared; calls `db:deleteTrip`.
 
 **Read-only expand:** clicking a live-trip row expands a detail sub-table via `db:getTripDailyLogsWithGaps`: date, fuel burned (USG), position. Gap days (no `trip_daily_logs` entry) render at opacity 0.45. Seed/historical trips (`opened_by = 'seed_import'`) show a single aggregate row with no expand control.
 
@@ -5431,6 +5435,8 @@ Returned shape:
   tripCases:   17219,
   tripNumber:  "ARA2607",
   tripDay:     5,
+  area:        543,                    // fishing area — passed through from parseDPRText
+  weather:     "15 kts",              // weather string — passed through from parseDPRText
   species:     [ ... ]                 // full structured array from parseDPRText
 }
 ```
@@ -5440,11 +5446,30 @@ Returned shape:
 `idle` → `fetching` → `found` | `notfound` | `error` → (on save) `saving` → `idle`
 
 **`found` rendering** (Overview panel):
+
+Header rows:
 - If `!isToday`: yellow notice — `Today's report not available. Showing {date}.`
 - Report Date: `{date}`
 - Trip: `{tripNumber} — Day {tripDay}`
+- Area: `{area}`
+- Weather: `{weather}`
 - Daily Total: `{midnight_mt.toFixed(2)} MT ({dailyCases.toLocaleString()} cases)` — bolded
 - Trip Total: `{tripMT.toFixed(2)} MT ({tripCases.toLocaleString()} cases)`
+
+Species breakdown (computed from `emailResult.species`):
+
+Rank species by `total.dailyPct` descending. Render the top 3 with their size distribution. Label: `#1`, `#2`, `#3`.
+
+For each ranked species:
+- **Species line:** `#{rank}  {name}  ({total.dailyPct}%)`
+- **Size line:** Take the species' `grades[]`, filter to those with `dailyPct > 0`, sort by `dailyPct` descending and take the top 4 (the "central" sizes — tail grades near 0% are dropped). Re-sort that top-4 subset by canonical size order (largest → smallest: XL, 3L, 2L, L, M, S, XS) for left-to-right display. Render as a pipe-separated row:
+
+  ```
+  3L  25%  |  2L  39%  |  L  25%  |  M  12%
+  ```
+
+  The highest `dailyPct` value among the displayed grades is **bolded** (or highlighted) as a quick visual reference.
+
 - Buttons: *Save to trip log* / *Cancel*
 
 **Error / not-found cases:**
