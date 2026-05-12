@@ -625,7 +625,7 @@ function reKpKey(k) {
   if (!nav) return;
   const iid  = nav.item.item_id;
   const type = nav.item.type;
-  if (RE.secd[iid]) return;
+  if (RE.secd[iid]) { reUnsecD(iid); RE.freshCursor = true; reRenderGrid(); }
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
   if (RE.freshCursor) { RE.freshCursor = false; RE.values[iid] = k; }
   else                { RE.values[iid] = (RE.values[iid] || '') + k; }
@@ -637,7 +637,7 @@ function reKpBs() {
   if (!nav) return;
   const iid  = nav.item.item_id;
   const type = nav.item.type;
-  if (RE.secd[iid]) return;
+  if (RE.secd[iid]) { reUnsecD(iid); reRenderGrid(); return; }
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
   if (RE.freshCursor) { RE.freshCursor = false; RE.values[iid] = ''; }
   else                { RE.values[iid] = (RE.values[iid] || '').slice(0, -1); }
@@ -652,7 +652,7 @@ function reKpMinus() {
   if (!nav) return;
   const iid  = nav.item.item_id;
   const type = nav.item.type;
-  if (RE.secd[iid]) return;
+  if (RE.secd[iid]) { reUnsecD(iid); RE.freshCursor = true; reRenderGrid(); }
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
   RE.freshCursor = false;
   const v = RE.values[iid] || '';
@@ -664,7 +664,7 @@ function reKpDot() {
   const nav = RE.navItems[RE.cursorIdx];
   if (!nav) return;
   const iid = nav.item.item_id;
-  if (RE.secd[iid]) return;
+  if (RE.secd[iid]) { reUnsecD(iid); RE.freshCursor = true; reRenderGrid(); }
   if (nav.item.type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
   if (RE.freshCursor) { RE.freshCursor = false; RE.values[iid] = '.'; reUpdateNum(iid); return; }
   const v = RE.values[iid] || '';
@@ -748,27 +748,51 @@ function reLatLonUpdate(iid) {
 
 // ── SEC'D ─────────────────────────────────────────────────────────────────────
 
-function reSecD() {
-  const nav = RE.navItems[RE.cursorIdx];
-  if (!nav) return;
-  const section = nav.section;
+// Shared helper: resolve the heading-group range for a given item_id.
+// Returns { secFlat, rangeStart, rangeEnd } so callers can iterate the group.
+function reSecDRange(iid) {
+  const ni  = RE.navItems.findIndex(r => r.item.item_id === iid);
+  const nav = RE.navItems[ni];
+  if (!nav) return null;
 
-  // All flat entries for this section (in order)
-  const secFlat = RE.flatItems.filter(r => r.section === section);
+  const secFlat   = RE.flatItems.filter(r => r.section === nav.section);
   const activePos = secFlat.indexOf(nav);
 
-  // Find the current heading group: nearest heading at or before active position
-  let headingEnd = -1; // last index of heading before activePos
+  let headingEnd = -1;
   for (let i = activePos - 1; i >= 0; i--) {
     if (secFlat[i].item.type === 'heading') { headingEnd = i; break; }
   }
-
-  // Range: from headingEnd+1 up to (but not including) the next heading after activePos
   const rangeStart = headingEnd + 1;
   let rangeEnd = secFlat.length;
   for (let i = rangeStart; i < secFlat.length; i++) {
     if (i > activePos && secFlat[i].item.type === 'heading') { rangeEnd = i; break; }
   }
+  return { secFlat, rangeStart, rangeEnd };
+}
+
+// Clear SEC'D for the entire heading group that contains iid.
+// All items in the group have their secd flag and value reset to blank.
+function reUnsecD(iid) {
+  const range = reSecDRange(iid);
+  if (!range) return;
+  const { secFlat, rangeStart, rangeEnd } = range;
+  for (let i = rangeStart; i < rangeEnd; i++) {
+    const { item } = secFlat[i];
+    if (item.type !== 'heading') {
+      RE.secd[item.item_id]   = false;
+      RE.values[item.item_id] = null;
+    }
+  }
+}
+
+function reSecD() {
+  const nav = RE.navItems[RE.cursorIdx];
+  if (!nav) return;
+
+  const iid   = nav.item.item_id;
+  const range = reSecDRange(iid);
+  if (!range) return;
+  const { secFlat, rangeStart, rangeEnd } = range;
 
   // Mark every non-heading item in range as SEC'D
   for (let i = rangeStart; i < rangeEnd; i++) {
@@ -1246,6 +1270,18 @@ function reStylesHTML() {
     padding: 12px 8px;
     display: flex; flex-direction: column; justify-content: center;
   }
+
+  /* Tablet font-size bump — grid rows only */
+  .re-col-headers > div    { font-size: 12px; }
+  .re-heading-text         { font-size: 12px; }
+  .re-section-text         { font-size: 16px; }
+  .re-col-label            { font-size: 15px; }
+  .re-col-hist             { font-size: 14px; }
+  .re-num                  { font-size: 17px; }
+  .re-unit                 { font-size: 12px; }
+  .re-text-inp             { font-size: 15px; }
+  .re-custom-sel           { font-size: 13px; }
+  .re-secd-cell            { font-size: 12px; }
 }
 
 /* Modal */

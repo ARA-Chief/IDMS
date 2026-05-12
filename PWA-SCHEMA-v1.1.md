@@ -1,5 +1,7 @@
 # IDMS Field PWA — Schema & Architecture Reference
-**Version 1.2 — F/V Araho**
+**Version 1.3 — F/V Araho**
+
+v1.3 *(go-live — 2026-05-11)* — App version bumped to **v1.0** across all user-facing strings in `index.html` (Microsoft auth footer, IDMS login footer). **Rounds entry tablet display overhaul.** On tablet (≥ 768 px), `initRoundsEntry()` now calls `reExpandFrame()` which (a) adds class `re-rounds-expanded` to `<body>`, causing `.phone-frame` to expand `position: fixed; inset: 0; width: 100vw; height: 100dvh; border: none; border-radius: 0` via an injected `<style id="re-expand-style">` — giving the rounds screen the full display area — and (b) requests browser fullscreen via the Fullscreen API (vendor-prefixed, silently ignored if denied). Both are reverted by `reCollapseFrame()` on `reExit()`. **Side-panel layout on tablet:** the screen header (`re-header`) and keypad (`re-keypad`) are now co-located in a `<div class="re-side-panel">` (520 px wide) that sits to the right (or left) of the data grid, rather than the header spanning full width above both columns. On phone (< 768 px) the layout is unchanged: header full-width at top, keypad full-width at bottom. **Switch Sides button:** a labeled "⇄ Switch Sides" button is now rendered inside the header when on tablet, replacing the previous small arrow icon that lived inside the keypad. Calls the existing `reToggleKpSide()` — saves `userprefs-{username}.json` and re-renders. **Keypad button height doubled:** `.re-kp-btn` vertical padding increased from `14 px` to `28 px`. **Username tap target expanded:** on all three home screens (`screen-home`, `screen-factory-home`, `screen-engine-home`), the `user-info` div (name + role text) now carries the same `onclick` handler as the avatar, giving a much larger tap target for opening the user menu.
 
 v1.2 — Rounds entry module (`roundsentry.js`) updated. **Year subfolders:** entry log files are now written to `data/rounds/logs/{username}/{YYYY}/roundslog-…` — one subfolder per calendar year, preventing unbounded OneDrive folder growth. **Payload-level round fields:** `round_number` and `scheduled_time` are now top-level fields in the §22 payload in addition to being echoed per-entry; the Console ingest reads from payload level. **Submit flow change:** incomplete round warning changed from blocking (OK only) to a modal with **OK / Cancel** — crew can submit a partial round. **Add Oil excluded from incomplete count:** `add_oil` type items are never counted as "not yet checked" in the submission warning. **Add Oil zero = null:** entering `0` for an `add_oil` item stores `null` in the aggregate `display_value` — no volume recorded if nothing was actually added. **Keypad layout updated:** row 1 = ← − ▲; row 2 = 7 8 9 ▼; row 3 = 4 5 6 SEC'D; row 4–5 = 1 2 3 [enter, spans 2 rows]; row 5 = 0 dcml [enter continues]. "`.`" key renamed to `dcml`. **First-keystroke-replaces:** cursor navigation (click or arrow key) sets a `freshCursor` flag on the active item; the next digit or decimal keypress replaces the existing value rather than appending it. `freshCursor` is cleared after the first keypress and on backspace/sign-toggle. New `RE` state field: `freshCursor` (boolean). Data contracts updated: §22 per IDMS-SCHEMA-v2.14.
 
@@ -646,7 +648,7 @@ A single tablet can be shared by multiple crew members across a shift. The PWA s
 ### How it works
 
 1. User A logs in. Their session is stored in `fw_session`.
-2. User A taps their avatar to open the user menu and selects "Switch User".
+2. User A taps their **avatar or username/role text** to open the user menu and selects "Switch User".
 3. `switchUser()` is called:
    - Saves all active incidents for User A under `fw_active_{userA}_{dept}`.
    - Clears `fw_active`, `fw_user`, and `fw_session`.
@@ -750,7 +752,7 @@ Mirror of the Factory event-timing module. Will use `engineconfig.json` + `engin
 
 Same pattern as Engine Room. Uses `deckconfig.json` + `deckshell.json`.
 
-### Rounds entry *(Built — v1.2)*
+### Rounds entry *(Built — v1.3)*
 
 `roundsentry.js` is the field rounds data-entry module. See §20 for full documentation.
 
@@ -765,6 +767,7 @@ Same pattern as Engine Room. Uses `deckconfig.json` + `deckshell.json`.
 - Partial rounds can be submitted (OK / Cancel warning, not a block).
 - `add_oil` items are excluded from the incomplete count and zero values are not stored.
 - Saves `userprefs-{username}.json` on preference change.
+- On tablet (≥ 768 px): expands `.phone-frame` to fill the full display and attempts browser fullscreen. Header and keypad are co-located in a 520 px side panel; keypad buttons are double height. A "Switch Sides" button in the header swaps the panel left/right.
 
 ### Tasks & Maintenance
 
@@ -869,7 +872,7 @@ The entry grid is a 4-column CSS grid rendered as rows within `#screen-roundsent
 ```
 
 - **Phone** (< 768 px): fixed to bottom, full width.
-- **Tablet** (≥ 768 px): fixed to left or right side (`RE.prefs.keypad_side`). A toggle button swaps sides and saves `userprefs-{username}.json`.
+- **Tablet** (≥ 768 px): rendered inside `re-side-panel` (520 px wide) alongside the screen header. Panel sits to the right or left of the data grid per `RE.prefs.keypad_side`. A "⇄ Switch Sides" button in the header calls `reToggleKpSide()`, which toggles `keypad_side`, saves `userprefs-{username}.json`, and re-renders. Keypad button height is doubled vs. phone (28 px vertical padding).
 - **Hidden** when active item is `custom` or `text` type.
 - SEC'D button is visually subdued (grey background) to prevent accidental activation.
 - `dcml` inserts a decimal point. If `freshCursor` is set, clears the field first (sets value to `"."`).
