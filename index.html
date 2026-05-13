@@ -1424,9 +1424,13 @@
 
       <div class="er-form-row">
         <label class="er-form-label">Equipment <span style="color:var(--danger)">*</span></label>
-        <div style="display:flex;gap:6px">
-          <input type="text" id="er-create-equip-input" class="er-form-input" placeholder="Type code and press Enter" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();erCreateAddEquip();}">
+        <div style="display:flex;gap:6px;position:relative">
+          <input type="text" id="er-create-equip-input" class="er-form-input" placeholder="Type code or name…" style="flex:1" autocomplete="off"
+                 oninput="erCreateEquipInput()"
+                 onkeydown="erCreateEquipKey(event)"
+                 onblur="setTimeout(erCreateEquipHideSuggest, 150)">
           <button onclick="erCreateAddEquip()" style="padding:7px 12px;background:var(--bg-3,#374151);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-primary);font-size:13px;cursor:pointer;white-space:nowrap">Add</button>
+          <div id="er-create-equip-suggest" style="display:none;position:absolute;top:100%;left:0;right:54px;margin-top:2px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);max-height:220px;overflow-y:auto;z-index:50;box-shadow:0 4px 12px rgba(0,0,0,0.4)"></div>
         </div>
         <div id="er-create-equip-tags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-height:4px"></div>
       </div>
@@ -3887,9 +3891,115 @@ async function erWriteTaskRoughLogEntry(entry) {
 // ── ER Task Create Modal ──────────────────────────────────────────────────────
 
 var ER_CREATE_ASSETS = [];
+var ER_ASSETS_CACHE  = null;   // [{ code, name }] parsed from OneDrive assets.csv
+var ER_ASSETS_LOAD   = null;   // in-flight promise
+
+// Fetch /config/assets.csv from OneDrive and cache a [{code,name}] list.
+function erLoadAssets() {
+  if (ER_ASSETS_CACHE) return Promise.resolve(ER_ASSETS_CACHE);
+  if (ER_ASSETS_LOAD)  return ER_ASSETS_LOAD;
+  if (!graphToken)     return Promise.resolve([]);
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/config/assets.csv:/content';
+  ER_ASSETS_LOAD = fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } })
+    .then(function(r) { return r.ok ? r.text() : ''; })
+    .then(function(csv) {
+      ER_ASSETS_CACHE = erParseAssetsCsv(csv);
+      return ER_ASSETS_CACHE;
+    })
+    .catch(function() { ER_ASSETS_CACHE = []; return []; })
+    .finally(function() { ER_ASSETS_LOAD = null; });
+  return ER_ASSETS_LOAD;
+}
+
+// Minimal CSV parser — handles quoted fields, commas, and CRLF.
+function erParseAssetsCsv(text) {
+  if (!text) return [];
+  text = text.replace(/^﻿/, '');
+  var rows = [];
+  var i = 0, field = '', row = [], inQ = false;
+  while (i < text.length) {
+    var c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i += 2; continue; } inQ = false; i++; continue; }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQ = true; i++; continue; }
+    if (c === ',') { row.push(field); field = ''; i++; continue; }
+    if (c === '\r') { i++; continue; }
+    if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+    field += c; i++;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  if (rows.length < 2) return [];
+  var headers = rows[0].map(function(h) { return (h || '').trim(); });
+  var codeIdx = headers.indexOf('Code');
+  var nameIdx = headers.indexOf('Name');
+  if (codeIdx === -1) return [];
+  var out = [];
+  for (var r = 1; r < rows.length; r++) {
+    var rr = rows[r];
+    var code = (rr[codeIdx] || '').trim();
+    if (!code) continue;
+    out.push({ code: code, name: nameIdx === -1 ? '' : (rr[nameIdx] || '').trim() });
+  }
+  return out;
+}
+
+function erCreateEquipInput() {
+  var inp = document.getElementById('er-create-equip-input');
+  var sug = document.getElementById('er-create-equip-suggest');
+  if (!inp || !sug) return;
+  var q = (inp.value || '').trim().toLowerCase();
+  if (!q) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
+  var list = ER_ASSETS_CACHE || [];
+  var matches = list.filter(function(a) {
+    return (a.code || '').toLowerCase().indexOf(q) !== -1
+        || (a.name || '').toLowerCase().indexOf(q) !== -1;
+  }).slice(0, 8);
+  if (!matches.length) { sug.style.display = 'none'; sug.innerHTML = ''; return; }
+  sug.innerHTML = matches.map(function(a) {
+    var codeHtml = '<span style="font-family:monospace;color:var(--accent)">' + erEscapeHtml(a.code) + '</span>';
+    var nameHtml = a.name ? '<span style="color:var(--text-secondary);margin-left:8px">' + erEscapeHtml(a.name) + '</span>' : '';
+    return '<div onmousedown="erCreateEquipPick(\'' + erEscapeAttr(a.code) + '\')" '
+         + 'style="padding:7px 10px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12px">'
+         + codeHtml + nameHtml + '</div>';
+  }).join('');
+  sug.style.display = 'block';
+}
+
+function erCreateEquipPick(code) {
+  var inp = document.getElementById('er-create-equip-input');
+  if (inp) inp.value = code;
+  erCreateEquipHideSuggest();
+  erCreateAddEquip();
+}
+
+function erCreateEquipKey(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    var sug = document.getElementById('er-create-equip-suggest');
+    var first = sug && sug.style.display !== 'none' ? sug.querySelector('div[onmousedown]') : null;
+    if (first) {
+      // Extract code from the first suggestion's onmousedown attr
+      var m = (first.getAttribute('onmousedown') || '').match(/erCreateEquipPick\('([^']+)'\)/);
+      if (m) { erCreateEquipPick(m[1]); return; }
+    }
+    erCreateAddEquip();
+  } else if (e.key === 'Escape') {
+    erCreateEquipHideSuggest();
+  }
+}
+
+function erCreateEquipHideSuggest() {
+  var sug = document.getElementById('er-create-equip-suggest');
+  if (sug) { sug.style.display = 'none'; sug.innerHTML = ''; }
+}
 
 function openErTaskCreateModal() {
   ER_CREATE_ASSETS = [];
+  // Preload asset list (fire-and-forget; first dropdown render will use whatever
+  // is cached; subsequent keystrokes pick up the full list)
+  erLoadAssets();
   var ids = ['er-create-title','er-create-role','er-create-assigned','er-create-skill-tags','er-create-desc','er-create-notes','er-create-eq-hours'];
   ids.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
   var catEl  = document.getElementById('er-create-category');  if (catEl)  catEl.value  = 'CHK';
