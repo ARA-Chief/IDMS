@@ -176,11 +176,18 @@ function reFilterItems(config, roundNum, dow) {
 
 // ── Aggregate value lookup ────────────────────────────────────────────────────
 
-function reAggValue(entries, itemId) {
-  if (!entries) return '—';
-  const e = entries.find(x => x.item_id === itemId);
-  if (!e) return '—';
-  const v = e.display_value;
+// Accepts the v2 aggregate shape ({ items: { [itemId]: { display_value } } })
+// as well as the legacy v1 shape (entries: [{ item_id, display_value }, …]).
+function reAggValue(agg, itemId) {
+  if (!agg) return '—';
+  let v;
+  if (agg.items && typeof agg.items === 'object') {
+    v = agg.items[itemId]?.display_value;
+  } else if (Array.isArray(agg.entries)) {
+    v = agg.entries.find(x => x.item_id === itemId)?.display_value;
+  } else if (Array.isArray(agg)) {
+    v = agg.find(x => x.item_id === itemId)?.display_value;
+  }
   return (v === null || v === undefined) ? '—' : String(v);
 }
 
@@ -222,15 +229,12 @@ async function reLoadAggregates() {
       .sort()
       .reverse();
 
-    const fetchEntries = async name => {
-      const d = await reGet(folder + '/' + name).catch(() => null);
-      return d ? (d.entries || []) : null;
-    };
+    const fetchAgg = name => reGet(folder + '/' + name).catch(() => null);
 
     if (names.length >= 2) {
-      [RE.aggNew, RE.aggOld] = await Promise.all([fetchEntries(names[0]), fetchEntries(names[1])]);
+      [RE.aggNew, RE.aggOld] = await Promise.all([fetchAgg(names[0]), fetchAgg(names[1])]);
     } else if (names.length === 1) {
-      RE.aggNew = await fetchEntries(names[0]);
+      RE.aggNew = await fetchAgg(names[0]);
     }
   } catch (_) {
     // Non-blocking — history columns remain —
@@ -544,33 +548,7 @@ function reEntryCellHTML(r, ni, active, secd, val) {
         onkeydown="reTextKd(event,${ni})">
     </div>`;
   }
-  if (type === 'tk_sounding' || type === 'sounding') {
-    // value is 'ft|in' for standard, plain number for metric (CM)
-    const meas = r.item.sounding_measurement || 'standard';
-    if (meas === 'metric') {
-      return `<div class="re-col-entry re-entry-cell${ac}">
-        <input class="re-text-inp re-snd-cm" type="number" min="0" step="0.1"
-          value="${reEsc(val)}"
-          oninput="reSetSounding(${ni},this.value,'cm')"
-          onkeydown="reTextKd(event,${ni})">
-        <span class="re-unit">CM</span>
-      </div>`;
-    }
-    const [ftPart, inPart] = String(val || '').split('|');
-    return `<div class="re-col-entry re-entry-cell${ac}">
-      <input class="re-text-inp re-snd-ft" type="number" min="0" step="1"
-        value="${reEsc(ftPart || '')}"
-        oninput="reSetSounding(${ni},this.value,'ft')"
-        onkeydown="reTextKd(event,${ni})" style="width:48px">
-      <span class="re-unit">'</span>
-      <input class="re-text-inp re-snd-in" type="number" min="0" max="11.9" step="0.1"
-        value="${reEsc(inPart || '')}"
-        oninput="reSetSounding(${ni},this.value,'in')"
-        onkeydown="reTextKd(event,${ni})" style="width:52px">
-      <span class="re-unit">"</span>
-    </div>`;
-  }
-  if (type === 'tk_percent') {
+if (type === 'tk_percent') {
     // value is the current Capacity (in the tank's units, normally USG). The Fill %
     // is derived from item.tk_percent_capacity. Editing either field updates the other.
     const cap     = Number(r.item.tk_percent_capacity) || 0;
