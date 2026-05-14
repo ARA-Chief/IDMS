@@ -389,6 +389,8 @@ function reAllRowsHTML() {
       out.push(reHeadingRowHTML(r));
     } else if (r.item.type === 'latlon') {
       out.push(reLatLonRowHTML(r, RE.navItems.indexOf(r)));
+    } else if (r.item.type === 'tk_sounding' || r.item.type === 'sounding') {
+      out.push(reSoundingRowHTML(r, RE.navItems.indexOf(r)));
     } else {
       out.push(reDataRowHTML(r, RE.navItems.indexOf(r)));
     }
@@ -469,6 +471,45 @@ function reLatLonRowHTML(r, ni) {
           </select>
         </div>
       </div>
+    </div>`;
+}
+
+function reSoundingRowHTML(r, ni) {
+  const active = ni === RE.cursorIdx;
+  const iid    = r.item.item_id;
+  const done   = reItemComplete(r.item, iid);
+  const val    = RE.values[iid] ?? '';
+  const meas   = r.item.sounding_measurement || 'standard';
+
+  let inputsHTML;
+  if (meas === 'metric') {
+    inputsHTML = `
+      <div class="re-snd-pair">
+        <input class="re-snd-cm re-snd-input" type="number" inputmode="decimal" min="0" step="0.1"
+               placeholder="0.0" value="${reEsc(val)}"
+               oninput="reSetSounding(${ni},this.value,'cm')">
+        <span class="re-snd-unit">CM</span>
+      </div>`;
+  } else {
+    const [ftPart, inPart] = String(val || '').split('|');
+    inputsHTML = `
+      <div class="re-snd-pair">
+        <input class="re-snd-ft re-snd-input" type="number" inputmode="numeric" min="0" step="1"
+               placeholder="0" value="${reEsc(ftPart || '')}"
+               oninput="reSetSounding(${ni},this.value,'ft')">
+        <span class="re-snd-unit">'</span>
+        <input class="re-snd-in re-snd-input" type="number" inputmode="decimal" min="0" max="11.9" step="0.1"
+               placeholder="0.0" value="${reEsc(inPart || '')}"
+               oninput="reSetSounding(${ni},this.value,'in')">
+        <span class="re-snd-unit">"</span>
+      </div>`;
+  }
+
+  return `
+    <div class="re-row re-snd-row${active ? ' re-active-row' : ''}${done ? ' re-done' : ''}"
+         id="re-row-${ni}" data-ni="${ni}">
+      <div class="re-snd-label">${reEsc(r.item.label)}</div>
+      <div class="re-snd-inputs">${inputsHTML}</div>
     </div>`;
 }
 
@@ -624,7 +665,7 @@ function reCursorTo(ni) {
     if (type === 'custom')   { const sel = newRow.querySelector('.re-custom-sel'); if (sel) sel.focus(); }
     if (type === 'latlon')   { const inp = newRow.querySelector('.re-latlon-deg'); if (inp) inp.focus(); }
     if (type === 'tk_sounding' || type === 'sounding') {
-      const inp = newRow.querySelector('.re-snd-ft, .re-snd-cm');
+      const inp = newRow.querySelector('.re-snd-ft, .re-snd-cm, .re-snd-input');
       if (inp) inp.focus();
     }
     if (type === 'tk_percent') {
@@ -1322,6 +1363,33 @@ function reStylesHTML() {
 .re-latlon-deg:focus, .re-latlon-min:focus, .re-latlon-hemi:focus {
   outline: none; border-color: var(--re-accent);
 }
+
+/* Sounding row */
+.re-snd-row {
+  display: flex; flex-direction: column; padding: 8px 6px; gap: 6px; min-height: 80px;
+}
+.re-snd-label {
+  font-size: 12px; font-weight: 600; color: var(--re-text2);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.re-snd-row.re-done .re-snd-label { color: var(--re-done-text); }
+.re-snd-inputs { display: flex; flex-direction: column; gap: 5px; }
+.re-snd-pair { display: flex; align-items: center; gap: 6px; }
+.re-snd-unit {
+  font-size: 12px; font-weight: 700; color: var(--re-muted);
+  letter-spacing: 0.04em; flex-shrink: 0;
+}
+.re-snd-input {
+  background: var(--re-bg2); border: 1px solid var(--re-border);
+  border-radius: 6px; color: var(--re-text); font-size: 14px; font-family: monospace;
+  padding: 5px 6px; text-align: center; -moz-appearance: textfield;
+}
+.re-snd-ft { width: 64px; }
+.re-snd-in { width: 72px; }
+.re-snd-cm { width: 96px; }
+.re-snd-input::-webkit-inner-spin-button,
+.re-snd-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+.re-snd-input:focus { outline: none; border-color: var(--re-accent); }
 
 /* Submit bar */
 .re-submit-bar { padding: 8px 12px; background: var(--re-bg1); border-top: 1px solid var(--re-border); flex-shrink: 0; }
