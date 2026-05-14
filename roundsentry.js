@@ -503,6 +503,51 @@ function reEntryCellHTML(r, ni, active, secd, val) {
         onkeydown="reTextKd(event,${ni})">
     </div>`;
   }
+  if (type === 'tk_sounding' || type === 'sounding') {
+    // value is 'ft|in' for standard, plain number for metric (CM)
+    const meas = r.item.sounding_measurement || 'standard';
+    if (meas === 'metric') {
+      return `<div class="re-col-entry re-entry-cell${ac}">
+        <input class="re-text-inp re-snd-cm" type="number" min="0" step="0.1"
+          value="${reEsc(val)}"
+          oninput="reSetSounding(${ni},this.value,'cm')"
+          onkeydown="reTextKd(event,${ni})">
+        <span class="re-unit">CM</span>
+      </div>`;
+    }
+    const [ftPart, inPart] = String(val || '').split('|');
+    return `<div class="re-col-entry re-entry-cell${ac}">
+      <input class="re-text-inp re-snd-ft" type="number" min="0" step="1"
+        value="${reEsc(ftPart || '')}"
+        oninput="reSetSounding(${ni},this.value,'ft')"
+        onkeydown="reTextKd(event,${ni})" style="width:48px">
+      <span class="re-unit">'</span>
+      <input class="re-text-inp re-snd-in" type="number" min="0" max="11.9" step="0.1"
+        value="${reEsc(inPart || '')}"
+        oninput="reSetSounding(${ni},this.value,'in')"
+        onkeydown="reTextKd(event,${ni})" style="width:52px">
+      <span class="re-unit">"</span>
+    </div>`;
+  }
+  if (type === 'tk_percent') {
+    // value is the current Capacity (in the tank's units, normally USG). The Fill %
+    // is derived from item.tk_percent_capacity. Editing either field updates the other.
+    const cap     = Number(r.item.tk_percent_capacity) || 0;
+    const usgVal  = val === '' || val == null ? '' : Number(val);
+    const pctVal  = (usgVal !== '' && cap > 0) ? Math.round((usgVal / cap) * 1000) / 10 : '';
+    return `<div class="re-col-entry re-entry-cell${ac}">
+      <input class="re-text-inp re-tkp-cap" type="number" min="0" step="0.1"
+        value="${reEsc(usgVal === '' ? '' : String(usgVal))}"
+        oninput="reSetTkPercent(${ni},this.value,'cap')"
+        onkeydown="reTextKd(event,${ni})" style="width:68px">
+      <span class="re-unit">USG</span>
+      <input class="re-text-inp re-tkp-pct" type="number" min="0" max="100" step="0.1"
+        value="${reEsc(pctVal === '' ? '' : String(pctVal))}"
+        oninput="reSetTkPercent(${ni},this.value,'pct')"
+        onkeydown="reTextKd(event,${ni})" style="width:54px">
+      <span class="re-unit">%</span>
+    </div>`;
+  }
   // numeric / add_oil
   const unit = r.item.unit ? `<span class="re-unit">${reEsc(r.item.unit)}</span>` : '';
   return `<div class="re-col-entry re-entry-cell${ac}">
@@ -567,13 +612,25 @@ function reCursorTo(ni) {
   // Keypad visibility
   const type = RE.navItems[ni]?.item?.type;
   const kp = document.getElementById('re-keypad');
-  if (kp) kp.classList.toggle('re-kp-hidden', type === 'custom' || type === 'text' || type === 'latlon');
+  if (kp) kp.classList.toggle('re-kp-hidden',
+    type === 'custom' || type === 'text' || type === 'latlon' ||
+    type === 'tk_sounding' || type === 'sounding' || type === 'tk_percent');
 
-  // Focus native inputs
-  if (newRow) {
-    if (type === 'text')   { const inp = newRow.querySelector('.re-text-inp'); if (inp) inp.focus(); }
-    if (type === 'custom') { const sel = newRow.querySelector('.re-custom-sel'); if (sel) sel.focus(); }
-    if (type === 'latlon') { const inp = newRow.querySelector('.re-latlon-deg'); if (inp) inp.focus(); }
+  // Focus native inputs — only when moving to a different row, so taps on
+  // sub-fields within the already-active row (e.g. lat/lon minutes) aren't
+  // hijacked back to the first sub-field.
+  if (newRow && ni !== prev) {
+    if (type === 'text')     { const inp = newRow.querySelector('.re-text-inp'); if (inp) inp.focus(); }
+    if (type === 'custom')   { const sel = newRow.querySelector('.re-custom-sel'); if (sel) sel.focus(); }
+    if (type === 'latlon')   { const inp = newRow.querySelector('.re-latlon-deg'); if (inp) inp.focus(); }
+    if (type === 'tk_sounding' || type === 'sounding') {
+      const inp = newRow.querySelector('.re-snd-ft, .re-snd-cm');
+      if (inp) inp.focus();
+    }
+    if (type === 'tk_percent') {
+      const inp = newRow.querySelector('.re-tkp-cap');
+      if (inp) inp.focus();
+    }
   }
 
   reScrollToActive();
@@ -586,7 +643,8 @@ function reNavDown() { if (RE.cursorIdx < RE.navItems.length - 1) reCursorTo(RE.
 
 function reKeypadHTML() {
   const type   = RE.navItems[RE.cursorIdx]?.item?.type;
-  const hidden = (type === 'custom' || type === 'text' || type === 'latlon') ? ' re-kp-hidden' : '';
+  const hidden = (type === 'custom' || type === 'text' || type === 'latlon' ||
+                  type === 'tk_sounding' || type === 'sounding' || type === 'tk_percent') ? ' re-kp-hidden' : '';
   const toggle = '';
   return `
     <div class="re-keypad${hidden}" id="re-keypad">
@@ -733,6 +791,60 @@ function reSetText(ni, val) {
 
 function reTextKd(e, ni) {
   if (e.key === 'Enter') { e.preventDefault(); reNavDown(); }
+}
+
+// tk_percent entry — value is the canonical Capacity (USG). Editing either the
+// Capacity field or the Fill % field syncs the other; we always store Capacity so
+// the ingest side can apply it directly to fuelstate.
+function reSetTkPercent(ni, val, field) {
+  const nav = RE.navItems[ni];
+  if (!nav) return;
+  const iid = nav.item.item_id;
+  const cap = Number(nav.item.tk_percent_capacity) || 0;
+  let usg;
+  if (val === '' || val == null) {
+    usg = '';
+  } else if (field === 'cap') {
+    usg = Number(val);
+  } else { // 'pct'
+    if (cap <= 0) { usg = ''; }
+    else { usg = (Number(val) / 100) * cap; }
+  }
+  RE.values[iid] = usg === '' ? '' : String(Math.round(usg * 10) / 10);
+
+  // Sync the partner field so the operator sees both update together
+  const row = document.getElementById('re-row-' + ni);
+  if (row) {
+    const capEl = row.querySelector('.re-tkp-cap');
+    const pctEl = row.querySelector('.re-tkp-pct');
+    if (field === 'cap' && pctEl && document.activeElement !== pctEl) {
+      pctEl.value = (usg === '' || cap <= 0) ? '' : String(Math.round((usg / cap) * 1000) / 10);
+    }
+    if (field === 'pct' && capEl && document.activeElement !== capEl) {
+      capEl.value = usg === '' ? '' : String(Math.round(usg * 10) / 10);
+    }
+    row.classList.toggle('re-done', reItemComplete(nav.item, iid));
+  }
+}
+
+// Sounding entry — value is 'ft|in' for standard, plain number for metric (CM).
+// We merge per-field updates back into the pipe-separated string so reItemComplete
+// can apply its existing non-empty check.
+function reSetSounding(ni, val, field) {
+  const nav = RE.navItems[ni];
+  if (!nav) return;
+  const iid  = nav.item.item_id;
+  const meas = nav.item.sounding_measurement || 'standard';
+  if (meas === 'metric') {
+    RE.values[iid] = val;
+  } else {
+    const cur = String(RE.values[iid] || '').split('|');
+    const ft  = field === 'ft' ? val : (cur[0] || '');
+    const inc = field === 'in' ? val : (cur[1] || '');
+    RE.values[iid] = (ft === '' && inc === '') ? '' : `${ft}|${inc}`;
+  }
+  const row = document.getElementById('re-row-' + ni);
+  if (row) row.classList.toggle('re-done', reItemComplete(nav.item, iid));
 }
 
 function reLatLonUpdate(iid) {
@@ -882,15 +994,19 @@ async function reConfirmSubmit() {
       const iid  = item.item_id;
       const secd = RE.secd[iid] || false;
       entries.push({
-        section_id:      section.section_id,
-        section_label:   section.label,
-        item_id:         iid,
-        item_label:      item.label,
-        item_type:       item.type,
-        unit:            item.unit            ?? null,
-        asset_code:      item.asset_code      ?? null,
-        add_oil_tank_id: item.add_oil_tank_id ?? null,
-        value:           secd ? null : (RE.values[iid] ?? null),
+        section_id:           section.section_id,
+        section_label:        section.label,
+        item_id:              iid,
+        item_label:           item.label,
+        item_type:            item.type,
+        unit:                 item.unit                 ?? null,
+        asset_code:           item.asset_code           ?? null,
+        add_oil_tank_id:      item.add_oil_tank_id      ?? null,
+        sounding_tank_id:     item.sounding_tank_id     ?? null,
+        sounding_measurement: item.sounding_measurement ?? null,
+        tk_percent_tank_id:   item.tk_percent_tank_id   ?? null,
+        tk_percent_capacity:  item.tk_percent_capacity  ?? null,
+        value:                secd ? null : (RE.values[iid] ?? null),
         secd
       });
     }
