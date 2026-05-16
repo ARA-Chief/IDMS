@@ -549,8 +549,9 @@ function reEntryCellHTML(r, ni, active, secd, val) {
     </div>`;
   }
 if (type === 'tk_percent') {
-    // value is the current Capacity (in the tank's units, normally USG). The Fill %
-    // is derived from item.tk_percent_capacity. Editing either field updates the other.
+    // Operator types USG directly. The fill % is calculated and shown read-only
+    // so they can sanity-check the entry, but cannot type into it (prevents
+    // typos that get multiplied into nonsense values via the old pct → usg path).
     const cap     = Number(r.item.tk_percent_capacity) || 0;
     const usgVal  = val === '' || val == null ? '' : Number(val);
     const pctVal  = (usgVal !== '' && cap > 0) ? Math.round((usgVal / cap) * 1000) / 10 : '';
@@ -560,11 +561,7 @@ if (type === 'tk_percent') {
         oninput="reSetTkPercent(${ni},this.value,'cap')"
         onkeydown="reTextKd(event,${ni})" style="width:68px">
       <span class="re-unit">USG</span>
-      <input class="re-text-inp re-tkp-pct" type="number" min="0" max="100" step="0.1"
-        value="${reEsc(pctVal === '' ? '' : String(pctVal))}"
-        oninput="reSetTkPercent(${ni},this.value,'pct')"
-        onkeydown="reTextKd(event,${ni})" style="width:54px">
-      <span class="re-unit">%</span>
+      <span class="re-tkp-pct-display re-unit" id="re-tkp-pct-${reEsc(iid)}" style="min-width:54px;display:inline-block;text-align:right">${pctVal === '' ? '—' : pctVal + '%'}</span>
     </div>`;
   }
   // numeric / add_oil
@@ -812,35 +809,26 @@ function reTextKd(e, ni) {
   if (e.key === 'Enter') { e.preventDefault(); reNavDown(); }
 }
 
-// tk_percent entry — value is the canonical Capacity (USG). Editing either the
-// Capacity field or the Fill % field syncs the other; we always store Capacity so
-// the ingest side can apply it directly to fuelstate.
+// tk_percent entry — operator types USG directly; the % display updates live.
+// The `field` parameter is retained for backwards compatibility with cached PWA
+// installs but is ignored: only the USG input is editable now.
 function reSetTkPercent(ni, val, field) {
   const nav = RE.navItems[ni];
   if (!nav) return;
   const iid = nav.item.item_id;
   const cap = Number(nav.item.tk_percent_capacity) || 0;
-  let usg;
-  if (val === '' || val == null) {
-    usg = '';
-  } else if (field === 'cap') {
-    usg = Number(val);
-  } else { // 'pct'
-    if (cap <= 0) { usg = ''; }
-    else { usg = (Number(val) / 100) * cap; }
-  }
+  const usg = (val === '' || val == null) ? '' : Number(val);
   RE.values[iid] = usg === '' ? '' : String(Math.round(usg * 10) / 10);
 
-  // Sync the partner field so the operator sees both update together
+  // Live-update the read-only % display next to the USG input
   const row = document.getElementById('re-row-' + ni);
   if (row) {
-    const capEl = row.querySelector('.re-tkp-cap');
-    const pctEl = row.querySelector('.re-tkp-pct');
-    if (field === 'cap' && pctEl && document.activeElement !== pctEl) {
-      pctEl.value = (usg === '' || cap <= 0) ? '' : String(Math.round((usg / cap) * 1000) / 10);
-    }
-    if (field === 'pct' && capEl && document.activeElement !== capEl) {
-      capEl.value = usg === '' ? '' : String(Math.round(usg * 10) / 10);
+    const pctEl = row.querySelector('.re-tkp-pct-display');
+    if (pctEl) {
+      const pct = (usg === '' || cap <= 0)
+        ? '—'
+        : (Math.round((usg / cap) * 1000) / 10) + '%';
+      pctEl.textContent = pct;
     }
     row.classList.toggle('re-done', reItemComplete(nav.item, iid));
   }
