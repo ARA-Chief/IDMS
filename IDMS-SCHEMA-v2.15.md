@@ -1,5 +1,29 @@
 # IDMS Schema Specification
-**Version 2.18 — F/V Araho**  
+**Version 2.19 — F/V Araho**  
+v2.19 — Historical reports infrastructure.
+
+**`fuelstate.json` (§25).** Schema bumped **v4 → v5**: new `fuel_log` array stores correction entries for fuel-category tank manual edits (mirrors the correction-entry shape already used in `waste_log` / `lube_log`). Inline tank-QTY edits on the Fuel & Oil Transfers screen now **auto-save on blur** via the same `runTransferThenAutoSave` wrapper transfers already use — closes a divergence gap where direct tank edits required an explicit "Save to OneDrive" click and could be lost on app close. The `logManualCorrection` helper now covers fuel tanks (previously waste/lube only) and skips zero-delta no-ops so tabbing through a field doesn't litter the log. The "Save to OneDrive" button is retained as a manual force-sync fallback.
+
+**SQLite — `fuel_state_history` table (new).** Append-only per-tank volume changes for historical reconstruction of tank state at any past instant. Written from `db:ingestFuelState` only when a tank's volume actually changes (or a new tank appears) — no-op ingests don't bloat the table. Indexed on `(timestamp)` and `(tank_id, timestamp)` for "as-of date" queries. Backs the new historical Fuel / Stability / Dashboard report views.
+
+**SQLite — `vessel_config_snapshots` table (new).** Mirrors the existing `rounds_config_snapshots` pattern — captures `vesselconfig.json` on every successful save (deduped against the most recent snapshot by JSON equality so repeat saves with no changes don't duplicate). New IPC handler `vessel:saveConfigSnapshot` invoked by `saveVesselConfig()` in `vessel.js` after each successful Graph PUT (non-fatal — a snapshot hiccup never blocks a save). Enables future historical Stability reports to render against the tank layout / lightship / LCG / VCG / FSM values that were in effect on a past date rather than today's.
+
+**SQLite — `fuel_transfers` table extended.** `log_type` column gains a new value `'fuel'` (was `'waste' | 'lube' | 'burn'`). `db:ingestFuelTransfers` accepts a new `fuel_log` parameter alongside `waste_log` and `lube_log` and writes one row per fuel-tank correction with `to_type='correction'`.
+
+**New IPC handlers (read-only as-of queries).**
+- `db:getFuelStateAsOf({ date })` — replays `fuel_state_history` to return per-tank latest volumes at or before end-of-day for the given `YYYY-MM-DD`. Tank metadata sourced from the vessel-config snapshot in effect on that date, with the live `fuel_state_snapshot` metadata as fallback.
+- `db:getFuelStateHistoryEarliest()` — earliest `fuel_state_history.timestamp`. Used by report pickers as the "no data available before" cutoff.
+- `db:getTripActiveOn({ date })` — resolves which trip was open on a given date (`open_date <= date AND (close_date IS NULL OR close_date >= date)`). Anchors historical Factory Production and Dashboard previews to the right trip.
+- `db:getProductionEntriesEarliest()` — earliest `production_entries.entry_date`. Cutoff for the Factory Production date picker.
+
+**Reports — date-pickered historical views (§30).** Dashboard, Fuel Report, Stability, Stability Workdown, and Factory Production previews each gain a day-level year/month/day picker bar (Historic Fuel Report gains a year-only picker). All pickers sit **outside** the printable `.rpt-page` card (consistent with Cathodic Protection's existing pattern) and include **Save / Print** and **Email** action buttons aligned right. Shared helpers in `reports.js`: `rptDatePickerHtml`, `rptYearPickerHtml`, `rptPickerActionsHtml`, `rptWireDatePicker`, `rptWireYearPicker`, `rptWirePickerActions`. Picker-less previews (Crew Scheduling, Training Compliance, HACCP) auto-receive a standalone actions bar via a post-render hook in `loadPane`. Per-report state persisted on `RPT.fuelDate` / `RPT.dashboardDate` / `RPT.stabilityDate` / `RPT.stabilityFullDate` / `RPT.factoryDate` / `RPT.fuelHistoricYear`. Stability previews load via a new `stReportPrepareAsOf` helper that temporarily overlays `STAB.fuelState.tanks` with `getFuelStateAsOf` results before re-running the existing `stReport*` calc helpers.
+
+**Reports — email with PDF attachment.** The Email action no longer opens a bare `mailto:` draft. New IPC handler `report:emailWithPdf({ html, filename, recipients, subject, body })` (a) renders the print HTML to a PDF buffer via a hidden `BrowserWindow` + `webContents.printToPDF` (Letter, 0.4" margins, backgrounds on), (b) builds an RFC-5322 multipart MIME `.eml` draft with the PDF base64-encoded as `Content-Disposition: attachment` (and `X-Unsent: 1` so Outlook treats it as a draft), (c) writes the `.eml` to `%APPDATA%/idms-console/mail-drafts/` and opens it via `shell.openPath`. Cross-client: Outlook / Thunderbird / Apple Mail all open it as a new draft with the attachment pre-loaded.
+
+**Trip Analytics — Trip History expanded daily-logs view (§27).** The expand-row daily-logs preview now mirrors the Edit form columns: `Date · Fuel Burned (USG) · Production (MT) · Lat (DD° MM.mmm' N/S) · Lon (DDD° MM.mmm' E/W)` (previously `Date · Fuel · Position`). Production column sourced from `trip_daily_logs.production_mt`; Lat / Lon split using the existing `taDDtoDM` helper so the format matches the inline edit form exactly.
+
+**Historic Fuel Report (§30).** Refactored to use the shared `rptYearPickerHtml` (auto-load on year change, no separate Load button). Earliest available year derived from `getTrips()` at first render so the dropdown only lists years with real data; inline note reads "Trip data available from {YYYY}". Selection persists in `RPT.fuelHistoricYear`, clamped to the available range on revisit.
+
 v2.18 — Cross-module hardening + reporting overhaul.
 
 **Tasks & Maintenance (§32).** `task_records` table gains a `close_notes TEXT` column (ALTER TABLE migration on startup); the Close Notes field on the Manual Entry form is now persisted (previously silently dropped). Closed Tasks list defaults the From / To filters to the previous 7-day window (today−7 → today), computed lazily so the range stays current as the app stays open; Clear button resets to the same window. Every closed row gains an **Edit Record** action that opens a modal for correcting title, category, priority, completed_at, equipment_hours, description_work, items_used, failure_mode/mechanism/detection_method, follow_up + notes, and close_notes. New IPC handler `db:updateTaskRecord({ record_id, …editable fields })` enforces an allowlist and JSON-encodes equipment_ids / skill_tags before UPDATE. Manual-entry submission no longer double-encodes `equipment_ids` / `skill_tags`: backend `ingestTaskRecords` now accepts either an already-stringified value or an array via an `asJsonArray` normalizer (renderer already pre-stringifies). Hardened `tryParseJson()` (in `tasks.js`): when the fallback is an array, a successful `JSON.parse` whose result is not an array is coerced to the fallback — prevents `eqIds.map` crashes when a row stores `equipment_ids` as a stringified non-array. Closed-tasks click handler shows "No events recorded." instead of an indefinite spinner when the record has no `task_id` (manual entries). Newly-created tasks now write their attachment list onto the corresponding rough-log entry via `writeTaskRoughLogEntry({…, attachments})` (was previously dropped).
@@ -2239,14 +2263,14 @@ The inferred `round_number` and corresponding `scheduled_time` are stored in mod
 
 Stores the current volume for every tracked tank (fuel, lube oil, waste oil) and a running burn/transfer log. This is an **operational state file** — not a config. It is updated every time the operator applies a transfer or edits a tank volume and saves. The field PWA does not read this file.
 
-### Full example
+### Full example (current — schema v5)
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 5,
   "vessel": "F/V Araho",
-  "last_updated": "2026-04-23T14:00:00.000Z",
-  "updated_by": "tploch",
+  "last_updated": "2026-05-16T22:18:28.003Z",
+  "updated_by": "wostara",
 
   "burn_plan": {
     "tank_a_id": "a1b2c3d4-0007-4000-8000-000000000007",
@@ -2254,8 +2278,8 @@ Stores the current volume for every tracked tank (fuel, lube oil, waste oil) and
   },
 
   "tanks": [
-    { "tank_id": "a1b2c3d4-0001-4000-8000-000000000001", "volume": 0 },
-    { "tank_id": "a1b2c3d4-0003-4000-8000-000000000003", "volume": 8325 }
+    { "tank_id": "a1b2c3d4-0001-4000-8000-000000000001", "volume": 320 },
+    { "tank_id": "a1b2c3d4-0007-4000-8000-000000000007", "volume": 10921 }
   ],
 
   "burn_log": [
@@ -2266,21 +2290,72 @@ Stores the current volume for every tracked tank (fuel, lube oil, waste oil) and
       "to_tank_id":   "a1b2c3d4-0013-4000-8000-000000000013",
       "quantity": 2800
     }
+  ],
+
+  "waste_log": [ /* see "Transfer log entry fields" below */ ],
+  "lube_log":  [ /* see "Transfer log entry fields" below */ ],
+  "water_log": [ /* added v3 — water-tank transfers, same shape */ ],
+  "blackgrey_log": [ /* added v4 — black & grey water transfers */ ],
+  "fuel_log": [
+    {
+      "id": 1778969899144,
+      "timestamp": "2026-05-16T22:18:19.144Z",
+      "from_tank_id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "from_description": null,
+      "to_type": "correction",
+      "to_tank_id": null,
+      "quantity": -8481,
+      "qty_remaining": 320,
+      "correction_by": "William Ostara"
+    }
   ]
 }
 ```
+
+### Migration history
+
+| Version | Change |
+|---------|--------|
+| v1 | Initial schema — `burn_log`, `waste_log`, `lube_log` |
+| v2 | Added `qty_remaining` to waste/lube log entries; added `to_type` to lube entries; added `incin_data` to waste entries; correction entries now store delta in `quantity` and new total in `qty_remaining`; removed `qty_processed` / `qty_remains` from `ows_data` |
+| v3 | Added `water_log` for water-tank transfer tracking |
+| v4 | Added `blackgrey_log` for black & grey water transfer tracking |
+| v5 | Added `fuel_log` for fuel-category manual correction tracking (same correction-entry shape as waste / lube). Inline tank QTY edits now auto-save on blur and write a `fuel_log` audit entry — no more silent OneDrive divergence on direct edits |
+
+Migrations are idempotent and additive — running the migration chain on an older file only fills in missing fields and arrays; existing data is never rewritten. Each migration is logged to the console as `[Fuel] Migrated fuelstate vN → vN+1`.
+
+### `fuel_log` entry fields (v5)
+
+Manual corrections to a **fuel-category** tank's volume from the Tank Inventory panel produce one `fuel_log` entry per blur-committed edit (zero-delta edits are skipped). Shape mirrors the `correction` variant of `waste_log` / `lube_log`.
+
+| Field           | Type    | Required | Notes                                                                          |
+|-----------------|---------|----------|--------------------------------------------------------------------------------|
+| `id`            | integer | yes      | `Date.now()` at edit time. Unique within the file.                             |
+| `timestamp`     | string  | yes      | ISO 8601 UTC. Time of the manual edit.                                         |
+| `from_tank_id`  | string  | yes      | UUID of the fuel tank that was edited.                                         |
+| `from_description` | null | yes      | Always `null` for fuel corrections (reserved for parity with `waste_log`).     |
+| `to_type`       | string  | yes      | Always `"correction"`.                                                          |
+| `to_tank_id`    | null    | yes      | Always `null` — corrections have no destination.                                |
+| `quantity`      | number  | yes      | Signed delta in USG (`newVolume − oldVolume`). Negative when volume decreased. |
+| `qty_remaining` | number  | yes      | New tank volume after the edit. Equals the value typed by the operator.        |
+| `correction_by` | string  | yes      | Operator display name (`window.idmsCurrentUser.name || .username`).             |
 
 ### Top-level fields
 
 | Field            | Type     | Required | Notes                                                                  |
 |------------------|----------|----------|------------------------------------------------------------------------|
-| `schema_version` | integer  | yes      | Always `1` for this version.                                           |
+| `schema_version` | integer  | yes      | Current version `5`. See migration history below for v1–v5.            |
 | `vessel`         | string   | yes      | Copied from `vesselconfig.json → vessel` at time of first save.        |
 | `last_updated`   | string   | yes      | ISO 8601 UTC. Timestamp of the most recent save. `null` if never saved.|
 | `updated_by`     | string   | yes      | Username of the user who last saved. `null` if not yet saved.          |
 | `burn_plan`      | object   | yes      | Active draw-tank configuration. See burn plan object fields below.     |
 | `tanks`          | object[] | yes      | One entry per tracked tank. See tank state object fields below.        |
-| `burn_log`       | object[] | yes      | Ordered array of transfer/burn log entries. Append-only.               |
+| `burn_log`       | object[] | yes      | Ordered array of fuel burn-plan transfer entries (TO Settling Tank).   |
+| `waste_log`      | object[] | yes      | Waste-oil transfer / overboard / OWS / incineration / correction entries (v1+). |
+| `lube_log`       | object[] | yes      | Lube-oil tank-to-tank, tank-to-equipment, and correction entries (v1+).|
+| `water_log`      | object[] | yes      | Fresh / technical water transfer entries (added v3).                   |
+| `blackgrey_log`  | object[] | yes      | Black / grey water transfer entries (added v4).                        |
+| `fuel_log`       | object[] | yes      | Manual fuel-tank correction entries (added v5). See field table below. |
 
 ### Burn plan object fields
 
@@ -2384,6 +2459,65 @@ CREATE TABLE IF NOT EXISTS fuel_state_snapshot (
 | `ingested_at` | ISO 8601 UTC. Timestamp of the ingest run that wrote this row.                                          |
 
 There is no primary key constraint — the table is fully rebuilt on every ingest via `DELETE FROM fuel_state_snapshot` followed by a bulk insert in a single transaction. No UNIQUE constraint is required.
+
+### SQLite table — `fuel_state_history`
+
+Added in v2.19. Append-only log of per-tank volume changes. Backs historical Fuel / Stability / Dashboard report previews — querying "the latest row per `tank_id` where `timestamp <= end-of-day`" reconstructs tank state at any past instant.
+
+```sql
+CREATE TABLE IF NOT EXISTS fuel_state_history (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  timestamp    TEXT    NOT NULL,
+  tank_id      TEXT    NOT NULL,
+  volume       REAL    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fsh_timestamp ON fuel_state_history(timestamp);
+CREATE INDEX IF NOT EXISTS idx_fsh_tank_time ON fuel_state_history(tank_id, timestamp);
+```
+
+| Column      | Notes                                                                                                |
+|-------------|------------------------------------------------------------------------------------------------------|
+| `id`        | Autoincrement, ordering tiebreak for rows that share a `timestamp`.                                  |
+| `timestamp` | ISO 8601 UTC. Equals `ingestFuelState.now` at write time (i.e. the moment the snapshot ingest ran). |
+| `tank_id`   | UUID matching `vesselconfig.json → tanks[].tank_id`.                                                 |
+| `volume`    | Tank volume at this moment, in USG. May be negative for fuel tanks (meter calibration).             |
+
+**Write rule (in `db:ingestFuelState`).** Before the transactional `DELETE FROM fuel_state_snapshot` runs, the existing per-tank volumes are read into a map. For each new tank entry, a `fuel_state_history` row is appended **only if** the tank is new or its volume differs from the previous snapshot. No-op ingests (operator saves without changing any tank) write zero history rows — keeps the table audit-meaningful and growth bounded.
+
+**Size expectations.** ~20 tanks × ≤20 changes/day ≈ 100–400 rows/day ≈ 2–10 MB/year at ~60 bytes/row. SQLite handles this comfortably into the tens of GB; no rotation or archival required.
+
+**Read API.** `db:getFuelStateAsOf({ date })` and `db:getFuelStateHistoryEarliest()` — see "New IPC handlers" in the v2.19 changelog entry.
+
+### SQLite table — `vessel_config_snapshots`
+
+Added in v2.19. Mirrors the existing `rounds_config_snapshots` pattern. Captures `vesselconfig.json` on every successful save so historical Stability reports can render against the tank layout / LCG / VCG / FSM / lightship values that were in effect on a past date.
+
+```sql
+CREATE TABLE IF NOT EXISTS vessel_config_snapshots (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  captured_at     TEXT    NOT NULL,
+  schema_version  INTEGER,
+  config_json     TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vcs_captured_at ON vessel_config_snapshots(captured_at);
+```
+
+| Column           | Notes                                                                                                          |
+|------------------|----------------------------------------------------------------------------------------------------------------|
+| `id`             | Autoincrement.                                                                                                 |
+| `captured_at`    | ISO 8601 UTC. `new Date().toISOString()` at the moment of the IPC call.                                        |
+| `schema_version` | Mirrors the `schema_version` field inside `config_json` for quick filtering. Nullable for forward-compat.       |
+| `config_json`    | Full `vesselconfig.json` serialised via `JSON.stringify(config)`.                                              |
+
+**Write rule (in `vessel:saveConfigSnapshot`).** Before insert, the handler reads the most recent snapshot's `config_json` and compares strings — if identical, the insert is skipped and `{ ok: true, skipped: true }` is returned. So opening the Vessel Setup screen and clicking Save without editing anything will not duplicate rows.
+
+**Hook.** Called from `saveVesselConfig()` in `vessel.js` immediately after a successful `graphPut(vesselconfig.json)`. Failures are caught and logged non-fatally — a snapshot hiccup never blocks the user's OneDrive save.
+
+**Read API.** `db:getFuelStateAsOf` consults this table for tank metadata (category / abbreviation / capacity) at the requested date, falling back to the live `fuel_state_snapshot` metadata if no snapshot exists for that date yet.
+
+### SQLite table — `fuel_transfers` (extended in v2.19)
+
+The `log_type` column accepts a new value `'fuel'` in addition to the existing `'waste' | 'lube' | 'burn'`. `db:ingestFuelTransfers` accepts a new `fuel_log` parameter alongside `waste_log` and `lube_log`; each `fuel_log` entry is inserted with `log_type='fuel'`, `to_type='correction'` and the `qty_remaining` / `quantity` / `correction_by` fields populated directly from the `fuelstate.json` `fuel_log` entry. Existing rows are unaffected — no migration required for older databases.
 
 ### IPC handler — `db:ingestFuelState`
 
