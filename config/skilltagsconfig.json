@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "vessel": "F/T ARAHO",
+  "skill_tags": [
+    {
+      "tag_id": "welding",
+      "label": "Welding",
+      "category": "engineering",
+      "description": "Arc, MIG, TIG capability for routine vessel repair."
+    },
+    {
+      "tag_id": "refrigeration",
+      "label": "Refrigeration",
+      "category": "engineering",
+      "description": "Plate freezer, RSW, and provision cooler systems."
+    },
+    {
+      "tag_id": "fork_lift",
+      "label": "Fork Lift Operator",
+      "category": "operational",
+      "description": "Cold storage and offload operations."
+    },
+    {
+      "tag_id": "first_aid_cpr",
+      "label": "First Aid / CPR",
+      "category": "safety",
+      "description": "Current First Aid + CPR training."
+    },
+    {
+      "tag_id": "ammonia_handler",
+      "label": "Ammonia Refrigeration",
+      "category": "regulatory",
+      "description": "Cert for NH3-system handling."
+    }
+  ],
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-05-17",
+      "note": "Initial skill tag taxonomy."
+    }
+  ]
+}

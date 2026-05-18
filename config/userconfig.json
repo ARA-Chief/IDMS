@@ -22,7 +22,9 @@
       "status": "active",
       "email": "",
       "phone": "",
-      "location": ""
+      "location": "",
+      "resources_changelog": [],
+      "action_overrides": {}
     },
     {
       "username": "tploch",
@@ -38,7 +40,9 @@
       "status": "active",
       "email": "",
       "phone": "",
-      "location": ""
+      "location": "",
+      "resources_changelog": [],
+      "action_overrides": {}
     },
     {
       "username": "wostara",
@@ -54,7 +58,9 @@
       "status": "active",
       "email": "wm.ostara@gmail.com",
       "phone": "+1 206 451 0549 or +44 07535 271858",
-      "location": "Plymouth, UK"
+      "location": "Plymouth, UK",
+      "resources_changelog": [],
+      "action_overrides": {}
     },
     {
       "username": "spotchik",
@@ -70,7 +76,9 @@
       "status": "active",
       "email": "",
       "phone": "",
-      "location": ""
+      "location": "",
+      "resources_changelog": [],
+      "action_overrides": {}
     },
     {
       "username": "psimes",
@@ -86,7 +94,9 @@
       "status": "active",
       "email": "",
       "phone": "",
-      "location": ""
+      "location": "",
+      "resources_changelog": [],
+      "action_overrides": {}
     },
     {
       "username": "rgarcia",
@@ -102,8 +112,10 @@
       "status": "active",
       "email": "",
       "phone": "",
-      "location": ""
+      "location": "",
+      "resources_changelog": [],
+      "action_overrides": {}
     }
   ],
-  "schema_version": 1
+  "schema_version": 2
 }
