@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "vessel": "F/V Araho",
   "info": {
     "vessel_name": "ARAHO",
@@ -434,6 +434,12 @@
       "version": 1,
       "date": "2026-04-21",
       "note": "Initial vessel configuration."
+    },
+    {
+      "version": 2,
+      "date": "2026-05-17",
+      "note": "Migrated to v2 — added skill_requirements[]."
     }
-  ]
+  ],
+  "skill_requirements": []
 }

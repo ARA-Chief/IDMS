@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "vessel": "F/T ARAHO",
+  "fill_ins": [],
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-05-17",
+      "note": "Initial fill-in pool (empty)."
+    }
+  ]
+}
