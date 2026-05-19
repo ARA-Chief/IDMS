@@ -163,10 +163,17 @@ function reFilterItems(config, roundNum, dow) {
 
     if (!visible.some(i => i.type !== 'heading')) continue;
 
-    // Drop headings that have no data items after them
+    // Drop headings whose group is empty for this round (no data items
+    // between this heading and the next heading / end-of-section).
     for (let i = 0; i < visible.length; i++) {
       if (visible[i].type === 'heading') {
-        if (!visible.slice(i + 1).some(x => x.type !== 'heading')) continue;
+        let groupHasItem = false;
+        for (let j = i + 1; j < visible.length; j++) {
+          if (visible[j].type === 'heading') break;
+          groupHasItem = true;
+          break;
+        }
+        if (!groupHasItem) continue;
       }
       flat.push({ section, item: visible[i] });
     }
