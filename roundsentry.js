@@ -450,10 +450,10 @@ function reLatLonRowHTML(r, ni) {
       <div class="re-latlon-inputs">
         <div class="re-latlon-pair">
           <span class="re-latlon-tag">LAT</span>
-          <input class="re-latlon-deg" type="number" inputmode="decimal" min="0" max="90" step="1"
+          <input class="re-latlon-deg" type="text" inputmode="none"
                  placeholder="DD" value="${reEsc(latDeg)}" oninput="reLatLonUpdate('${reEsc(iid)}')">
           <span class="re-latlon-sep">°</span>
-          <input class="re-latlon-min" type="number" inputmode="decimal" min="0" max="60" step="0.001"
+          <input class="re-latlon-min" type="text" inputmode="none"
                  placeholder="MM.mmm" value="${reEsc(latMin)}" oninput="reLatLonUpdate('${reEsc(iid)}')">
           <span class="re-latlon-sep">'</span>
           <select class="re-latlon-hemi" onchange="reLatLonUpdate('${reEsc(iid)}')">
@@ -463,10 +463,10 @@ function reLatLonRowHTML(r, ni) {
         </div>
         <div class="re-latlon-pair">
           <span class="re-latlon-tag">LON</span>
-          <input class="re-latlon-deg" type="number" inputmode="decimal" min="0" max="180" step="1"
+          <input class="re-latlon-deg" type="text" inputmode="none"
                  placeholder="DDD" value="${reEsc(lonDeg)}" oninput="reLatLonUpdate('${reEsc(iid)}')">
           <span class="re-latlon-sep">°</span>
-          <input class="re-latlon-min" type="number" inputmode="decimal" min="0" max="60" step="0.001"
+          <input class="re-latlon-min" type="text" inputmode="none"
                  placeholder="MM.mmm" value="${reEsc(lonMin)}" oninput="reLatLonUpdate('${reEsc(iid)}')">
           <span class="re-latlon-sep">'</span>
           <select class="re-latlon-hemi" onchange="reLatLonUpdate('${reEsc(iid)}')">
@@ -489,7 +489,7 @@ function reSoundingRowHTML(r, ni) {
   if (meas === 'metric') {
     inputsHTML = `
       <div class="re-snd-pair">
-        <input class="re-snd-cm re-snd-input" type="number" inputmode="decimal" min="0" step="0.1"
+        <input class="re-snd-cm re-snd-input" type="text" inputmode="none"
                placeholder="0.0" value="${reEsc(val)}"
                oninput="reSetSounding(${ni},this.value,'cm')">
         <span class="re-snd-unit">CM</span>
@@ -498,11 +498,11 @@ function reSoundingRowHTML(r, ni) {
     const [ftPart, inPart] = String(val || '').split('|');
     inputsHTML = `
       <div class="re-snd-pair">
-        <input class="re-snd-ft re-snd-input" type="number" inputmode="numeric" min="0" step="1"
+        <input class="re-snd-ft re-snd-input" type="text" inputmode="none"
                placeholder="0" value="${reEsc(ftPart || '')}"
                oninput="reSetSounding(${ni},this.value,'ft')">
         <span class="re-snd-unit">'</span>
-        <input class="re-snd-in re-snd-input" type="number" inputmode="decimal" min="0" max="11.9" step="0.1"
+        <input class="re-snd-in re-snd-input" type="text" inputmode="none"
                placeholder="0.0" value="${reEsc(inPart || '')}"
                oninput="reSetSounding(${ni},this.value,'in')">
         <span class="re-snd-unit">"</span>
@@ -556,7 +556,7 @@ if (type === 'tk_percent') {
     const usgVal  = val === '' || val == null ? '' : Number(val);
     const pctVal  = (usgVal !== '' && cap > 0) ? Math.round((usgVal / cap) * 1000) / 10 : '';
     return `<div class="re-col-entry re-entry-cell${ac}">
-      <input class="re-text-inp re-tkp-cap" type="number" min="0" step="0.1"
+      <input class="re-text-inp re-tkp-cap" type="text" inputmode="none"
         value="${reEsc(usgVal === '' ? '' : String(usgVal))}"
         oninput="reSetTkPercent(${ni},this.value,'cap')"
         onkeydown="reTextKd(event,${ni})" style="width:68px">
@@ -629,8 +629,7 @@ function reCursorTo(ni) {
   const type = RE.navItems[ni]?.item?.type;
   const kp = document.getElementById('re-keypad');
   if (kp) kp.classList.toggle('re-kp-hidden',
-    type === 'custom' || type === 'text' || type === 'latlon' ||
-    type === 'tk_sounding' || type === 'sounding' || type === 'tk_percent');
+    type === 'custom' || type === 'text');
 
   // Focus native inputs — only when moving to a different row, so taps on
   // sub-fields within the already-active row (e.g. lat/lon minutes) aren't
@@ -659,8 +658,7 @@ function reNavDown() { if (RE.cursorIdx < RE.navItems.length - 1) reCursorTo(RE.
 
 function reKeypadHTML() {
   const type   = RE.navItems[RE.cursorIdx]?.item?.type;
-  const hidden = (type === 'custom' || type === 'text' || type === 'latlon' ||
-                  type === 'tk_sounding' || type === 'sounding' || type === 'tk_percent') ? ' re-kp-hidden' : '';
+  const hidden = (type === 'custom' || type === 'text') ? ' re-kp-hidden' : '';
   const toggle = '';
   return `
     <div class="re-keypad${hidden}" id="re-keypad">
@@ -694,6 +692,24 @@ function reKeypadHTML() {
 
 // ── Keypad actions ────────────────────────────────────────────────────────────
 
+// Returns the currently-focused per-subfield input if it's one of the numeric
+// row types we want to drive from the in-app keypad (latlon, sounding,
+// tk_percent). Returns null otherwise, so callers fall through to the normal
+// single-value keypad behaviour for plain numeric rows.
+function reActiveSubfieldInput() {
+  const el = document.activeElement;
+  if (!el || el.tagName !== 'INPUT') return null;
+  if (el.matches('.re-latlon-deg, .re-latlon-min, .re-snd-input, .re-tkp-cap')) return el;
+  return null;
+}
+
+// Mutate a subfield input's value and fire `input` so the existing per-row
+// handler (reLatLonUpdate / reSetSounding / reSetTkPercent) updates RE.values.
+function reSubfieldApply(input, newVal) {
+  input.value = newVal;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function reKpKey(k) {
   const nav = RE.navItems[RE.cursorIdx];
   if (!nav) return;
@@ -701,6 +717,8 @@ function reKpKey(k) {
   const type = nav.item.type;
   if (RE.secd[iid]) { reUnsecD(iid); RE.freshCursor = true; reRenderGrid(); }
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
+  const sub = reActiveSubfieldInput();
+  if (sub) { reSubfieldApply(sub, (sub.value || '') + k); return; }
   if (RE.freshCursor) { RE.freshCursor = false; RE.values[iid] = k; }
   else                { RE.values[iid] = (RE.values[iid] || '') + k; }
   reUpdateNum(iid);
@@ -713,6 +731,8 @@ function reKpBs() {
   const type = nav.item.type;
   if (RE.secd[iid]) { reUnsecD(iid); reRenderGrid(); return; }
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
+  const sub = reActiveSubfieldInput();
+  if (sub) { reSubfieldApply(sub, (sub.value || '').slice(0, -1)); return; }
   if (RE.freshCursor) { RE.freshCursor = false; RE.values[iid] = ''; }
   else                { RE.values[iid] = (RE.values[iid] || '').slice(0, -1); }
   reUpdateNum(iid);
@@ -728,6 +748,9 @@ function reKpMinus() {
   const type = nav.item.type;
   if (RE.secd[iid]) { reUnsecD(iid); RE.freshCursor = true; reRenderGrid(); }
   if (type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
+  // Subfield inputs (lat/lon, soundings, tank %) never accept negatives —
+  // hemisphere is set by N/S/E/W selects, and depths/volumes are unsigned.
+  if (reActiveSubfieldInput()) return;
   RE.freshCursor = false;
   const v = RE.values[iid] || '';
   RE.values[iid] = v.startsWith('-') ? v.slice(1) : '-' + v;
@@ -740,6 +763,13 @@ function reKpDot() {
   const iid = nav.item.item_id;
   if (RE.secd[iid]) { reUnsecD(iid); RE.freshCursor = true; reRenderGrid(); }
   if (nav.item.type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
+  const sub = reActiveSubfieldInput();
+  if (sub) {
+    const sv = sub.value || '';
+    if (sv.includes('.')) return;
+    reSubfieldApply(sub, sv + '.');
+    return;
+  }
   if (RE.freshCursor) { RE.freshCursor = false; RE.values[iid] = '.'; reUpdateNum(iid); return; }
   const v = RE.values[iid] || '';
   if (v.includes('.')) return;
@@ -939,7 +969,7 @@ function reSecD() {
   const kp = document.getElementById('re-keypad');
   if (kp) {
     const t = RE.navItems[RE.cursorIdx]?.item?.type;
-    kp.classList.toggle('re-kp-hidden', t === 'custom' || t === 'text' || t === 'latlon');
+    kp.classList.toggle('re-kp-hidden', t === 'custom' || t === 'text');
   }
 }
 

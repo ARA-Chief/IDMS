@@ -319,7 +319,14 @@
       background: var(--accent-glow);
     }
     /* Style native selects to fit the dark theme */
-    select option { background: #1a2a44; }
+    /* Force dark UA styling on form controls so the native dropdown picker
+       stays readable even when the OS is in Light/Day mode (otherwise the
+       browser's blue selection highlight pairs with default black option
+       text and is unreadable). */
+    select, option { color-scheme: dark; }
+    select option { background: #1a2a44; color: #e6ecf5; }
+    select option:checked,
+    select option:hover { background: #1f6feb; color: #ffffff; }
 
     /* ── PLACEHOLDER ── */
     .placeholder-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 2rem; color: var(--text-muted); }
@@ -992,16 +999,15 @@
     </header>
     <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Factory</div>
     <div class="er-hub-grid">
-      <button class="er-hub-tile" onclick="openFactoryLogEvents()">
+      <button class="er-hub-tile" onclick="openFactoryRoughLog()">
         <div class="er-hub-tile-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <path d="M6 7h16M6 12h16M6 17h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <circle cx="22" cy="19" r="4" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M20.5 19h3M22 17.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M6 4h16a2 2 0 012 2v20a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M9 11h10M9 16h10M9 21h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
         </div>
-        <div class="er-hub-tile-label">Log Events</div>
-        <div class="er-hub-tile-sub">Record downtime events</div>
+        <div class="er-hub-tile-label">Rough Log</div>
+        <div class="er-hub-tile-sub">Vessel log entries</div>
       </button>
       <button class="er-hub-tile" onclick="openFactoryRoundsConfirm()">
         <div class="er-hub-tile-icon">
@@ -1012,6 +1018,28 @@
         </div>
         <div class="er-hub-tile-label">Rounds</div>
         <div class="er-hub-tile-sub">Start rounds entry</div>
+      </button>
+      <button class="er-hub-tile" onclick="openFactoryTasks()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M10 6H7a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <rect x="10" y="3" width="8" height="5" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M9 15l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Tasks</div>
+        <div class="er-hub-tile-sub">Maintenance &amp; checks</div>
+      </button>
+      <button class="er-hub-tile" onclick="openFactoryLogEvents()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M6 7h16M6 12h16M6 17h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="22" cy="19" r="4" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M20.5 19h3M22 17.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Log Events</div>
+        <div class="er-hub-tile-sub">Record downtime events</div>
       </button>
       <button class="er-hub-tile" onclick="openFactoryOee()">
         <div class="er-hub-tile-icon">
@@ -1280,7 +1308,7 @@
     </header>
     <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Engine Room</div>
     <div class="er-hub-grid">
-      <button class="er-hub-tile" onclick="initEngineRoughLog()">
+      <button class="er-hub-tile" onclick="initEngineRoughLog('screen-engine-home')">
         <div class="er-hub-tile-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
             <path d="M6 4h16a2 2 0 012 2v20a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5"/>
@@ -1300,7 +1328,7 @@
         <div class="er-hub-tile-label">Rounds</div>
         <div class="er-hub-tile-sub">Start rounds entry</div>
       </button>
-      <button class="er-hub-tile" onclick="openEngineTasks()">
+      <button class="er-hub-tile" onclick="openEngineTasks('screen-engine-home')">
         <div class="er-hub-tile-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
             <path d="M10 6H7a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -1330,7 +1358,7 @@
   <!-- ── ENGINE ROOM: TASKS ── -->
   <div class="screen" id="screen-engine-tasks">
     <div class="subscreen-header">
-      <button class="back-btn" onclick="showScreen('screen-engine-home')">
+      <button class="back-btn" onclick="showScreen(erTasksBackScreen || 'screen-engine-home')">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <h2>Tasks &amp; Maintenance</h2>
@@ -3270,7 +3298,12 @@ function deptKeyForCurrentUser() {
   return '';
 }
 
-function openEngineTasks() {
+// Back-screen for the shared Tasks & Maintenance screen. Set by the hub
+// wrappers (Engine Room / Factory) so the back button returns to the right hub.
+var erTasksBackScreen = 'screen-engine-home';
+
+function openEngineTasks(backScreen) {
+  erTasksBackScreen = backScreen || 'screen-engine-home';
   showScreen('screen-engine-tasks');
   // Default the department label to the user's current department
   var deptLabelEl = document.getElementById('er-task-filter-dept-label');
@@ -3283,6 +3316,17 @@ function openEngineTasks() {
   if (roleEl)   roleEl.value   = '';
 
   loadEngineTasks();
+}
+
+// Factory hub wrappers — reuse the same Tasks & Maintenance and Rough Log
+// screens. The screens already filter by `deptKeyForCurrentUser()`, which
+// reflects the active department, so a Factory user sees Factory tasks /
+// log entries by default and new entries are tagged 'factory'.
+function openFactoryTasks() {
+  openEngineTasks('screen-factory-home');
+}
+function openFactoryRoughLog() {
+  initEngineRoughLog('screen-factory-home');
 }
 
 async function loadEngineTasks() {
@@ -6431,8 +6475,9 @@ function mergeOverlappingIncidents(incidents) {
 // ── ENGINE ROOM: ROUGH LOG ────────────────────────────────────────────────────
 
 var ERL = {
-  data:  null,   // parsed roughlog-{YYYY}.json
-  year:  null
+  data:        null,   // parsed roughlog-{YYYY}.json
+  year:        null,
+  backScreen:  'screen-engine-home'  // hub to return to (set by hub wrapper)
 };
 
 function erlGraphUrl(year) {
@@ -6446,7 +6491,8 @@ async function erlRefreshToken() {
   graphToken = r.accessToken;
 }
 
-async function initEngineRoughLog() {
+async function initEngineRoughLog(backScreen) {
+  ERL.backScreen = backScreen || 'screen-engine-home';
   showScreen('screen-engine-roughlog');
   ERL.year = new Date().getFullYear();
   ERL.data = null;
@@ -6459,7 +6505,7 @@ function erlRenderShell() {
   if (!el) return;
   el.innerHTML =
     '<div class="subscreen-header">' +
-      '<button class="back-btn" onclick="showScreen(\'screen-engine-home\')">' +
+      '<button class="back-btn" onclick="showScreen(ERL.backScreen || \'screen-engine-home\')">' +
         '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
       '</button>' +
       '<h2>Rough Log</h2>' +
@@ -6526,7 +6572,14 @@ async function erlLoadData() {
 function erlRenderList() {
   var listEl = document.getElementById('erl-list');
   if (!listEl || !ERL.data) return;
-  var entries = ERL.data.entries.slice().reverse();
+  // Default the listing to entries belonging to the current hub's department.
+  // Legacy entries without a `department` field still show, so older data
+  // remains visible after the dept field was added.
+  var deptKey = deptKeyForCurrentUser();
+  var entries = ERL.data.entries.filter(function(e) {
+    if (!deptKey) return true;
+    return !e.department || e.department === deptKey;
+  }).slice().reverse();
   if (!entries.length) {
     listEl.innerHTML = '<div style="padding:48px 16px;text-align:center;color:var(--text-muted);font-size:13px">No entries yet. Tap + to add one.</div>';
     return;
@@ -6598,7 +6651,7 @@ async function erlSubmitEntry() {
       timestamp:    new Date(dateStr + 'T' + timeStr + ':00').toISOString(),
       date:         dateStr,
       time_label:   timeStr.slice(0, 5),
-      department:   'engine',
+      department:   deptKeyForCurrentUser() || 'engine',
       source:       'pwa',
       category:     category,
       user:         currentUser.username || 'unknown',
