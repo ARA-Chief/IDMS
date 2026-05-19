@@ -2703,12 +2703,7 @@ function openFactoryLeFailmode(asset) {
 // ── FACTORY HUB: ROUNDS ──────────────────
 function openFactoryRoundsConfirm() {
   var bodyEl = document.getElementById('modal-rounds-body');
-  if (bodyEl) {
-    var roundText = (typeof RE !== 'undefined' && RE && RE.roundNum)
-      ? 'Round ' + RE.roundNum + (RE.scheduledTime ? ' · ' + RE.scheduledTime + ' scheduled' : '')
-      : 'Rounds entry for the current period.';
-    bodyEl.textContent = roundText;
-  }
+  if (bodyEl) bodyEl.textContent = currentRoundsConfirmText();
   document.getElementById('modal-rounds-confirm').style.display = 'flex';
 }
 function confirmFactoryRounds() {
@@ -3216,14 +3211,25 @@ function openFactoryProfile() {
 // ── ENGINE ROOM: ROUNDS ──────────────────
 function openEngineRoundsConfirm() {
   var bodyEl = document.getElementById('modal-rounds-body');
-  if (bodyEl) {
-    // Show round number if roundsentry.js has already inferred it from a previous visit
-    var roundText = (typeof RE !== 'undefined' && RE && RE.roundNum)
-      ? 'Round ' + RE.roundNum + (RE.scheduledTime ? ' · ' + RE.scheduledTime + ' scheduled' : '')
-      : 'Rounds entry for the current period.';
-    bodyEl.textContent = roundText;
-  }
+  if (bodyEl) bodyEl.textContent = currentRoundsConfirmText();
   document.getElementById('modal-rounds-confirm').style.display = 'flex';
+}
+
+// Compute the "Round N · HH:MM scheduled" body for the rounds confirm modal at
+// the moment it opens. Cached RE.roundNum / RE.scheduledTime from a previous
+// visit can be stale (e.g. opened at 00:00 for round 1, returned at 06:00 for
+// round 2). Re-infer against the cached config when available so the modal
+// matches what `initRoundsEntry` will show after Begin is tapped.
+function currentRoundsConfirmText() {
+  try {
+    if (typeof RE !== 'undefined' && RE && RE.config && typeof reInferRound === 'function') {
+      var inf = reInferRound(RE.config.schedule || {});
+      if (inf && inf.round) {
+        return 'Round ' + inf.round + (inf.scheduled_time ? ' · ' + inf.scheduled_time + ' scheduled' : '');
+      }
+    }
+  } catch (e) { /* fall through */ }
+  return 'Rounds entry for the current period.';
 }
 function closeRoundsConfirm() {
   document.getElementById('modal-rounds-confirm').style.display = 'none';
