@@ -3425,6 +3425,7 @@ function renderEngineTasksList() {
 
   var statusFilter = (document.getElementById('er-task-filter-status') || {}).value || 'active';
   var roleFilter   = (document.getElementById('er-task-filter-role')   || {}).value || '';
+  var deptFilter   = deptKeyForCurrentUser();
 
   var rows = ER_TASKS_STATE.tasks.filter(function(entry) {
     var t = entry.task;
@@ -3435,6 +3436,10 @@ function renderEngineTasksList() {
       return false;
     }
     if (roleFilter && t.role !== roleFilter) return false;
+    // Department lockdown: when the current hub maps to a specific department,
+    // only show tasks whose `department` matches. Legacy tasks with no
+    // department field fall through to the load-time code_range filter.
+    if (deptFilter && t.department && t.department !== deptFilter) return false;
     return true;
   });
 
