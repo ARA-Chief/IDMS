@@ -10,6 +10,8 @@
   <title>IDMS</title>
   <!-- MSAL.js for Microsoft authentication -->
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+  <!-- Shared crew name display helpers (mirror at IDMS-Console/src/renderer/js/crew-display.js) -->
+  <script src="utils/crew-display.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -470,7 +472,7 @@
           Sign in with Microsoft
         </button>
       </div>
-      <p class="login-footer">IDMS v1.0 · F/V Araho</p>
+      <p class="login-footer">IDMS v0.2.5 · F/V Araho</p>
     </div>
   </div>
 
@@ -505,7 +507,7 @@
 
         <button class="btn-primary" id="login-btn" onclick="submitLogin()">Sign In</button>
       </div>
-      <p class="login-footer">IDMS v1.0 · F/V Araho</p>
+      <p class="login-footer">IDMS v0.2.5 · F/V Araho</p>
     </div>
   </div>
 
@@ -1418,6 +1420,16 @@
       </div>
 
       <div class="er-form-row">
+        <label class="er-form-label">Failure Mechanism <span style="color:var(--text-muted);font-weight:400">(top-level category)</span></label>
+        <select id="er-task-update-fmech" class="er-form-input" title="High-level category. Put granular detail in the comment."></select>
+      </div>
+
+      <div class="er-form-row">
+        <label class="er-form-label">Detection Method <span style="color:var(--text-muted);font-weight:400">(how the issue surfaced)</span></label>
+        <select id="er-task-update-fdet" class="er-form-input"></select>
+      </div>
+
+      <div class="er-form-row">
         <label class="er-form-label">Comment <span style="color:var(--text-muted);font-weight:400">(optional)</span></label>
         <textarea id="er-task-update-comment" class="er-form-input" rows="3" placeholder="Reason for status change…" style="resize:vertical;font-family:inherit"></textarea>
       </div>
@@ -2058,7 +2070,7 @@ function routeAfterLogin() {
 function showDeptPicker() {
   var deptAv = document.getElementById('dept-avatar');
   deptAv.textContent = currentUser.initials;
-  document.getElementById('dept-username').textContent = currentUser.name;
+  document.getElementById('dept-username').textContent = getDisplayFullName(currentUser) || currentUser.name;
   document.getElementById('dept-role').textContent     = currentUser.role;
 
   var picPath = currentUser.profile_picture && currentUser.profile_picture.path;
@@ -2455,15 +2467,16 @@ function updateSyncIndicator(state) {
 
 // ── UPDATE USER DISPLAY ──────────────────
 function updateUserDisplay() {
+  var userFullName = getDisplayFullName(currentUser) || currentUser.name;
   document.getElementById('home-avatar').textContent   = currentUser.initials;
-  document.getElementById('home-username').textContent = currentUser.name;
-  document.getElementById('settings-name').textContent = currentUser.name;
+  document.getElementById('home-username').textContent = userFullName;
+  document.getElementById('settings-name').textContent = userFullName;
   var roleEl   = document.getElementById('settings-role');
   if (roleEl)   roleEl.textContent   = currentUser.role;
   var homeRole = document.getElementById('home-role');
   if (homeRole) homeRole.textContent = currentUser.role + ' \u00b7 ' + currentDepartment;
   var menuName = document.getElementById('user-menu-name');
-  if (menuName) menuName.textContent = currentUser.name + ' \u2014 ' + currentUser.role;
+  if (menuName) menuName.textContent = userFullName + ' \u2014 ' + currentUser.role;
   // Only show Switch Department if the user has access to more than one
   var switchDeptBtn = document.getElementById('menu-btn-switch-dept');
   if (switchDeptBtn) switchDeptBtn.style.display = (currentUser.departments && currentUser.departments.length > 1) ? 'block' : 'none';
@@ -2475,9 +2488,9 @@ function updateUserDisplay() {
   var erMenuName    = document.getElementById('er-user-menu-name');
   var erSwitchDept  = document.getElementById('er-menu-btn-switch-dept');
   if (erAvatar)     erAvatar.textContent     = currentUser.initials;
-  if (erUsername)   erUsername.textContent   = currentUser.name;
+  if (erUsername)   erUsername.textContent   = userFullName;
   if (erRole)       erRole.textContent       = currentUser.role + ' · F/V Araho';
-  if (erMenuName)   erMenuName.textContent   = currentUser.name + ' — ' + currentUser.role;
+  if (erMenuName)   erMenuName.textContent   = userFullName + ' — ' + currentUser.role;
   if (erSwitchDept) erSwitchDept.style.display = (currentUser.departments && currentUser.departments.length > 1) ? 'block' : 'none';
 
   // Factory hub topbar
@@ -2487,9 +2500,9 @@ function updateUserDisplay() {
   var faMenuName    = document.getElementById('fa-user-menu-name');
   var faSwitchDept  = document.getElementById('fa-menu-btn-switch-dept');
   if (faAvatar)     faAvatar.textContent     = currentUser.initials;
-  if (faUsername)   faUsername.textContent   = currentUser.name;
+  if (faUsername)   faUsername.textContent   = userFullName;
   if (faRole)       faRole.textContent       = currentUser.role + ' · F/V Araho';
-  if (faMenuName)   faMenuName.textContent   = currentUser.name + ' — ' + currentUser.role;
+  if (faMenuName)   faMenuName.textContent   = userFullName + ' — ' + currentUser.role;
   if (faSwitchDept) faSwitchDept.style.display = (currentUser.departments && currentUser.departments.length > 1) ? 'block' : 'none';
 
   // Swap initials for the real profile picture if one is on record
@@ -3275,6 +3288,32 @@ var ER_TASKS_ISO14224 = [
   ['OTH', 'OTH — Other']
 ];
 
+// Top-level Failure Mechanism categories — top-level only by design so the
+// dropdown stays short and the data aggregates cleanly. Granular detail
+// (e.g. "leakage", "corrosion") goes in the comment field. Matches the
+// IDMS-Console vocabulary; codes are identical between apps so any record
+// flowing between them stays compatible.
+var ER_TASKS_FAILURE_MECHANISMS = [
+  ['',           '— None —'],
+  ['mechanical', 'Mechanical failure — leakage, vibration, clearance/alignment, deformation, loosening, sticking'],
+  ['material',   'Material failure — cavitation, corrosion, erosion, wear, breakage, fatigue, overheating, burst'],
+  ['instrument', 'Instrument failure — control failure, no/faulty signal, out of adjustment, software failure'],
+  ['electrical', 'Electrical failure — short circuiting, open circuit, no/faulty power-voltage, earth/isolation fault'],
+  ['external',   'External influence — blockage/plugged, contamination, misc external'],
+  ['misc',       'Miscellaneous — other, combined causes, unknown']
+];
+
+var ER_TASKS_DETECTION_METHODS = [
+  ['',                      '— None —'],
+  ['operational_demand',    'Operational demand'],
+  ['visual_inspection',     'Visual inspection'],
+  ['routine_inspection',    'Routine inspection'],
+  ['functional_test',       'Functional test'],
+  ['continuous_monitoring', 'Continuous monitoring (sensor / alarm)'],
+  ['periodic_test',         'Periodic test'],
+  ['other',                 'Other']
+];
+
 var ER_TASK_STATUSES = [
   ['open',                'Open'],
   ['investigating',       'Investigating'],
@@ -3680,6 +3719,35 @@ function openErTaskUpdateModal(taskId) {
     }).join('');
   }
 
+  // Populate Failure Mechanism options (validated top-level category)
+  var fmechEl = document.getElementById('er-task-update-fmech');
+  if (fmechEl) {
+    var curMech = (t.failure_mechanism || '').toString();
+    fmechEl.innerHTML = ER_TASKS_FAILURE_MECHANISMS.map(function(c) {
+      var sel = curMech === c[0] ? ' selected' : '';
+      return '<option value="' + c[0] + '"' + sel + '>' + c[1] + '</option>';
+    }).join('');
+    // Preserve any legacy free-text value that doesn't match a known code
+    if (curMech && !ER_TASKS_FAILURE_MECHANISMS.some(function(c) { return c[0] === curMech; })) {
+      fmechEl.insertAdjacentHTML('beforeend',
+        '<option value="' + erEscapeHtml(curMech) + '" selected>' + erEscapeHtml(curMech) + ' (legacy)</option>');
+    }
+  }
+
+  // Populate Detection Method options
+  var fdetEl = document.getElementById('er-task-update-fdet');
+  if (fdetEl) {
+    var curDet = (t.detection_method || '').toString();
+    fdetEl.innerHTML = ER_TASKS_DETECTION_METHODS.map(function(c) {
+      var sel = curDet === c[0] ? ' selected' : '';
+      return '<option value="' + c[0] + '"' + sel + '>' + c[1] + '</option>';
+    }).join('');
+    if (curDet && !ER_TASKS_DETECTION_METHODS.some(function(c) { return c[0] === curDet; })) {
+      fdetEl.insertAdjacentHTML('beforeend',
+        '<option value="' + erEscapeHtml(curDet) + '" selected>' + erEscapeHtml(curDet) + ' (legacy)</option>');
+    }
+  }
+
   // Reset comment, files, preview, error
   var commentEl = document.getElementById('er-task-update-comment');
   if (commentEl) commentEl.value = '';
@@ -3729,6 +3797,8 @@ async function submitErTaskUpdate() {
   var errEl    = document.getElementById('er-task-update-error');
   var newStatus = (document.getElementById('er-task-update-status') || {}).value || (t.status || 'open');
   var newFm     = (document.getElementById('er-task-update-fm') || {}).value || '';
+  var newFmech  = (document.getElementById('er-task-update-fmech') || {}).value || '';
+  var newFdet   = (document.getElementById('er-task-update-fdet')  || {}).value || '';
   var comment   = ((document.getElementById('er-task-update-comment') || {}).value || '').trim();
   var filesEl   = document.getElementById('er-task-update-files');
   var files     = filesEl ? Array.from(filesEl.files).slice(0, 5) : [];
@@ -3737,14 +3807,18 @@ async function submitErTaskUpdate() {
 
   var prevStatus = t.status || 'open';
   var prevFm     = t.failure_mode || '';
+  var prevFmech  = t.failure_mechanism || '';
+  var prevFdet   = t.detection_method  || '';
 
   var statusChanged = newStatus !== prevStatus;
   // Only treat FM as a change when a non-empty value is selected AND it differs from current.
   // Per requirement: if blank, or same, make no changes to FM.
-  var fmChanged = newFm !== '' && newFm !== prevFm;
+  var fmChanged    = newFm    !== '' && newFm    !== prevFm;
+  var fmechChanged = newFmech !== '' && newFmech !== prevFmech;
+  var fdetChanged  = newFdet  !== '' && newFdet  !== prevFdet;
 
-  if (!statusChanged && !fmChanged && !comment && files.length === 0) {
-    if (errEl) { errEl.textContent = 'Nothing to update — change status, failure mode, or add a comment / image.'; errEl.style.display = 'block'; }
+  if (!statusChanged && !fmChanged && !fmechChanged && !fdetChanged && !comment && files.length === 0) {
+    if (errEl) { errEl.textContent = 'Nothing to update — change status, failure mode / mechanism / detection, or add a comment / image.'; errEl.style.display = 'block'; }
     return;
   }
 
@@ -3786,10 +3860,20 @@ async function submitErTaskUpdate() {
       event.failure_mode_from = prevFm || null;
       event.failure_mode_to   = newFm;
     }
+    if (fmechChanged) {
+      event.failure_mechanism_from = prevFmech || null;
+      event.failure_mechanism_to   = newFmech;
+    }
+    if (fdetChanged) {
+      event.detection_method_from = prevFdet || null;
+      event.detection_method_to   = newFdet;
+    }
 
     // Apply mutations to the in-memory task
     if (statusChanged) t.status = newStatus;
     if (fmChanged)     t.failure_mode = newFm;
+    if (fmechChanged)  t.failure_mechanism = newFmech;
+    if (fdetChanged)   t.detection_method  = newFdet;
     if (!Array.isArray(t.events)) t.events = [];
     t.events.push(event);
 
@@ -3797,6 +3881,8 @@ async function submitErTaskUpdate() {
     await erTaskSaveDefinitionsFile(entry.file, taskId, function(fileTask) {
       if (statusChanged) fileTask.status = newStatus;
       if (fmChanged)     fileTask.failure_mode = newFm;
+      if (fmechChanged)  fileTask.failure_mechanism = newFmech;
+      if (fdetChanged)   fileTask.detection_method  = newFdet;
       if (!Array.isArray(fileTask.events)) fileTask.events = [];
       fileTask.events.push(event);
     });
@@ -4486,7 +4572,7 @@ function erRenderProfile(el, m) {
   allCrew.forEach(function(c) {
     if (c.username === m.username || c.status !== 'active') return;
     var sel = m.linked_relief && m.linked_relief === c.crew_id ? ' selected' : '';
-    reliefOpts += '<option value="' + erEscapeAttr(c.crew_id || '') + '"' + sel + '>' + erEscapeHtml(c.name || c.username || '') + '</option>';
+    reliefOpts += '<option value="' + erEscapeAttr(c.crew_id || '') + '"' + sel + '>' + erEscapeHtml(getDisplayFullName(c) || c.username || '') + '</option>';
   });
 
   // Dates requested off — prune expired before rendering
@@ -4512,7 +4598,7 @@ function erRenderProfile(el, m) {
     +       '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11 2l3 3-9 9H2v-3l9-9z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>'
     +     '</div>'
     +   '</div>'
-    +   '<div style="font-size:18px;font-weight:700;color:var(--text-primary)">' + erEscapeHtml(m.name || '—') + '</div>'
+    +   '<div style="font-size:18px;font-weight:700;color:var(--text-primary)">' + erEscapeHtml(getDisplayFullName(m) || '—') + '</div>'
     +   '<div style="font-size:13px;color:var(--text-muted);margin-top:3px">' + erEscapeHtml(m.role_label || m.role || '') + ' · ' + erEscapeHtml(m.department || currentDepartment || '') + '</div>'
     +   (m.crew_id ? '<div style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;color:var(--text-muted);margin-top:6px;word-break:break-all">' + erEscapeHtml(m.crew_id) + '</div>' : '')
     + '</div>'
@@ -5731,7 +5817,7 @@ function renderEventLog() {
     div.innerHTML =
       '<div class="log-entry-header"><span class="log-equip">' + i.equipment + '</span><span class="log-badge active-badge">Active</span></div>' +
       '<div class="log-entry-detail">' + i.category + ' · ongoing</div>' +
-      '<div class="log-entry-meta">'   + i.startLabel + ' – now · ' + currentUser.name + '</div>' +
+      '<div class="log-entry-meta">'   + i.startLabel + ' – now · ' + (getDisplayFullName(currentUser) || currentUser.name) + '</div>' +
       '<div class="log-entry-actions"><button class="log-action-btn" onclick="openTimerScreen(' + i.id + ')">View</button></div>';
     list.appendChild(div);
   });
