@@ -1,5 +1,17 @@
 # IDMS Schema Specification
-**Version 2.20 — F/V Araho**
+**Version 2.21 — F/V Araho**
+
+v2.21 — Stability Assessment surfaced on Dashboard + Dashboard Report.
+
+**Dashboard (§30).** New **Zone 8 — Stability Assessment** appended after Zone 7 (System Health). Renders a read-only mirror of the two-chart Stability Assessment block from Report Generator → Stability Report (`TRIM DETERMINATION` left / `MAX VCG` right) with the red diamond cursor positioned per the existing `TRIM_CHART` / `VCG_CHART` calibration constants in `stability.js`. Per-panel footer lines show `LCG · Disp` (left) and `Disp · VCG Corr` (right). A full-width muted caption directly below the chart row reads: *"Fore trim is positive and aft trim is negative. For reference only — see Stability Booklet 175-101-150D pages 17–18 for manual plots."* `db:getDashboardData` gains a `stability_assessment: { lcg_m, disp_mt, vcg_corr_m, trim_m, configured }` field, computed at handler time against current `fuelstate.json` / `vesselconfig.json` / `stability.json` using the same `stReport*` calc helpers already used by the Stability Report (no caching).
+
+**Stability Calculations (§26).** New shared helper `renderStabilityAssessmentBlock(container, { lcg_m, disp_mt, vcg_corr_m, trim_m, configured })` extracted from `stability.js` so the Stability Report, the Dashboard (Zone 8), and the new Dashboard Report tail block all call the same function — eliminates rendering duplication and guarantees the diamond cursor / caption / footer formatting stay in lockstep across the three surfaces. Null state (`configured = false`) substitutes a muted "Stability not configured" placeholder for the two charts and suppresses the caption.
+
+**Reports (§30, Report Generator — Dashboard Report).** `buildDashboardReportPreview` gains a final `.rpt-section` appended after the Recent Rough Log table that calls `renderStabilityAssessmentBlock` with the values computed by `stReportPrepareAsOf` for the report's selected date (so historical Dashboard Reports render against the lightship / tank state in effect on that date — see v2.19 historical reports infrastructure). Print pipeline change: none required — the two PNG chart assets under `src/renderer/assets/` are picked up by the existing `rptInlineAttachmentImages` pass at print time.
+
+**Build prerequisites (§30).** New item 4 added: `renderStabilityAssessmentBlock` extraction from `stability.js` into a shared helper. Must land before Zone 8 is wired up and before the Dashboard Report tail block is appended.
+
+---
 
 v2.20 — Scheduling Engine, Phase 5 (rollup of the parent Scheduling Engine additions doc + the cross-role fill-in addendum + the rotation-groups & sticky-rows addendum + every implementation refinement that landed during the build-out). Plus a focused rewrite of the Crew Scheduling Report.
 
@@ -3145,6 +3157,29 @@ Tune `left / right / top / bottom` values if the diamond cursor does not align w
 
 These images are **not** synced to OneDrive. To update them, replace the PNG files on disk and restart the console. File locations are documented in Settings → Advanced → Connections & Paths → Local application assets.
 
+#### Shared `renderStabilityAssessmentBlock` helper (added v2.21)
+
+The Stability Assessment block (two-chart row + caption) is rendered by a shared helper so the Stability Report (Report Generator), the Dashboard (Overview → Dashboard, Zone 8 — see §30), and the **Dashboard Report tail block** all produce identical output.
+
+```javascript
+renderStabilityAssessmentBlock(container, {
+  lcg_m, disp_mt, vcg_corr_m, trim_m, configured
+})
+```
+
+The helper renders:
+
+1. A `STABILITY ASSESSMENT` section header.
+2. Two side-by-side chart panels (`TRIM DETERMINATION` left, `MAX VCG` right) with the red diamond cursor positioned per the `TRIM_CHART` / `VCG_CHART` calibration constants above.
+3. A per-panel footer line: `LCG = {N.NNN} m  |  Disp = {N,NNN.N} MT` (left) and `Disp = {N,NNN.N} MT  |  VCG Corr = {N.NNN} m` (right).
+4. A full-width muted caption immediately below the two-chart row:
+
+   > Fore trim is positive and aft trim is negative. For reference only — see Stability Booklet 175-101-150D pages 17–18 for manual plots.
+
+When `configured = false` (no lightship in `stability.json`), the helper substitutes a muted `"Stability not configured — open Vessel Setup → Stability Calculations to enter lightship & variable weights"` placeholder in place of the two charts and suppresses the caption.
+
+**Dashboard Report tail block.** `reports.js → buildDashboardReportPreview` appends a final `.rpt-section` after the Recent Rough Log table that calls `renderStabilityAssessmentBlock(section, RPT.stability_assessment)` with the values computed by `stReportPrepareAsOf` for the report's selected date (so historical Dashboard Reports render against the lightship / tank state in effect on that date — see v2.19 historical reports infrastructure). Print pipeline already inlines PNG assets via `rptInlineAttachmentImages`; the two stability chart PNGs are picked up by the same mechanism (they live under `src/renderer/assets/` and are resolved to `data:` URLs at print time).
+
 ### IPC handlers
 
 | Channel | Direction | Description |
@@ -4632,13 +4667,56 @@ Per-user log file sync status with green/grey dot, username, department, event c
 
 ---
 
+### Zone 8 — Stability Assessment
+
+**Position:** Below Zone 7 (final zone on the page)
+**Layout:** Two columns — Trim Determination chart left (~50% width), Max VCG chart right (~50% width); summary line below each chart
+**Data source:** Same in-memory stability calc the Report Generator → Stability Report uses. See §26.
+
+A read-only mirror of the **Stability Assessment** block rendered by Report Generator → Stability Report. Uses the identical chart assets (`stab-trim-chart.png`, `stab-vcg-chart.png`) and identical calibration constants (`TRIM_CHART`, `VCG_CHART` — §26) so the red diamond cursor position is consistent across surfaces.
+
+**Per-panel content (matches §26):**
+
+| Panel | Header | Sub-header | Footer line |
+|---|---|---|---|
+| Left | `TRIM DETERMINATION` | `TOTAL DISPLACEMENT (MT)` | `LCG = {N.NNN} m  |  Disp = {N,NNN.N} MT` |
+| Right | `MAX VCG` | `VCG CORRECTED` | `Disp = {N,NNN.N} MT  |  VCG Corr = {N.NNN} m` |
+
+The pair sits inside a single `STABILITY ASSESSMENT` card header to match the Stability Report visual grouping.
+
+**Caption (rendered directly below the two-chart row, full-width, muted text):**
+
+> Fore trim is positive and aft trim is negative. For reference only — see Stability Booklet 175-101-150D pages 17–18 for manual plots.
+
+**Rendering:** Calls a new shared helper `renderStabilityAssessmentBlock(container, { lcg, disp_mt, vcg_corr, trim_m })` extracted from `stability.js` so both `dashboard.js` and `reports.js` (Stability Report **and** Dashboard Report) call the same function without code duplication. This is a build prerequisite for this zone (see below).
+
+**Null states:**
+- If `stability.json` has never been saved (no `lightship` block): card renders a muted `"Stability not configured — open Vessel Setup → Stability Calculations to enter lightship & variable weights"` placeholder in place of both charts. Caption is suppressed.
+- If `fuel_state_snapshot` is empty: charts render with no cursor diamond and the footer lines show `LCG = —`, `Disp = —`, `VCG Corr = —`. Caption is retained.
+
+**`db:getDashboardData` addition:** the aggregator returns an additional `stability_assessment` object:
+
+```javascript
+stability_assessment: {
+  lcg_m:        number | null,    // §26 formula N
+  disp_mt:      number | null,    // §26 formula K
+  vcg_corr_m:   number | null,    // §26 formula O
+  trim_m:       number | null,    // signed; positive = fore trim, negative = aft trim
+  configured:   boolean           // false when stability.json has no lightship
+}
+```
+
+Values are computed at IPC handler time against the current `fuelstate.json` / `vesselconfig.json` / `stability.json` — no caching. Same calc helpers `stReport*` already used by the Stability Report (see v2.19 §30 entry).
+
+---
+
 ### IPC handlers
 
 | Handler | Description |
 |---------|-------------|
 | `db:ingestFuelState` | Rebuilds `fuel_state_snapshot` from `fuelstate.json` + `vesselconfig.json`. See §25 addendum. |
 | `db:getFuelStateSummary` | Returns `{ fuel_onboard_usg, lube_oil_usg, waste_oil_usg, tank_rows, ingested_at }`. See §25 addendum. |
-| `db:getDashboardData` | Convenience aggregator. Single IPC call that returns all Zone 1–7 data in one round trip. See below. |
+| `db:getDashboardData` | Convenience aggregator. Single IPC call that returns all Zone 1–8 data in one round trip. See below. |
 
 #### `db:getDashboardData`
 
@@ -4669,7 +4747,10 @@ A single composite handler that batches all dashboard queries to minimise IPC ro
   total_downtime_sec: integer,
   active_timers:      integer,
   last_ingested_at:   string | null,
-  user_log_status:    array
+  user_log_status:    array,
+
+  // Zone 8 — see Zone 8 above for field semantics
+  stability_assessment: object
 }
 ```
 
@@ -4699,6 +4780,7 @@ Before `dashboard.js` can be built, the following work must be completed in orde
 1. **`db:ingestFuelState` + `fuel_state_snapshot` table** (§25 addendum) — required for Zones 2 and 5.
 2. **`renderHullCanvas` extraction** — refactor the hull canvas renderer in `vessel.js` into a shared utility callable by `dashboard.js` without duplicating rendering code. Required for Zone 5 right sub-panel.
 3. **`overview.js` teardown** — remove `overview.js` as a standalone module. Its content moves to Zone 7 of `dashboard.js`. The sidebar nav entry "Dashboard" replaces the current implicit overview landing. This must happen before `dashboard.js` is wired up to avoid two modules rendering the same ingestion status table simultaneously.
+4. **`renderStabilityAssessmentBlock` extraction** — refactor the two-chart Stability Assessment renderer in `stability.js` into a shared helper callable by `dashboard.js` and `reports.js` (Stability Report **and** Dashboard Report tail block) without duplicating chart positioning logic. Required for Zone 8.
 
 ---
 
@@ -6769,3 +6851,53 @@ The Analytics Setup tab (`renderTASetup()`) provides an admin interface for edit
 - **Refresh from OneDrive:** reloads config from `loadTripAnalyticsConfig()` and re-renders the tab. Prompts a confirmation dialog if unsaved local changes exist.
 
 All write actions are admin-only. Non-admin users see the Setup tab in read-only mode.
+
+---
+
+## Addendum v2.20.1 — Crew nickname field (optional, additive)
+
+### `crewconfig.json` — `crew[].nickname` (optional, string)
+
+A new optional `nickname` field may be present on each crew record. Empty string
+and absent field are both treated as "no nickname"; existing records without
+the field continue to work unchanged. No migration is required.
+
+```jsonc
+{
+  "crew_id": "f1730346-…",
+  "username": "wostara",
+  "name": "William Ostara",
+  "nickname": "Bill",       // optional; may be absent or empty
+  …
+}
+```
+
+### Display conventions
+
+Two shared helpers (`IDMS/utils/crew-display.js`, mirrored at
+`IDMS-Console/src/renderer/js/crew-display.js`) define the canonical display:
+
+- **`getDisplayFirstName(crew)`** — first-name-only contexts (schedule slots,
+  short labels, compact list rows). Returns `crew.nickname` if set; otherwise
+  the first whitespace-delimited token of `crew.name`.
+- **`getDisplayFullName(crew)`** — full-name contexts (detail headers,
+  profiles, reports, contact lists). If `nickname` is set, returns
+  `First "Nickname" Last` (ASCII double-quote `"`, never curly). If `nickname`
+  is unset, returns `crew.name` unchanged.
+
+Example — `William Ostara` with `nickname: "Bill"`:
+
+- First-name contexts → `Bill`
+- Full-name contexts → `William "Bill" Ostara`
+
+### Tech debt
+
+Crew names are currently stored as a single `name` string. The helpers parse on
+the first whitespace to derive first/last for the quoted-nickname format. A
+future migration should split `name` into `first_name` / `last_name` and drop
+the parsing.
+
+### Backward compatibility
+
+All existing crew records continue to render exactly as before. The field is
+purely additive.
