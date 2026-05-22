@@ -2219,7 +2219,9 @@ function showDeptPicker() {
   }
 
   depts.forEach(function(dept) {
-    var isActive = ACTIVE_MODULES.indexOf(dept) !== -1;
+    // Purser is a synthetic, role-gated module — always active when shown
+    // (visibility is controlled upstream by userIsPurser, not by ACTIVE_MODULES).
+    var isActive = (dept === 'Purser') || (ACTIVE_MODULES.indexOf(dept) !== -1);
     var btn = document.createElement('button');
     btn.style.cssText = [
       'width:100%', 'padding:20px', 'border-radius:var(--radius-lg)',
@@ -3665,28 +3667,55 @@ async function loadPurserCrewSignOff() {
     // Departing = in active trip's crew but NOT in next trip's crew.
     // If there's no next trip in the schedule yet, treat everyone as departing
     // (matches Console behaviour when nextSet is empty).
+    //
+    // Crew members whose user_id isn't in crewconfig.json are kept in the
+    // list with crewRec=null + an "unmapped" tag in the row UI. They can't
+    // be checked out (we have no record to write a checkpoint into) but at
+    // least they're visible so a stale or missing crewconfig entry doesn't
+    // silently make a real departing crew member disappear.
     var departing = [];
+    var diag = { kept: [], droppedNotInActive: [], reasonNotDeparting: [] };
     (PUCSO.activeTrip.crew || []).forEach(function(slot) {
-      if (!nextSet || !nextSet.has(slot.user_id)) {
-        var crewRec = (PUCSO.crewConfig.crew || []).find(function(c) {
-          return c.user_id === slot.user_id;
-        });
-        if (!crewRec) return;
-        var checkpoint = (crewRec.checkpoints || []).find(function(cp) {
-          return cp && cp.trip_number === PUCSO.activeTrip.trip_number && cp.direction === 'out';
-        }) || null;
-        departing.push({
-          user_id:      slot.user_id,
-          display_name: slot.display_name || crewRec.display_name || crewRec.username,
-          crewRec:      crewRec,
-          checkpoint:   checkpoint
-        });
+      var isDeparting = !nextSet || !nextSet.has(slot.user_id);
+      if (!isDeparting) {
+        diag.reasonNotDeparting.push((slot.display_name || slot.user_id || '?') + ' (in next trip)');
+        return;
       }
+      var crewRec = (PUCSO.crewConfig.crew || []).find(function(c) {
+        return c.user_id === slot.user_id;
+      });
+      var checkpoint = crewRec ? (crewRec.checkpoints || []).find(function(cp) {
+        return cp && cp.trip_number === PUCSO.activeTrip.trip_number && cp.direction === 'out';
+      }) || null : null;
+      var displayName = slot.display_name ||
+                       (crewRec && crewRec.display_name) ||
+                       (crewRec && crewRec.username) ||
+                       '(unnamed crew · ' + (slot.user_id || '').slice(0, 8) + ')';
+      departing.push({
+        user_id:      slot.user_id,
+        display_name: displayName,
+        crewRec:      crewRec,           // may be null → unmapped
+        checkpoint:   checkpoint,
+        unmapped:     !crewRec
+      });
+      diag.kept.push(displayName + (crewRec ? '' : ' [UNMAPPED]'));
     });
     PUCSO.departing = departing;
 
-    sub.textContent = 'Trip ' + PUCSO.activeTrip.trip_number + ' · ' +
-      departing.length + ' departing';
+    // Diagnostic log — open DevTools console if the list looks wrong on-device.
+    // Lets us see at a glance which trip we picked as active/next and which
+    // crew were kept vs filtered, without having to re-instrument the code.
+    console.log('[Purser Crew Sign Off]',
+      'active=' + (PUCSO.activeTrip && PUCSO.activeTrip.trip_number),
+      'next=' + (nextTrip ? nextTrip.trip_number : '(none)'),
+      'active.crew=' + (PUCSO.activeTrip.crew || []).length,
+      'next.crew=' + (nextTrip ? (nextTrip.crew || []).length : 0),
+      'departing=' + departing.length,
+      diag);
+
+    sub.textContent = 'Active ' + PUCSO.activeTrip.trip_number +
+      ' → Next ' + (nextTrip ? nextTrip.trip_number : '(none)') +
+      ' · ' + departing.length + ' departing';
 
     renderPurserCrewSignOffList();
   } catch (err) {
@@ -3705,7 +3734,12 @@ function renderPurserCrewSignOffList() {
     var cp = d.checkpoint;
     var role = (d.crewRec && d.crewRec.role) || '';
     var btn;
-    if (cp && cp.completed) {
+    if (d.unmapped) {
+      // Crew member exists in the trip's crew[] but not in crewconfig.crew[].
+      // We can't write a checkpoint to a record we don't have, so just show
+      // them with a tag explaining why there's no action.
+      btn = '<span style="background:transparent;border:1px solid var(--border);color:var(--text-muted);font-size:10px;font-weight:600;letter-spacing:0.06em;padding:4px 8px;border-radius:6px;text-transform:uppercase" title="user_id ' + escHtml(d.user_id || '') + ' is in the trip\'s crew list but is not in crewconfig.json — add them in Console &gt; Crew Setup to enable check-out">Unmapped</span>';
+    } else if (cp && cp.completed) {
       btn = '<div style="display:flex;gap:6px;align-items:center">' +
             '<span style="background:#1a7f4b;color:#fff;font-size:11px;font-weight:600;letter-spacing:0.06em;padding:4px 10px;border-radius:12px;text-transform:uppercase">✓ Checked Out</span>' +
             '<button class="pu-cso-edit-btn" data-idx="' + idx + '" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer">edit</button>' +
@@ -3715,7 +3749,7 @@ function renderPurserCrewSignOffList() {
     } else {
       btn = '<button class="pu-cso-checkout-btn" data-idx="' + idx + '" style="background:#e07b39;border:1px solid #e07b39;color:#fff;font-size:12px;font-weight:600;padding:7px 14px;border-radius:6px;cursor:pointer">Check Out</button>';
     }
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:var(--bg-2);border:1px solid var(--border);border-radius:8px">' +
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:var(--bg-2);border:1px solid var(--border);border-radius:8px' + (d.unmapped ? ';opacity:0.7' : '') + '">' +
            '<div style="min-width:0;flex:1">' +
            '<div style="font-size:14px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(d.display_name) + '</div>' +
            '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + escHtml(role) + '</div>' +
