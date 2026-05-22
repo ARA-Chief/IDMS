@@ -1103,16 +1103,6 @@
     </header>
     <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Purser</div>
     <div class="er-hub-grid">
-      <button class="er-hub-tile" onclick="openPurserRoughLog()">
-        <div class="er-hub-tile-icon">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <path d="M6 4h16a2 2 0 012 2v20a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M9 11h10M9 16h10M9 21h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </div>
-        <div class="er-hub-tile-label">Rough Log</div>
-        <div class="er-hub-tile-sub">Factory log entries</div>
-      </button>
       <button class="er-hub-tile" onclick="openPurserScaleCal()">
         <div class="er-hub-tile-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -1120,7 +1110,7 @@
           </svg>
         </div>
         <div class="er-hub-tile-label">Scale Calibration</div>
-        <div class="er-hub-tile-sub">Factory round 4 (04:00)</div>
+        <div class="er-hub-tile-sub">Factory round 2</div>
       </button>
       <button class="er-hub-tile" onclick="openPurserCrewSignOff()">
         <div class="er-hub-tile-icon">
@@ -3525,13 +3515,12 @@ function openFactoryRoughLog() {
 // ════════════════════════════════════════════════════════════════════════════
 //
 // Tiles:
-//   • Rough Log         — shared rough log, pinned to Factory
-//   • Scale Calibration — rounds entry pinned to Factory + round 4 (04:00)
+//   • Scale Calibration — rounds entry pinned to Factory + round 2
 //   • Crew Sign Off     — port of Console scOpenCheckInOutModal (direction='out')
 //   • Profile           — same as other depts
 //
-// Dept swapping: Rough Log + Scale Calibration both filter by global
-// currentDepartment. We swap to 'Factory' before invoking and rely on
+// Dept swapping: Scale Calibration filters by global currentDepartment.
+// We swap to 'Factory' before invoking and rely on
 // showScreen('screen-purser-home') to restore 'Purser' on return (see
 // showScreen + PURSER_ACTIVE).
 //
@@ -3566,15 +3555,10 @@ function renderPurserHubTopbar() {
   }
 }
 
-function openPurserRoughLog() {
-  currentDepartment = 'Factory';
-  initEngineRoughLog('screen-purser-home');
-}
-
 function openPurserScaleCal() {
   currentDepartment = 'Factory';
   showScreen('screen-roundsentry');
-  initRoundsEntry('screen-purser-home', { forceRound: 4 });
+  initRoundsEntry('screen-purser-home', { forceRound: 2 });
 }
 
 function openPurserProfile() {
@@ -3628,14 +3612,41 @@ async function loadPurserCrewSignOff() {
       throw new Error('Failed to load scheduleconfig.json or crewconfig.json');
     }
 
-    // Active trip: first trip (by sequence) with actual_close_date == null.
-    // Best-effort mirror of the Console's scActiveTripNumber, which reads the
-    // SQLite trips DB the PWA can't see. Cross-verify on-device against the
-    // Console before relying on it operationally.
+    // Active trip resolver — best-effort, since the Console's authoritative
+    // signal (open_date && !close_date in the SQLite trips DB) isn't visible
+    // to the PWA.
+    //
+    // The naive "first trip with actual_close_date == null" picks the wrong
+    // trip when a closed trip's actual_close_date hasn't been written back to
+    // scheduleconfig yet — e.g. trip 2607 (est_close 2026-05-11, in the past,
+    // actual_close still null) gets picked instead of 2608 (currently at sea,
+    // est_close 2026-05-26).
+    //
+    // Two-stage rule:
+    //   1) Among trips with actual_close_date == null, pick the FIRST whose
+    //      est_close_date is in the future (>= today). This is the trip
+    //      currently underway whose planned close hasn't passed yet.
+    //   2) If every open trip is overdue (all est_close_dates < today), pick
+    //      the one with the LATEST est_close_date — i.e. the most recent
+    //      "running late" trip. Covers the edge case of an active trip that
+    //      blew through its planned close.
+    var today = (function() {
+      var d = new Date();
+      return d.getFullYear() + '-' + padTwo(d.getMonth() + 1) + '-' + padTwo(d.getDate());
+    })();
     var trips = (PUCSO.scheduleConfig.trips || []).slice().sort(function(a, b) {
       return (a.sequence || 0) - (b.sequence || 0);
     });
-    PUCSO.activeTrip = trips.find(function(t) { return !t.actual_close_date; }) || null;
+    var openTrips = trips.filter(function(t) { return !t.actual_close_date; });
+    PUCSO.activeTrip = openTrips.find(function(t) {
+      return t.est_close_date && t.est_close_date >= today;
+    }) || null;
+    if (!PUCSO.activeTrip && openTrips.length) {
+      // All open trips are overdue — pick the one with the latest est_close.
+      PUCSO.activeTrip = openTrips.slice().sort(function(a, b) {
+        return (b.est_close_date || '').localeCompare(a.est_close_date || '');
+      })[0];
+    }
 
     if (!PUCSO.activeTrip) {
       if (body) body.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:32px 12px">No active trip found.</div>';
