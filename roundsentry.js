@@ -26,6 +26,12 @@ const RE = {
   touchStartX:  0,
   touchStartY:  0,
   sourceScreen: null,  // screen to return to on exit
+  // Tracks the last subfield (lat/lon deg/min, sounding ft/in/cm, tk-percent cap)
+  // the user tapped, so the in-app keypad can route input correctly even when
+  // tapping a keypad button steals focus from the input (Android Chrome
+  // behaviour — iOS Safari does not steal focus, which is why this bug was
+  // invisible on iPad/iPhone but broke entry on Android phones).
+  activeSubfield: null,  // { iid, cls, idx }  (cls = CSS class to match within the row)
 };
 
 // ── Graph API helpers ─────────────────────────────────────────────────────────
@@ -77,6 +83,69 @@ async function reListChildren(path) {
   const json = await resp.json();
   return json.value || [];
 }
+
+// ── Draft persistence (offline data-loss mitigation) ─────────────────────────
+// Persist in-progress rounds-entry state to localStorage so an accidental tab
+// close, browser crash, or failed submit does not destroy what the user typed.
+// Keyed by username + department + date + round number; one draft per round
+// per day. Cleared on successful submit. Restored with user confirmation on
+// re-entry so a stale draft never silently overwrites a fresh round.
+
+function reDraftKey() {
+  const u = (currentUser && currentUser.username) || '_unknown';
+  const d = (typeof currentDepartment === 'string' ? currentDepartment : '') || '_';
+  return 'idms_re_draft_' + u + '_' + d + '_' + reToday() + '_r' + RE.roundNum;
+}
+
+function reSaveDraft() {
+  try {
+    if (!RE.config || !RE.navItems || !RE.navItems.length) return;
+    // Skip saving if there's nothing meaningful to save (no values, no secd flags).
+    const hasValues = Object.keys(RE.values || {}).some(k => {
+      const v = RE.values[k];
+      return v !== null && v !== undefined && v !== '';
+    });
+    const hasSecd = Object.keys(RE.secd || {}).some(k => RE.secd[k]);
+    if (!hasValues && !hasSecd) return;
+    const payload = {
+      saved_at:     new Date().toISOString(),
+      round_number: RE.roundNum,
+      scheduled:    RE.scheduledTime,
+      values:       RE.values,
+      secd:         RE.secd,
+      cursorIdx:    RE.cursorIdx,
+    };
+    localStorage.setItem(reDraftKey(), JSON.stringify(payload));
+  } catch (e) { /* QuotaExceeded or storage blocked — non-fatal. */ }
+}
+
+function reLoadDraft() {
+  try {
+    const raw = localStorage.getItem(reDraftKey());
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+}
+
+function reClearDraft() {
+  try { localStorage.removeItem(reDraftKey()); } catch (e) {}
+}
+
+let _reAutosaveTimer = null;
+function reArmAutosave() {
+  if (_reAutosaveTimer) return;
+  _reAutosaveTimer = setInterval(reSaveDraft, 3000);
+}
+function reDisarmAutosave() {
+  if (_reAutosaveTimer) { clearInterval(_reAutosaveTimer); _reAutosaveTimer = null; }
+}
+
+// Save on tab hide / page unload — the moments most likely to lose data.
+window.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') reSaveDraft();
+});
+window.addEventListener('pagehide', reSaveDraft);
+window.addEventListener('beforeunload', reSaveDraft);
 
 // ── Small utilities ───────────────────────────────────────────────────────────
 
@@ -147,36 +216,54 @@ function reFilterItems(config, roundNum, dow) {
   const activeKey = currentDepartment ? reDeptKey(currentDepartment) : null;
   const flat = [];
 
+  function itemPasses(item) {
+    if (item.active_rounds && !item.active_rounds.includes(roundNum)) return false;
+    if (item.active_days   && !item.active_days.includes(dow))        return false;
+    return true;
+  }
+
   for (const section of (config.sections || [])) {
     const sk = section.dept_key || null;
     // A section with no dept_key is shared (visible everywhere).
     // A section with a dept_key only renders when it matches the active hub.
     if (sk !== null && activeKey !== null && sk !== activeKey) continue;
 
-    const visible = [];
+    // Group section items by their immediately-preceding heading. Items that
+    // appear before any heading live in an implicit "ungrouped" bucket so they
+    // still render. This grouping is the SOURCE-ORDER one — we cannot infer a
+    // heading's group from post-filter neighbours, because filtering can leave
+    // an empty heading adjacent to items that actually belong to a later
+    // heading. (That was the bug: e.g. "Midnight readings lat/lon" surviving
+    // on round 2 because the next surviving data item happened to belong to
+    // the heading after it.)
+    const groups = [];
+    let current  = { heading: null, items: [] };
+    groups.push(current);
     for (const item of (section.items || [])) {
-      if (item.type === 'heading') { visible.push(item); continue; }
-      if (item.active_rounds && !item.active_rounds.includes(roundNum)) continue;
-      if (item.active_days  && !item.active_days.includes(dow))   continue;
-      visible.push(item);
-    }
-
-    if (!visible.some(i => i.type !== 'heading')) continue;
-
-    // Drop headings whose group is empty for this round (no data items
-    // between this heading and the next heading / end-of-section).
-    for (let i = 0; i < visible.length; i++) {
-      if (visible[i].type === 'heading') {
-        let groupHasItem = false;
-        for (let j = i + 1; j < visible.length; j++) {
-          if (visible[j].type === 'heading') break;
-          groupHasItem = true;
-          break;
-        }
-        if (!groupHasItem) continue;
+      if (item.type === 'heading') {
+        current = { heading: item, items: [] };
+        groups.push(current);
+      } else {
+        current.items.push(item);
       }
-      flat.push({ section, item: visible[i] });
     }
+
+    // Keep a group only if at least one of its data items survives the
+    // round/day filter. Empty groups (including their heading) are dropped.
+    let sectionHasItem = false;
+    const sectionFlat = [];
+    for (const g of groups) {
+      const kept = g.items.filter(itemPasses);
+      if (!kept.length) continue;
+      if (g.heading) sectionFlat.push({ section, item: g.heading });
+      for (const it of kept) {
+        sectionFlat.push({ section, item: it });
+        sectionHasItem = true;
+      }
+    }
+
+    if (!sectionHasItem) continue;
+    for (const r of sectionFlat) flat.push(r);
   }
   return flat;
 }
@@ -292,17 +379,38 @@ async function initRoundsEntry(sourceScreen) {
     return;
   }
 
-  RE.cursorIdx = 0;
-  RE.values    = {};
-  RE.secd      = {};
+  RE.cursorIdx       = 0;
+  RE.values          = {};
+  RE.secd            = {};
+  RE.activeSubfield  = null;
+  reInstallSubfieldTracking();
 
   // Pre-populate text items as empty (they're always submittable blank)
   for (const { item } of RE.navItems) {
     if (item.type === 'text') RE.values[item.item_id] = '';
   }
 
+  // Restore a draft if one exists for this user/dept/date/round.
+  const draft = reLoadDraft();
+  if (draft && draft.values) {
+    const savedAt = draft.saved_at ? new Date(draft.saved_at) : null;
+    const stamp   = savedAt ? rePad2(savedAt.getHours()) + ':' + rePad2(savedAt.getMinutes()) : '?';
+    const resume  = window.confirm(
+      'Resume saved draft for Round ' + draft.round_number +
+      ' (autosaved ' + stamp + ')?\n\nOK = resume   Cancel = discard and start fresh.'
+    );
+    if (resume) {
+      RE.values    = Object.assign(RE.values, draft.values);
+      RE.secd      = draft.secd || {};
+      RE.cursorIdx = (typeof draft.cursorIdx === 'number') ? draft.cursorIdx : 0;
+    } else {
+      reClearDraft();
+    }
+  }
+
   reRenderScreen();
   reBindGestures();
+  reArmAutosave();
   window.addEventListener('resize', reOnResize);
   reExpandFrame();
 
@@ -699,15 +807,91 @@ function reKeypadHTML() {
 
 // ── Keypad actions ────────────────────────────────────────────────────────────
 
-// Returns the currently-focused per-subfield input if it's one of the numeric
-// row types we want to drive from the in-app keypad (latlon, sounding,
-// tk_percent). Returns null otherwise, so callers fall through to the normal
-// single-value keypad behaviour for plain numeric rows.
+// Selectors for the subfield input types the in-app keypad drives.
+const RE_SUBFIELD_SEL = '.re-latlon-deg, .re-latlon-min, .re-snd-input, .re-tkp-cap';
+
+// Returns the active per-subfield input the keypad should route into.
+//
+// Originally this read `document.activeElement` directly, which works on iOS
+// Safari (tapping a <button> does not steal focus) but fails on Android Chrome
+// (tapping a button DOES move focus to it, so activeElement is no longer the
+// input by the time the keypad handler runs).
+//
+// We now prefer the explicitly tracked RE.activeSubfield (updated on the last
+// tap/focus of a subfield input, via delegated listeners installed in
+// `reInstallSubfieldTracking`). We re-resolve it by row id + class + index so a
+// re-render of the grid doesn't invalidate the reference.
 function reActiveSubfieldInput() {
+  const tracked = RE.activeSubfield;
+  if (tracked) {
+    const row = document.querySelector('[data-iid-latlon="' + cssEsc(tracked.iid) + '"]') ||
+                document.getElementById('re-row-' + reCursorIdxForIid(tracked.iid));
+    if (row) {
+      const matches = row.querySelectorAll(tracked.cls);
+      const el = matches[tracked.idx];
+      if (el && el.tagName === 'INPUT') return el;
+    }
+  }
+  // Desktop / iOS fallback.
   const el = document.activeElement;
   if (!el || el.tagName !== 'INPUT') return null;
-  if (el.matches('.re-latlon-deg, .re-latlon-min, .re-snd-input, .re-tkp-cap')) return el;
+  if (el.matches(RE_SUBFIELD_SEL)) return el;
   return null;
+}
+
+function cssEsc(s) {
+  return String(s).replace(/(["\\\]])/g, '\\$1');
+}
+
+// Best-effort: find the cursor index whose item matches a given iid.
+function reCursorIdxForIid(iid) {
+  for (let i = 0; i < RE.navItems.length; i++) {
+    if (RE.navItems[i].item.item_id === iid) return i;
+  }
+  return -1;
+}
+
+// One-time setup: track which subfield input the user last interacted with,
+// and prevent keypad buttons from stealing focus on platforms (Android Chrome,
+// most desktop browsers) where button taps move focus away from inputs.
+let _reSubfieldTrackingInstalled = false;
+function reInstallSubfieldTracking() {
+  if (_reSubfieldTrackingInstalled) return;
+  _reSubfieldTrackingInstalled = true;
+
+  function record(target) {
+    if (!target || !target.matches || !target.matches(RE_SUBFIELD_SEL)) return;
+    // Find owning row and the index of this input among same-class siblings in the row.
+    const row = target.closest('[id^="re-row-"]');
+    if (!row) return;
+    const nav = RE.navItems[parseInt(row.dataset.ni, 10)];
+    if (!nav) return;
+    // Pick the most specific class actually used to render this input.
+    const cls = ['.re-latlon-deg', '.re-latlon-min', '.re-snd-ft', '.re-snd-in',
+                 '.re-snd-cm', '.re-snd-input', '.re-tkp-cap']
+                .find(c => target.matches(c));
+    if (!cls) return;
+    const siblings = row.querySelectorAll(cls);
+    const idx = Array.prototype.indexOf.call(siblings, target);
+    RE.activeSubfield = { iid: nav.item.item_id, cls, idx: idx < 0 ? 0 : idx };
+  }
+
+  // `focus` doesn't bubble — use capture phase.
+  document.addEventListener('focus', e => record(e.target), true);
+  document.addEventListener('click', e => record(e.target));
+  document.addEventListener('touchstart', e => {
+    if (e.touches && e.touches[0]) record(e.target);
+  }, { passive: true });
+
+  // Prevent keypad buttons from stealing focus from the subfield input.
+  // mousedown fires before focus changes on desktop; touchstart covers the
+  // case where the browser synthesises a focus change on touch.
+  function suppressFocusSteal(e) {
+    const btn = e.target.closest && e.target.closest('.re-kp-btn');
+    if (btn && e.cancelable) e.preventDefault();
+  }
+  document.addEventListener('mousedown', suppressFocusSteal, { passive: false });
+  document.addEventListener('touchstart', suppressFocusSteal, { passive: false });
 }
 
 // Mutate a subfield input's value and fire `input` so the existing per-row
@@ -1072,14 +1256,20 @@ async function reConfirmSubmit() {
                  '/' + year + '/roundslog-' + username + '-' + dateStr + '-' + hhmm + '.json';
     await rePut(path, payload);
 
+    // Submit confirmed by OneDrive — safe to drop the local draft.
+    reClearDraft();
+
     RE.submitting = false;
     reExit();
   } catch (err) {
     RE.submitting = false;
     if (btn) { btn.textContent = 'Submit Rounds'; btn.disabled = false; }
+    // Force-save the draft immediately so the "preserved" claim is true even
+    // if the user closes the tab right after seeing this modal.
+    reSaveDraft();
     reShowModal(`
       <h3 class="re-modal-title re-danger-text">Submit failed</h3>
-      <p class="re-modal-body">${reEsc(err.message)}<br><br>Your data is preserved. Please retry.</p>
+      <p class="re-modal-body">${reEsc(err.message)}<br><br>Your entries are saved on this device and will be offered for resume next time you open rounds. You can retry now, or close the app and retry later.</p>
       <div class="re-modal-actions">
         <button class="re-modal-btn re-modal-secondary" onclick="reCloseModal()">Close</button>
         <button class="re-modal-btn re-modal-primary" onclick="reCloseModal();reHandleSubmit()">Retry</button>
@@ -1166,6 +1356,9 @@ function reOnResize() {
 function reExit() {
   reCollapseFrame();
   reUnbindGestures();
+  reDisarmAutosave();
+  // One last save in case the user is exiting with unsubmitted values.
+  reSaveDraft();
   window.removeEventListener('resize', reOnResize);
   // Use the explicit source screen set by the caller, falling back to
   // department inference so direct calls without a sourceScreen still work.
@@ -1198,9 +1391,12 @@ function reOnTouchMove(e) {
     e.preventDefault();
     return;
   }
-  // Prevent swipe-back navigation: horizontal swipe starting within 20px of either edge
+  // Prevent swipe-back navigation: horizontal swipe starting within 40px of either edge.
+  // Widened from 20px after observed real-world data-loss incidents during rounds entry.
+  // A global guard in index.html also covers this, but keeping a rounds-scoped one means
+  // the protection still works if the global guard is ever bypassed.
   if (Math.abs(dx) > Math.abs(dy) &&
-      (RE.touchStartX < 20 || RE.touchStartX > window.innerWidth - 20)) {
+      (RE.touchStartX < 40 || RE.touchStartX > window.innerWidth - 40)) {
     e.preventDefault();
   }
 }
