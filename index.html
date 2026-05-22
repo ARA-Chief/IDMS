@@ -3725,11 +3725,14 @@ async function loadPurserCrewSignOff() {
 
 function renderPurserCrewSignOffList() {
   var body = document.getElementById('pu-cso-body');
-  if (!body) return;
+  console.log('[Purser render] called. body=', body, 'departing.length=',
+    PUCSO.departing && PUCSO.departing.length);
+  if (!body) { console.warn('[Purser render] pu-cso-body element missing — aborting'); return; }
   if (!PUCSO.departing.length) {
     body.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:32px 12px">No departing crew for this trip.</div>';
     return;
   }
+  try {
   var html = PUCSO.departing.map(function(d, idx) {
     var cp = d.checkpoint;
     var role = (d.crewRec && d.crewRec.role) || '';
@@ -3757,7 +3760,9 @@ function renderPurserCrewSignOffList() {
            btn +
            '</div>';
   }).join('');
+  console.log('[Purser render] html length=', html.length, 'about to set innerHTML');
   body.innerHTML = html;
+  console.log('[Purser render] innerHTML set. body children=', body.children.length);
 
   // Wire up buttons after render.
   body.querySelectorAll('.pu-cso-checkout-btn, .pu-cso-edit-btn').forEach(function(btn) {
@@ -3768,6 +3773,15 @@ function renderPurserCrewSignOffList() {
       openPurserCheckoutModal(d);
     });
   });
+  } catch (err) {
+    // Surface render errors visibly instead of leaving the user staring at
+    // "Loading departing crew…" while a silent exception bubbles to the outer
+    // try/catch in loadPurserCrewSignOff (which would replace body with
+    // "Load failed" — but that path didn't appear to trigger, so this inner
+    // catch makes whatever IS happening visible).
+    console.error('[Purser render] threw:', err);
+    body.innerHTML = '<div style="text-align:center;color:var(--danger);font-size:13px;padding:32px 12px">Render error: ' + escHtml(err.message || String(err)) + '</div>';
+  }
 }
 
 // ── PURSER CHECK OUT MODAL ─────────────────────────────────────────────────
