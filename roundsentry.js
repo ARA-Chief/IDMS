@@ -328,12 +328,49 @@ async function reLoadAggregates() {
       .sort()
       .reverse();
 
+    if (!names.length) return;
+
+    // Pick the two most-recent aggregates that match the CURRENT round_number.
+    //
+    // Previously this just grabbed the two most-recent aggregate files in the
+    // year folder, regardless of which round they belonged to. For a vessel
+    // running multiple rounds per day, a user who only fills one round per
+    // day was shown Prev-1 = some other round from a few hours ago and
+    // Prev-2 = another other-round a few hours before that — i.e. the Prev
+    // columns weren't comparable to what they were typing in.
+    //
+    // We now walk newest → oldest in small parallel batches and stop as soon
+    // as we have two same-round matches, bounding network cost while still
+    // working for any schedule shape. Aggregates produced before
+    // round_number was added to the schema (legacy) trigger a fallback to the
+    // old chronological behaviour so existing vessels' history still loads
+    // until they roll over to the new schema.
+    const wanted   = RE.roundNum;
+    const BATCH    = 6;
+    const MAX_SCAN = 30;  // ~5 days for a 6-round/day schedule — ample for 2 hits
     const fetchAgg = name => reGet(folder + '/' + name).catch(() => null);
 
-    if (names.length >= 2) {
-      [RE.aggNew, RE.aggOld] = await Promise.all([fetchAgg(names[0]), fetchAgg(names[1])]);
-    } else if (names.length === 1) {
-      RE.aggNew = await fetchAgg(names[0]);
+    const matches      = [];
+    const allFetched   = [];
+    let   anyTaggedRn  = false;
+
+    for (let off = 0; off < Math.min(names.length, MAX_SCAN) && matches.length < 2; off += BATCH) {
+      const batch = await Promise.all(names.slice(off, off + BATCH).map(fetchAgg));
+      for (const c of batch) {
+        if (!c) continue;
+        allFetched.push(c);
+        if (c.round_number !== undefined) anyTaggedRn = true;
+        if (c.round_number === wanted && matches.length < 2) matches.push(c);
+      }
+    }
+
+    if (anyTaggedRn) {
+      RE.aggNew = matches[0] || null;
+      RE.aggOld = matches[1] || null;
+    } else {
+      // Legacy aggregates lack round_number — fall back to chronological.
+      RE.aggNew = allFetched[0] || null;
+      RE.aggOld = allFetched[1] || null;
     }
   } catch (_) {
     // Non-blocking — history columns remain —
