@@ -3623,19 +3623,30 @@ async function loadPurserCrewSignOff() {
       throw new Error('Failed to load scheduleconfig.json, crewconfig.json, or userconfig.json');
     }
 
-    // Build the user_id → username bridge from userconfig.json. scheduleconfig
-    // uses user_id (e.g. 84ff7654-...) on each trip's crew slot; crewconfig
-    // uses crew_id (a DIFFERENT UUID) keyed by username. The link between
-    // them is userconfig.users[] which has both user_id and username on the
-    // same record. Without this bridge every departing crew member ends up
-    // tagged "Unmapped" because user_id never matches crew_id directly.
+    // Build the lookup tables that join scheduleconfig.user_id to a
+    // crewconfig record. The IDs don't line up directly:
+    //   scheduleconfig.trip.crew[].user_id  →  e.g. "84ff7654-..."
+    //   userconfig.users[].user_id          →  same UUID
+    //   userconfig.users[].username         →  e.g. "wostara"
+    //   crewconfig.crew[].crew_id           →  e.g. "f1730346-..." (DIFFERENT UUID)
+    //   crewconfig.crew[].username          →  same username as userconfig
+    //
+    // Primary path: user_id → username → crewRec (works for crew with PWA accounts).
+    // Fallback:     display_name → crewRec by name (catches crew without
+    //               system accounts, who have username=null in crewconfig
+    //               and no userconfig entry at all — common for non-tech crew
+    //               like deckhands and processors who don't use the PWA but
+    //               still need to be checked out by the Purser).
     var userIdToUsername = {};
     (PUCSO.userConfig.users || []).forEach(function(u) {
       if (u && u.user_id && u.username) userIdToUsername[u.user_id] = u.username;
     });
     var usernameToCrew = {};
+    var nameToCrew     = {};
     (PUCSO.crewConfig.crew || []).forEach(function(c) {
-      if (c && c.username) usernameToCrew[c.username] = c;
+      if (!c) return;
+      if (c.username) usernameToCrew[c.username] = c;
+      if (c.name)     nameToCrew[c.name.trim().toLowerCase()] = c;
     });
 
     // Active trip resolver — best-effort, since the Console's authoritative
@@ -3705,9 +3716,15 @@ async function loadPurserCrewSignOff() {
         diag.reasonNotDeparting.push((slot.display_name || slot.user_id || '?') + ' (in next trip)');
         return;
       }
-      // Two-hop resolve: scheduleconfig.user_id → userconfig.username → crewconfig.crew.
+      // Resolve via the primary user_id → username → crewRec chain. If that
+      // fails (no userconfig entry, or crewconfig record has username=null),
+      // fall back to matching by display_name. Accountless crew like deckhands
+      // and processors are resolvable this way.
       var username = userIdToUsername[slot.user_id] || null;
       var crewRec  = username ? (usernameToCrew[username] || null) : null;
+      if (!crewRec && slot.display_name) {
+        crewRec = nameToCrew[slot.display_name.trim().toLowerCase()] || null;
+      }
       var checkpoint = crewRec ? (crewRec.checkpoints || []).find(function(cp) {
         return cp && cp.trip_number === PUCSO.activeTrip.trip_number && cp.direction === 'out';
       }) || null : null;
@@ -3857,6 +3874,38 @@ function openPurserCheckoutModal(d) {
 
   function escAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
 
+  // Airport list mirrored from IDMS-Console crew.js (CREW_AIRPORTS,
+  // ~lines 113-188). KEEP IN SYNC when adding/removing airports on either
+  // side. Rendered into a <datalist> shared by the three airport inputs in
+  // this modal (flight origin, flight destination, lodging location);
+  // browsers offer it as a typeahead but still accept free-text entry,
+  // covering both validated picks and one-off airports not in the list.
+  var PU_AIRPORTS = [
+    ['ABQ','Albuquerque, NM'],['ADQ','Kodiak, AK'],['ANC','Anchorage, AK'],['ATL','Atlanta, GA'],
+    ['AVL','Asheville, NC'],['BET','Bethel, AK'],['BGR','Bangor, ME'],['BHM','Birmingham, AL'],
+    ['BIL','Billings, MT'],['BJX','León / Guanajuato, Mexico'],['BOI','Boise, ID'],['BOS','Boston, MA'],
+    ['BTV','Burlington, VT'],['BZN','Bozeman, MT'],['CDB','Cold Bay, AK'],['CLT','Charlotte, NC'],
+    ['COD','Cody, WY'],['CPR','Casper, WY'],['CYS','Cheyenne, WY'],['DCA','Washington Reagan, DC'],
+    ['DEN','Denver, CO'],['DLG','Dillingham, AK'],['DUT','Dutch Harbor, AK'],['EWR','Newark, NJ'],
+    ['FAI','Fairbanks, AK'],['FAT','Fresno, CA'],['GCC','Gillette, WY'],['GDL','Guadalajara, Mexico'],
+    ['GEG','Spokane, WA'],['HOM','Homer, AK'],['IAD','Washington Dulles, VA'],['JAC','Jackson Hole, WY'],
+    ['JFK','New York JFK, NY'],['JNU','Juneau, AK'],['KTN','Ketchikan, AK'],['KVC','King Cove, AK'],
+    ['LAS','Las Vegas, NV'],['LAX','Los Angeles, CA'],['LGA','New York LaGuardia, NY'],['MCI','Kansas City, MO'],
+    ['MCO','Orlando, FL'],['MDW','Chicago Midway, IL'],['MEX','Mexico City, Mexico'],['MIA','Miami, FL'],
+    ['MKE','Milwaukee, WI'],['MSO','Missoula, MT'],['MSP','Minneapolis, MN'],['MSY','New Orleans, LA'],
+    ['MTY','Monterrey, Mexico'],['OAK','Oakland, CA'],['OME','Nome, AK'],["ORD","Chicago O'Hare, IL"],
+    ['OTZ','Kotzebue, AK'],['PDX','Portland, OR'],['PHL','Philadelphia, PA'],['PHX','Phoenix, AZ'],
+    ['PIT','Pittsburgh, PA'],['PSG','Petersburg, AK'],['PWM','Portland, ME'],['RDU','Raleigh-Durham, NC'],
+    ['RIW','Riverton, WY'],['SAN','San Diego, CA'],['SDP','Sand Point, AK'],['SEA','Seattle-Tacoma, WA'],
+    ['SFO','San Francisco, CA'],['SIT','Sitka, AK'],['SLC','Salt Lake City, UT'],['SMF','Sacramento, CA'],
+    ['SNP','St. Paul Island, AK'],['STL','St. Louis, MO'],['TUS','Tucson, AZ'],['WRG','Wrangell, AK'],
+    ['YVR','Vancouver, BC'],['YYC','Calgary, AB']
+  ];
+  var airportDatalist = '<datalist id="pu-airports">' +
+    PU_AIRPORTS.map(function(a) {
+      return '<option value="' + a[0] + '">' + escHtml(a[0] + ' — ' + a[1]) + '</option>';
+    }).join('') + '</datalist>';
+
   function render() {
     var contactRows = (draft.contact_log || []).map(function(row, idx) {
       return '<div data-cl-row="' + idx + '" style="display:grid;grid-template-columns:auto auto 1fr auto;gap:6px;align-items:center;margin-bottom:5px">' +
@@ -3871,22 +3920,32 @@ function openPurserCheckoutModal(d) {
       '</div>';
     }).join('');
 
+    // Flex-wrap rather than fixed grid columns — on a phone the modal is too
+    // narrow to fit 4-5 columns side-by-side, and a fixed grid would clip
+    // off-screen. flex-wrap lets the fields stack as space runs out, with
+    // sensible flex-basis values picking the natural break points.
+    var rowStyle = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;padding:6px;background:var(--bg-1);border-radius:4px;border:1px solid var(--border)';
+    var inpFlexCode = inpStyle + ';flex:1 1 110px;min-width:0;text-transform:uppercase';
+    var inpFlexText = inpStyle + ';flex:1 1 140px;min-width:0';
+    var inpFlexDate = inpStyle + ';flex:1 1 130px;min-width:0';
+    var delBtnStyle = inpStyle + ';flex:0 0 auto;background:none;color:#e07b39;border-color:transparent;cursor:pointer;font-size:16px;padding:2px 8px;align-self:center';
+
     var flightRows = (draft.flights || []).map(function(f, idx) {
-      return '<div data-fl-row="' + idx + '" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:6px;align-items:center;margin-bottom:5px">' +
-        '<input type="text" class="pu-cp-fl-origin" data-idx="' + idx + '" value="' + escAttr(f.origin) + '" placeholder="Origin (e.g. SEA)" maxlength="6" style="' + inpStyle + ';text-transform:uppercase">' +
-        '<input type="text" class="pu-cp-fl-dest" data-idx="' + idx + '" value="' + escAttr(f.destination) + '" placeholder="Destination" maxlength="6" style="' + inpStyle + ';text-transform:uppercase">' +
-        '<input type="date" class="pu-cp-fl-arrival" data-idx="' + idx + '" value="' + escAttr(f.arrival_date) + '" title="Arrival date" style="' + inpStyle + '">' +
-        '<button class="pu-cp-fl-del" data-idx="' + idx + '" style="' + inpStyle + ';background:none;color:#e07b39;border-color:transparent;cursor:pointer;font-size:14px;padding:2px 6px" title="Remove flight">×</button>' +
+      return '<div data-fl-row="' + idx + '" style="' + rowStyle + '">' +
+        '<input type="text" list="pu-airports" class="pu-cp-fl-origin" data-idx="' + idx + '" value="' + escAttr(f.origin) + '" placeholder="Origin (e.g. SEA)" maxlength="6" style="' + inpFlexCode + '">' +
+        '<input type="text" list="pu-airports" class="pu-cp-fl-dest" data-idx="' + idx + '" value="' + escAttr(f.destination) + '" placeholder="Destination" maxlength="6" style="' + inpFlexCode + '">' +
+        '<input type="date" class="pu-cp-fl-arrival" data-idx="' + idx + '" value="' + escAttr(f.arrival_date) + '" title="Arrival date" style="' + inpFlexDate + '">' +
+        '<button class="pu-cp-fl-del" data-idx="' + idx + '" style="' + delBtnStyle + '" title="Remove flight">×</button>' +
       '</div>';
     }).join('');
 
     var lodgingRows = (draft.lodging || []).map(function(l, idx) {
-      return '<div data-lo-row="' + idx + '" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:6px;align-items:center;margin-bottom:5px">' +
-        '<input type="text" class="pu-cp-lo-hotel" data-idx="' + idx + '" value="' + escAttr(l.hotel) + '" placeholder="Hotel name" style="' + inpStyle + '">' +
-        '<input type="text" class="pu-cp-lo-loc"   data-idx="' + idx + '" value="' + escAttr(l.location) + '" placeholder="Location (e.g. SEA)" maxlength="6" style="' + inpStyle + ';text-transform:uppercase">' +
-        '<input type="date" class="pu-cp-lo-checkin"  data-idx="' + idx + '" value="' + escAttr(l.check_in)  + '" title="Check-in" style="' + inpStyle + '">' +
-        '<input type="date" class="pu-cp-lo-checkout" data-idx="' + idx + '" value="' + escAttr(l.check_out) + '" title="Check-out" style="' + inpStyle + '">' +
-        '<button class="pu-cp-lo-del" data-idx="' + idx + '" style="' + inpStyle + ';background:none;color:#e07b39;border-color:transparent;cursor:pointer;font-size:14px;padding:2px 6px" title="Remove lodging">×</button>' +
+      return '<div data-lo-row="' + idx + '" style="' + rowStyle + '">' +
+        '<input type="text" class="pu-cp-lo-hotel" data-idx="' + idx + '" value="' + escAttr(l.hotel) + '" placeholder="Hotel name" style="' + inpFlexText + '">' +
+        '<input type="text" list="pu-airports" class="pu-cp-lo-loc" data-idx="' + idx + '" value="' + escAttr(l.location) + '" placeholder="Location (e.g. SEA)" maxlength="6" style="' + inpFlexCode + '">' +
+        '<input type="date" class="pu-cp-lo-checkin"  data-idx="' + idx + '" value="' + escAttr(l.check_in)  + '" title="Check-in" style="' + inpFlexDate + '">' +
+        '<input type="date" class="pu-cp-lo-checkout" data-idx="' + idx + '" value="' + escAttr(l.check_out) + '" title="Check-out" style="' + inpFlexDate + '">' +
+        '<button class="pu-cp-lo-del" data-idx="' + idx + '" style="' + delBtnStyle + '" title="Remove lodging">×</button>' +
       '</div>';
     }).join('');
 
@@ -3903,6 +3962,10 @@ function openPurserCheckoutModal(d) {
     }).join('');
 
     panel.innerHTML =
+      // Shared <datalist> for all three IATA inputs — list="pu-airports" on
+      // each <input> wires the browser's native typeahead. Free text still
+      // accepted for airports not in the seed list.
+      airportDatalist +
       '<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">' +
         '<div>' +
           '<div style="font-size:11px;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase">Check Out · Trip ' + escHtml(tripNumber) + '</div>' +
