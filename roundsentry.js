@@ -379,10 +379,18 @@ async function reLoadAggregates() {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-async function initRoundsEntry(sourceScreen) {
+// `opts` accepts:
+//   { forceRound: <number> }  — pin to a specific round_number, bypassing the
+//     time-of-day inference. Used by the Purser → Scale Calibration entry
+//     point to always land on Factory round 4 regardless of when the user
+//     opens the screen. If the schedule has no round_times entry for the
+//     forced round, the header shows "—:—" but submission still tags the
+//     payload with the forced round_number so the aggregator lines up.
+async function initRoundsEntry(sourceScreen, opts) {
   const el = document.getElementById('screen-roundsentry');
   if (!el) return;
   RE.sourceScreen = sourceScreen || null;
+  RE.forceRound   = (opts && typeof opts.forceRound === 'number') ? opts.forceRound : null;
 
   RE.isTablet = window.innerWidth >= 768;
   el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-secondary);font-size:14px">Loading rounds…</div>';
@@ -405,9 +413,17 @@ async function initRoundsEntry(sourceScreen) {
   RE.vessel   = cfg.vessel || 'F/V Araho';
   RE.submitting = false;
 
-  const inferred = reInferRound(cfg.schedule || {});
-  RE.roundNum       = inferred.round;
-  RE.scheduledTime  = inferred.scheduled_time;
+  if (RE.forceRound != null) {
+    // Caller pinned a specific round (e.g. Purser → Scale Calibration → r4).
+    const rt = ((cfg.schedule && cfg.schedule.round_times) || [])
+      .find(t => t && t.round === RE.forceRound);
+    RE.roundNum      = RE.forceRound;
+    RE.scheduledTime = (rt && rt.time) || '—:—';
+  } else {
+    const inferred = reInferRound(cfg.schedule || {});
+    RE.roundNum       = inferred.round;
+    RE.scheduledTime  = inferred.scheduled_time;
+  }
 
   RE.flatItems = reFilterItems(cfg, RE.roundNum, reLocalDow());
   RE.navItems  = RE.flatItems.filter(r => r.item.type !== 'heading');
