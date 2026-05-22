@@ -3533,6 +3533,11 @@ function openFactoryRoughLog() {
 // IDMS-Console/src/renderer/js/schedule.js (scOpenCheckInOutModal,
 // applyDischargeSideEffects ~lines 6687-7107).
 
+// Short alias for the existing escapeHtml at line ~6298. Defined here so all
+// Purser-section call sites resolve cleanly — earlier I assumed escHtml was a
+// pre-existing global, but it wasn't (the codebase uses escapeHtml).
+function escHtml(s) { return escapeHtml(s); }
+
 function togglePuUserMenu() {
   var el = document.getElementById('pu-user-menu');
   if (!el) return;
@@ -3725,9 +3730,7 @@ async function loadPurserCrewSignOff() {
 
 function renderPurserCrewSignOffList() {
   var body = document.getElementById('pu-cso-body');
-  console.log('[Purser render] called. body=', body, 'departing.length=',
-    PUCSO.departing && PUCSO.departing.length);
-  if (!body) { console.warn('[Purser render] pu-cso-body element missing — aborting'); return; }
+  if (!body) return;
   if (!PUCSO.departing.length) {
     body.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:13px;padding:32px 12px">No departing crew for this trip.</div>';
     return;
@@ -3760,9 +3763,7 @@ function renderPurserCrewSignOffList() {
            btn +
            '</div>';
   }).join('');
-  console.log('[Purser render] html length=', html.length, 'about to set innerHTML');
   body.innerHTML = html;
-  console.log('[Purser render] innerHTML set. body children=', body.children.length);
 
   // Wire up buttons after render.
   body.querySelectorAll('.pu-cso-checkout-btn, .pu-cso-edit-btn').forEach(function(btn) {
@@ -3774,11 +3775,9 @@ function renderPurserCrewSignOffList() {
     });
   });
   } catch (err) {
-    // Surface render errors visibly instead of leaving the user staring at
-    // "Loading departing crew…" while a silent exception bubbles to the outer
-    // try/catch in loadPurserCrewSignOff (which would replace body with
-    // "Load failed" — but that path didn't appear to trigger, so this inner
-    // catch makes whatever IS happening visible).
+    // Keep an inner catch so a row-render bug surfaces visibly instead of
+    // leaving the user staring at "Loading…" while the exception bubbles
+    // silently up to the outer try/catch.
     console.error('[Purser render] threw:', err);
     body.innerHTML = '<div style="text-align:center;color:var(--danger);font-size:13px;padding:32px 12px">Render error: ' + escHtml(err.message || String(err)) + '</div>';
   }
