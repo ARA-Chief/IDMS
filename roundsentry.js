@@ -883,15 +883,16 @@ function reInstallSubfieldTracking() {
     if (e.touches && e.touches[0]) record(e.target);
   }, { passive: true });
 
-  // Prevent keypad buttons from stealing focus from the subfield input.
-  // mousedown fires before focus changes on desktop; touchstart covers the
-  // case where the browser synthesises a focus change on touch.
-  function suppressFocusSteal(e) {
+  // Prevent keypad buttons from stealing focus from the subfield input on
+  // desktop (mouse). We deliberately do NOT call preventDefault on touchstart
+  // here: doing so suppresses the synthesised `click` event on touch devices,
+  // which made the keypad unresponsive on both phone and tablet. For touch,
+  // focus theft is harmless because reActiveSubfieldInput() reads the tracked
+  // RE.activeSubfield first and re-resolves the input by row + class + index.
+  document.addEventListener('mousedown', e => {
     const btn = e.target.closest && e.target.closest('.re-kp-btn');
     if (btn && e.cancelable) e.preventDefault();
-  }
-  document.addEventListener('mousedown', suppressFocusSteal, { passive: false });
-  document.addEventListener('touchstart', suppressFocusSteal, { passive: false });
+  }, { passive: false });
 }
 
 // Mutate a subfield input's value and fire `input` so the existing per-row
