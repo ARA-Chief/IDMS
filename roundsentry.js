@@ -32,6 +32,11 @@ const RE = {
   // behaviour — iOS Safari does not steal focus, which is why this bug was
   // invisible on iPad/iPhone but broke entry on Android phones).
   activeSubfield: null,  // { iid, cls, idx }  (cls = CSS class to match within the row)
+  // Two-stage SEC'D arming. First press of SEC'D arms the button (turns it red,
+  // no side effects). Second press while still on the same item performs the
+  // actual SEC'D. Cursor movement to a different item or any other keypad
+  // action disarms. Prevents accidental securing of components.
+  secdArmed: null,  // item_id the SEC'D button is currently armed for, or null
 };
 
 // ── Graph API helpers ─────────────────────────────────────────────────────────
@@ -721,7 +726,12 @@ function reScrollToActive() {
 function reCursorTo(ni) {
   if (ni < 0 || ni >= RE.navItems.length) return;
   const prev = RE.cursorIdx;
-  if (ni !== prev) RE.freshCursor = true;
+  if (ni !== prev) {
+    RE.freshCursor = true;
+    // Moving to a new line item always disarms SEC'D — this is the primary
+    // safety reset the feature was designed around.
+    if (RE.secdArmed !== null) reSetSecdArmed(null);
+  }
   RE.cursorIdx = ni;
 
   // Remove highlight from previous row
@@ -791,7 +801,7 @@ function reKeypadHTML() {
         <button class="re-kp-btn" onclick="reKpKey('4')">4</button>
         <button class="re-kp-btn" onclick="reKpKey('5')">5</button>
         <button class="re-kp-btn" onclick="reKpKey('6')">6</button>
-        <button class="re-kp-btn re-kp-secd" onclick="reSecD()">SEC&apos;D</button>
+        <button class="re-kp-btn re-kp-secd" id="re-kp-secd-btn" onclick="reSecD()">SEC&apos;D</button>
 
         <button class="re-kp-btn" onclick="reKpKey('1')">1</button>
         <button class="re-kp-btn" onclick="reKpKey('2')">2</button>
@@ -905,6 +915,7 @@ function reSubfieldApply(input, newVal) {
 function reKpKey(k) {
   const nav = RE.navItems[RE.cursorIdx];
   if (!nav) return;
+  if (RE.secdArmed !== null) reSetSecdArmed(null);
   const iid  = nav.item.item_id;
   const type = nav.item.type;
   if (RE.secd[iid]) { reUnsecD(iid); RE.freshCursor = true; reRenderGrid(); }
@@ -919,6 +930,7 @@ function reKpKey(k) {
 function reKpBs() {
   const nav = RE.navItems[RE.cursorIdx];
   if (!nav) return;
+  if (RE.secdArmed !== null) reSetSecdArmed(null);
   const iid  = nav.item.item_id;
   const type = nav.item.type;
   if (RE.secd[iid]) { reUnsecD(iid); reRenderGrid(); return; }
@@ -936,6 +948,7 @@ function reKpBs() {
 function reKpMinus() {
   const nav = RE.navItems[RE.cursorIdx];
   if (!nav) return;
+  if (RE.secdArmed !== null) reSetSecdArmed(null);
   const iid  = nav.item.item_id;
   const type = nav.item.type;
   if (RE.secd[iid]) { reUnsecD(iid); RE.freshCursor = true; reRenderGrid(); }
@@ -952,6 +965,7 @@ function reKpMinus() {
 function reKpDot() {
   const nav = RE.navItems[RE.cursorIdx];
   if (!nav) return;
+  if (RE.secdArmed !== null) reSetSecdArmed(null);
   const iid = nav.item.item_id;
   if (RE.secd[iid]) { reUnsecD(iid); RE.freshCursor = true; reRenderGrid(); }
   if (nav.item.type === 'checkbox') { reToggleCheckbox(RE.cursorIdx); return; }
@@ -972,6 +986,7 @@ function reKpDot() {
 function reKpEnter() {
   const nav = RE.navItems[RE.cursorIdx];
   if (!nav) return;
+  if (RE.secdArmed !== null) reSetSecdArmed(null);
   if (nav.item.type === 'checkbox') reToggleCheckbox(RE.cursorIdx);
   reNavDown();
 }
@@ -1126,11 +1141,27 @@ function reUnsecD(iid) {
   }
 }
 
+// Update the SEC'D keypad button's visual armed state.
+function reSetSecdArmed(iid) {
+  RE.secdArmed = iid || null;
+  const btn = document.getElementById('re-kp-secd-btn');
+  if (btn) btn.classList.toggle('re-kp-secd-armed', !!RE.secdArmed);
+}
+
 function reSecD() {
   const nav = RE.navItems[RE.cursorIdx];
   if (!nav) return;
 
-  const iid   = nav.item.item_id;
+  const iid = nav.item.item_id;
+
+  // Two-stage arming: first press arms (red, no effect); second press on the
+  // same item performs the SEC'D. Confirms the user really meant it.
+  if (RE.secdArmed !== iid) {
+    reSetSecdArmed(iid);
+    return;
+  }
+  reSetSecdArmed(null);
+
   const range = reSecDRange(iid);
   if (!range) return;
   const { secFlat, rangeStart, rangeEnd } = range;
@@ -1619,6 +1650,10 @@ function reStylesHTML() {
 .re-kp-bs          { grid-column: span 2; }
 .re-kp-enter       { background: var(--re-accent); color: var(--re-bg0); grid-row: span 2; font-size: 13px; }
 .re-kp-secd        { font-size: 11px; font-weight: 700; color: var(--re-muted); background: var(--re-bg1); letter-spacing: 0.04em; }
+/* Armed state — first tap of SEC'D arms (red, no side effect); second tap on
+   the same item performs the SEC'D. Cursor movement or any other keypad
+   action disarms. Safety guard against accidental securing of components. */
+.re-kp-secd.re-kp-secd-armed { background: var(--re-danger); color: #fff; }
 .re-kp-side-toggle { display: none; }
 .re-switch-sides-btn {
   flex-shrink: 0; background: var(--re-bg2); border: 1px solid var(--re-border);
