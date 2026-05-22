@@ -3585,6 +3585,7 @@ function openPurserProfile() {
 var PUCSO = {
   scheduleConfig: null,   // raw scheduleconfig.json
   crewConfig:     null,   // raw crewconfig.json
+  userConfig:     null,   // raw userconfig.json — bridges user_id ↔ username
   activeTrip:     null,   // active trip object from schedule
   departing:      []      // [{ user_id, display_name, crewRec, checkpoint }]
 };
@@ -3607,17 +3608,35 @@ async function loadPurserCrewSignOff() {
   try {
     var schedURL = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/config/scheduleconfig.json:/content';
     var crewURL  = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/config/crewconfig.json:/content';
+    var userURL  = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/config/userconfig.json:/content';
     var headers  = { Authorization: 'Bearer ' + graphToken };
     var results  = await Promise.all([
       fetch(schedURL, { headers: headers }).then(function(r) { return r.ok ? r.json() : null; }),
-      fetch(crewURL,  { headers: headers }).then(function(r) { return r.ok ? r.json() : null; })
+      fetch(crewURL,  { headers: headers }).then(function(r) { return r.ok ? r.json() : null; }),
+      fetch(userURL,  { headers: headers }).then(function(r) { return r.ok ? r.json() : null; })
     ]);
     PUCSO.scheduleConfig = results[0];
     PUCSO.crewConfig     = results[1];
+    PUCSO.userConfig     = results[2];
 
-    if (!PUCSO.scheduleConfig || !PUCSO.crewConfig) {
-      throw new Error('Failed to load scheduleconfig.json or crewconfig.json');
+    if (!PUCSO.scheduleConfig || !PUCSO.crewConfig || !PUCSO.userConfig) {
+      throw new Error('Failed to load scheduleconfig.json, crewconfig.json, or userconfig.json');
     }
+
+    // Build the user_id → username bridge from userconfig.json. scheduleconfig
+    // uses user_id (e.g. 84ff7654-...) on each trip's crew slot; crewconfig
+    // uses crew_id (a DIFFERENT UUID) keyed by username. The link between
+    // them is userconfig.users[] which has both user_id and username on the
+    // same record. Without this bridge every departing crew member ends up
+    // tagged "Unmapped" because user_id never matches crew_id directly.
+    var userIdToUsername = {};
+    (PUCSO.userConfig.users || []).forEach(function(u) {
+      if (u && u.user_id && u.username) userIdToUsername[u.user_id] = u.username;
+    });
+    var usernameToCrew = {};
+    (PUCSO.crewConfig.crew || []).forEach(function(c) {
+      if (c && c.username) usernameToCrew[c.username] = c;
+    });
 
     // Active trip resolver — best-effort, since the Console's authoritative
     // signal (open_date && !close_date in the SQLite trips DB) isn't visible
@@ -3686,24 +3705,25 @@ async function loadPurserCrewSignOff() {
         diag.reasonNotDeparting.push((slot.display_name || slot.user_id || '?') + ' (in next trip)');
         return;
       }
-      var crewRec = (PUCSO.crewConfig.crew || []).find(function(c) {
-        return c.user_id === slot.user_id;
-      });
+      // Two-hop resolve: scheduleconfig.user_id → userconfig.username → crewconfig.crew.
+      var username = userIdToUsername[slot.user_id] || null;
+      var crewRec  = username ? (usernameToCrew[username] || null) : null;
       var checkpoint = crewRec ? (crewRec.checkpoints || []).find(function(cp) {
         return cp && cp.trip_number === PUCSO.activeTrip.trip_number && cp.direction === 'out';
       }) || null : null;
       var displayName = slot.display_name ||
-                       (crewRec && crewRec.display_name) ||
-                       (crewRec && crewRec.username) ||
+                       (crewRec && (crewRec.name || crewRec.display_name)) ||
+                       username ||
                        '(unnamed crew · ' + (slot.user_id || '').slice(0, 8) + ')';
       departing.push({
         user_id:      slot.user_id,
+        username:     username,          // null if user_id isn't in userconfig
         display_name: displayName,
-        crewRec:      crewRec,           // may be null → unmapped
+        crewRec:      crewRec,           // null → unmapped
         checkpoint:   checkpoint,
         unmapped:     !crewRec
       });
-      diag.kept.push(displayName + (crewRec ? '' : ' [UNMAPPED]'));
+      diag.kept.push(displayName + (crewRec ? '' : ' [UNMAPPED user_id=' + (slot.user_id || '').slice(0, 8) + ' username=' + (username || '?') + ']'));
     });
     PUCSO.departing = departing;
 
@@ -4195,7 +4215,12 @@ function openPurserCheckoutModal(d) {
       var freshCfg = await freshResp.json();
       if (!freshCfg || !Array.isArray(freshCfg.crew)) throw new Error('crewconfig malformed');
 
-      var fileCrew = freshCfg.crew.find(function(c) { return c.user_id === crew.user_id; });
+      // Locate the crew record in the fresh fetch by crew_id (the stable
+      // identifier inside crewconfig). The departing-list `crew` object IS a
+      // crewconfig record (resolved via the user_id → username bridge during
+      // load), so crew.crew_id is the right key here — NOT user_id, which
+      // doesn't exist on crewconfig records at all.
+      var fileCrew = freshCfg.crew.find(function(c) { return c.crew_id === crew.crew_id; });
       if (!fileCrew) throw new Error('Crew member no longer in crewconfig');
 
       // Apply the checkpoint write to the FRESH copy (not the stale one we
