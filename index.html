@@ -1771,9 +1771,36 @@
       </div>
       <h3 class="modal-title">Begin Rounds?</h3>
       <p class="modal-body" id="modal-rounds-body">Rounds entry for the current period.</p>
+      <!-- "Select Round" is an escape hatch for backfilling a missed round —
+           opens a picker listing all rounds in the schedule. Spaced clearly
+           above the primary actions so it doesn't crowd Begin. -->
+      <button class="modal-btn modal-btn-secondary" style="width:100%;margin-bottom:16px;background:transparent;color:var(--text-secondary);border:1px solid var(--border)" onclick="openSelectRoundModal()">Select Round (backfill)</button>
       <div class="modal-actions">
         <button class="modal-btn modal-btn-secondary" onclick="closeRoundsConfirm()">Cancel</button>
         <button class="modal-btn modal-btn-primary" onclick="confirmRoundsEntry()">Begin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Round picker — opened from the Begin Rounds modal via "Select Round".
+       Lists every round in the schedule so the user can backfill a round
+       they missed. Each button routes through initRoundsEntry with
+       forceRound, bypassing the time-of-day inference. -->
+  <div class="modal-overlay" id="modal-rounds-select" style="display:none">
+    <div class="modal-card">
+      <div class="modal-icon" style="background:rgba(180,140,0,0.15);color:var(--warning);border:1px solid rgba(180,140,0,0.35)">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M11 6v5l3 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h3 class="modal-title">Select Round</h3>
+      <p class="modal-body" style="margin-bottom:14px">Pick the round you need to enter. Use this to backfill a missed round.</p>
+      <div id="modal-rounds-select-list" style="margin-bottom:18px;text-align:left">
+        <div style="color:var(--text-muted);font-size:13px;text-align:center;padding:18px 0">Loading round schedule…</div>
+      </div>
+      <div class="modal-actions" style="grid-template-columns:1fr">
+        <button class="modal-btn modal-btn-secondary" onclick="closeSelectRoundModal()">Cancel</button>
       </div>
     </div>
   </div>
@@ -3387,6 +3414,77 @@ function closeRoundsConfirm() {
 }
 function confirmRoundsEntry() {
   if (currentDepartment === 'Factory') { confirmFactoryRounds(); } else { confirmEngineRounds(); }
+}
+
+// Which hub screen should rounds entry return to on exit? Mirrors the
+// hardcoded back-screens in confirmFactoryRounds / confirmEngineRounds.
+// (Purser has its own dedicated flow that doesn't go through this modal.)
+function sourceScreenForRoundsModal() {
+  if (currentDepartment === 'Factory')     return 'screen-factory-home';
+  if (currentDepartment === 'Engine Room') return 'screen-engine-home';
+  return 'screen-home';
+}
+
+// "Select Round" picker — backfill UX for a missed round. Lists every round
+// in the schedule (from cached RE.config when available, else loaded fresh
+// from OneDrive) as a button. Tapping a row pins rounds entry to that round
+// via initRoundsEntry's forceRound option.
+async function openSelectRoundModal() {
+  closeRoundsConfirm();
+  var modal = document.getElementById('modal-rounds-select');
+  var list  = document.getElementById('modal-rounds-select-list');
+  if (list) list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:18px 0">Loading round schedule…</div>';
+  if (modal) modal.style.display = 'flex';
+  try {
+    // Prefer the cached config from a prior rounds-entry visit; load fresh
+    // only if it's not already in memory. Avoids an extra Graph call when
+    // the user just exited rounds and tapped Begin again.
+    var cfg = null;
+    if (typeof RE !== 'undefined' && RE && RE.config) {
+      cfg = RE.config;
+    } else if (typeof reLoadRoundsConfig === 'function') {
+      cfg = await reLoadRoundsConfig();
+    }
+    var times = (cfg && cfg.schedule && cfg.schedule.round_times) || [];
+    if (!times.length) {
+      list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:18px 0">No rounds configured in the schedule.</div>';
+      return;
+    }
+    // Sort by round number so the list is chronological by definition.
+    var sorted = times.slice().sort(function(a, b) { return (a.round || 0) - (b.round || 0); });
+    // Re-infer the "current" round so we can highlight it in the picker —
+    // useful affordance: "the round I'd normally start" is visually distinct.
+    var currentRound = null;
+    try {
+      if (typeof reInferRound === 'function') {
+        var inf = reInferRound(cfg.schedule || {});
+        currentRound = inf && inf.round;
+      }
+    } catch (e) { /* non-fatal */ }
+    list.innerHTML = sorted.map(function(t) {
+      var isCurrent = (t.round === currentRound);
+      var badge = isCurrent
+        ? '<span style="background:var(--success);color:#001a0f;font-size:10px;font-weight:700;letter-spacing:0.06em;padding:2px 6px;border-radius:10px;margin-left:8px;text-transform:uppercase">Now</span>'
+        : '';
+      return '<button class="modal-btn" onclick="confirmRoundsEntryForce(' + t.round + ')" style="width:100%;margin-bottom:8px;padding:14px 16px;background:var(--bg-2);color:var(--text-primary);border:1px solid ' + (isCurrent ? 'var(--success)' : 'var(--border)') + ';display:flex;align-items:center;justify-content:space-between;text-align:left;cursor:pointer">' +
+        '<span><span style="font-weight:700">Round ' + t.round + '</span> <span style="color:var(--text-muted);font-size:13px;font-weight:400;margin-left:6px">' + escHtml(t.time || '—:—') + '</span></span>' +
+        badge +
+      '</button>';
+    }).join('');
+  } catch (err) {
+    list.innerHTML = '<div style="color:var(--danger);font-size:13px;text-align:center;padding:18px 0">Failed to load schedule: ' + escHtml(err && err.message ? err.message : String(err)) + '</div>';
+  }
+}
+
+function closeSelectRoundModal() {
+  document.getElementById('modal-rounds-select').style.display = 'none';
+}
+
+function confirmRoundsEntryForce(roundNum) {
+  closeSelectRoundModal();
+  closeRoundsConfirm();
+  showScreen('screen-roundsentry');
+  initRoundsEntry(sourceScreenForRoundsModal(), { forceRound: roundNum });
 }
 function confirmEngineRounds() {
   closeRoundsConfirm();
