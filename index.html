@@ -3984,27 +3984,31 @@ function openPurserCheckoutModal(d) {
           '<div id="pu-cp-cl-rows">' + (contactRows || '<div style="font-size:11px;color:var(--text-muted);font-style:italic">No entries yet — add one when you reach the crew.</div>') + '</div>' +
         '</div>' +
 
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
-          '<div>' +
+        // Same flex-wrap pattern as the flight/lodging rows so the
+        // select + date pair never clips on a narrow modal — the select
+        // (~70px content) and date input (~130px content) wrap to a second
+        // line when the parent cell can't fit them side-by-side.
+        '<div style="display:flex;flex-wrap:wrap;gap:10px">' +
+          '<div style="flex:1 1 240px;min-width:0">' +
             '<label style="' + labelStyle + '">Confirmed Available</label>' +
-            '<div style="display:flex;gap:6px;align-items:center">' +
-              '<select id="pu-cp-conf-val" style="' + inpStyle + '">' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">' +
+              '<select id="pu-cp-conf-val" style="' + inpStyle + ';flex:0 0 auto">' +
                 '<option value=""'    + (draft.confirmed_available.value === ''    ? ' selected' : '') + '>—</option>' +
                 '<option value="yes"' + (draft.confirmed_available.value === 'yes' ? ' selected' : '') + '>Yes</option>' +
                 '<option value="no"'  + (draft.confirmed_available.value === 'no'  ? ' selected' : '') + '>No</option>' +
               '</select>' +
-              '<input type="date" id="pu-cp-conf-date" value="' + escAttr(draft.confirmed_available.date) + '" style="' + inpStyle + ';flex:1">' +
+              '<input type="date" id="pu-cp-conf-date" value="' + escAttr(draft.confirmed_available.date) + '" style="' + inpStyle + ';flex:1 1 130px;min-width:0">' +
             '</div>' +
           '</div>' +
-          '<div>' +
+          '<div style="flex:1 1 240px;min-width:0">' +
             '<label style="' + labelStyle + '">Tickets Purchased</label>' +
-            '<div style="display:flex;gap:6px;align-items:center">' +
-              '<select id="pu-cp-tk-val" style="' + inpStyle + '">' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">' +
+              '<select id="pu-cp-tk-val" style="' + inpStyle + ';flex:0 0 auto">' +
                 '<option value=""'    + (draft.tickets_purchased.value === ''    ? ' selected' : '') + '>—</option>' +
                 '<option value="yes"' + (draft.tickets_purchased.value === 'yes' ? ' selected' : '') + '>Yes</option>' +
                 '<option value="no"'  + (draft.tickets_purchased.value === 'no'  ? ' selected' : '') + '>No</option>' +
               '</select>' +
-              '<input type="date" id="pu-cp-tk-pdate" value="' + escAttr(draft.tickets_purchased.date) + '" style="' + inpStyle + ';flex:1">' +
+              '<input type="date" id="pu-cp-tk-pdate" value="' + escAttr(draft.tickets_purchased.date) + '" style="' + inpStyle + ';flex:1 1 130px;min-width:0">' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -4025,19 +4029,19 @@ function openPurserCheckoutModal(d) {
           '<div id="pu-cp-lo-rows">' + (lodgingRows || '<div style="font-size:11px;color:var(--text-muted);font-style:italic">No lodging yet.</div>') + '</div>' +
         '</div>' +
 
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
-          '<div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:10px">' +
+          '<div style="flex:1 1 240px;min-width:0">' +
             '<label style="' + labelStyle + '">Reason for Discharge</label>' +
             '<select id="pu-cp-reason" style="' + inpStyle + ';width:100%">' + reasonOpts + '</select>' +
           '</div>' +
-          '<div>' +
+          '<div style="flex:1 1 240px;min-width:0">' +
             '<label style="' + labelStyle + '">Available for Return</label>' +
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:end">' +
-              '<div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:end">' +
+              '<div style="flex:1 1 90px;min-width:0">' +
                 '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px">In Trips</div>' +
                 '<input type="number" id="pu-cp-return-trips" min="0" step="1" value="' + escAttr(puTripCountFromReturnDate(tripNumber, draft.return_date)) + '" style="' + inpStyle + ';width:100%">' +
               '</div>' +
-              '<div>' +
+              '<div style="flex:1 1 140px;min-width:0">' +
                 '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px">By Date</div>' +
                 '<input type="date" id="pu-cp-return" value="' + escAttr(draft.return_date) + '" style="' + inpStyle + ';width:100%">' +
               '</div>' +
