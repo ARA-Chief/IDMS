@@ -15,8 +15,17 @@ const RE = {
   cursorIdx:    0,    // index into navItems
   values:       {},   // item_id → string value
   secd:         {},   // item_id → boolean
+  // For each round item of type `group`, which section_id within that group
+  // the user currently has selected. Child items only render once a section
+  // is picked. Persisted in drafts so resume restores the same view.
+  groupSel:     {},   // parent_item_id → section_id
   aggNew:       null, // entries[] from most recent aggregate file
   aggOld:       null, // entries[] from second-most-recent aggregate file
+  // Wider history window used by group-child rows. Group children only have
+  // history where the same parent picked the same section, so their synthetic
+  // keys may be absent from the two newest aggregates; we scan up to ~6 back
+  // to find their Prev-1/Prev-2 hits.
+  aggList:      [],   // newest-first array of aggregate objects
   roundNum:     1,
   scheduledTime: '00:00',
   vessel:       '',
@@ -46,9 +55,10 @@ function reGraphUrl(path) {
          encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
 }
 
-function reGraphChildrenUrl(path) {
+function reGraphChildrenUrl(path, query) {
   return 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-         encodeURIComponent(path).replace(/%2F/g, '/') + ':/children';
+         encodeURIComponent(path).replace(/%2F/g, '/') + ':/children' +
+         (query ? '?' + query : '');
 }
 
 async function reRefreshToken() {
@@ -59,34 +69,74 @@ async function reRefreshToken() {
   return graphToken;
 }
 
+// Sync-pill gauge. beginNetworkOp/endNetworkOp live in index.html; guard so
+// roundsentry.js stays loadable in isolated tests where they're absent.
+const reNetBegin = () => { if (typeof beginNetworkOp === 'function') beginNetworkOp(); };
+const reNetEnd   = ok => { if (typeof endNetworkOp === 'function') endNetworkOp(ok); };
+
 async function reGet(path) {
   await reRefreshToken();
-  const resp = await fetch(reGraphUrl(path), {
-    headers: { 'Authorization': 'Bearer ' + graphToken }
-  });
-  if (resp.status === 404) return null;
-  if (!resp.ok) throw new Error('GET failed: ' + resp.status);
-  return resp.json();
+  reNetBegin();
+  try {
+    const resp = await fetch(reGraphUrl(path), {
+      headers: { 'Authorization': 'Bearer ' + graphToken },
+      cache: 'no-store'
+    });
+    if (resp.status === 404) { reNetEnd(true); return null; }
+    if (!resp.ok) throw new Error('GET failed: ' + resp.status);
+    const json = await resp.json();
+    reNetEnd(true);
+    return json;
+  } catch (err) {
+    reNetEnd(false);
+    throw err;
+  }
 }
 
 async function rePut(path, data) {
   await reRefreshToken();
-  const resp = await fetch(reGraphUrl(path), {
-    method: 'PUT',
-    headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data, null, 2)
-  });
-  if (!resp.ok) throw new Error('Save failed: ' + resp.status);
+  reNetBegin();
+  try {
+    const resp = await fetch(reGraphUrl(path), {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data, null, 2)
+    });
+    if (!resp.ok) throw new Error('Save failed: ' + resp.status);
+    reNetEnd(true);
+  } catch (err) {
+    reNetEnd(false);
+    throw err;
+  }
 }
 
-async function reListChildren(path) {
+// `query` is an optional raw query string (e.g. '$orderby=name desc&$top=20').
+// Graph paginates /children with @odata.nextLink; this follows the chain until
+// exhausted so callers see the full listing rather than only page 1. Callers
+// that only need the newest N files should pass $orderby + $top so the server
+// trims the result before paginating.
+async function reListChildren(path, query) {
   await reRefreshToken();
-  const resp = await fetch(reGraphChildrenUrl(path), {
-    headers: { 'Authorization': 'Bearer ' + graphToken }
-  });
-  if (!resp.ok) return [];
-  const json = await resp.json();
-  return json.value || [];
+  reNetBegin();
+  let url = reGraphChildrenUrl(path, query);
+  const out = [];
+  try {
+    while (url) {
+      const resp = await fetch(url, {
+        headers: { 'Authorization': 'Bearer ' + graphToken },
+        cache: 'no-store'
+      });
+      if (!resp.ok) { reNetEnd(false); return out; }
+      const json = await resp.json();
+      if (Array.isArray(json.value)) out.push(...json.value);
+      url = json['@odata.nextLink'] || null;
+    }
+    reNetEnd(true);
+    return out;
+  } catch (err) {
+    reNetEnd(false);
+    throw err;
+  }
 }
 
 // ── Draft persistence (offline data-loss mitigation) ─────────────────────────
@@ -111,13 +161,15 @@ function reSaveDraft() {
       return v !== null && v !== undefined && v !== '';
     });
     const hasSecd = Object.keys(RE.secd || {}).some(k => RE.secd[k]);
-    if (!hasValues && !hasSecd) return;
+    const hasGroup = Object.keys(RE.groupSel || {}).length > 0;
+    if (!hasValues && !hasSecd && !hasGroup) return;
     const payload = {
       saved_at:     new Date().toISOString(),
       round_number: RE.roundNum,
       scheduled:    RE.scheduledTime,
       values:       RE.values,
       secd:         RE.secd,
+      groupSel:     RE.groupSel,
       cursorIdx:    RE.cursorIdx,
     };
     localStorage.setItem(reDraftKey(), JSON.stringify(payload));
@@ -273,7 +325,93 @@ function reFilterItems(config, roundNum, dow) {
   return flat;
 }
 
+// Expand `group` items in the filtered flat list. For each group-type round
+// item, if the user has selected a section (RE.groupSel[parentId] = section_id),
+// the items inside that section are inserted directly after the parent row.
+//
+// Child item_ids are namespaced as "parentId:childId" so:
+//   1. Multiple group references can reuse the same group without ID clashes
+//      in the round log and aggregate.
+//   2. Aggregate history lookups for a child only match prior rounds where the
+//      same parent item picked the same section — Stage 3 history scoping is
+//      automatic.
+//
+// Each synthetic child carries `_parent*` fields used by submit/draft/history.
+function reExpandGroups(baseFlat, config) {
+  const groupsById = {};
+  for (const g of (config.groups || [])) groupsById[g.group_id] = g;
+
+  const out = [];
+  for (const entry of baseFlat) {
+    out.push(entry);
+    if (entry.item.type !== 'group') continue;
+
+    const group = groupsById[entry.item.group_id];
+    if (!group) continue;
+    const selSectionId = RE.groupSel[entry.item.item_id];
+    if (!selSectionId) continue;
+    const section = (group.sections || []).find(s => s.section_id === selSectionId);
+    if (!section) continue;
+
+    for (const childItem of (section.items || [])) {
+      // Defence-in-depth: groups never contain groups (Console blocks it), but
+      // if a legacy/edited config has a nested group, skip it rather than
+      // recursing.
+      if (childItem.type === 'group') continue;
+      const synthIid = entry.item.item_id + ':' + childItem.item_id;
+      out.push({
+        section: entry.section,
+        item: Object.assign({}, childItem, {
+          item_id:         synthIid,
+          _parentItemId:   entry.item.item_id,
+          _parentGroupId:  group.group_id,
+          _parentSectionId: section.section_id,
+          _baseItemId:     childItem.item_id,
+          // Child items inside a group inherit the parent's round/day filter,
+          // so omit their own (which the schema requires anyway).
+          active_rounds:   undefined,
+          active_days:     undefined
+        })
+      });
+    }
+  }
+  return out;
+}
+
+// Build RE.flatItems + RE.navItems from current config + groupSel. Called at
+// entry and again whenever the user changes a group's section selection.
+function reBuildItems() {
+  if (!RE.config) return;
+  const base = reFilterItems(RE.config, RE.roundNum, reLocalDow());
+  RE.flatItems = reExpandGroups(base, RE.config);
+  RE.navItems  = RE.flatItems.filter(r => r.item.type !== 'heading');
+}
+
 // ── Aggregate value lookup ────────────────────────────────────────────────────
+
+// History lookup for a group-child row. Walks RE.aggList newest-first, returns
+// up to the 2 most-recent display_values for the given synthetic key. Returns
+// [Prev-1, Prev-2] with '—' filling any missing slot.
+//
+// Because the synthetic key encodes parent_item_id + child_item_id, a match
+// implicitly means "same parent item picked the same section that contained
+// this child" — Stage 3 scoping is automatic.
+function reChildAggValues(synthIid) {
+  const hits = [];
+  for (const agg of (RE.aggList || [])) {
+    let v;
+    if (agg.items && typeof agg.items === 'object') {
+      v = agg.items[synthIid]?.display_value;
+    } else if (Array.isArray(agg.entries)) {
+      v = agg.entries.find(x => x.item_id === synthIid)?.display_value;
+    }
+    if (v !== null && v !== undefined) {
+      hits.push(String(v));
+      if (hits.length === 2) break;
+    }
+  }
+  return [hits[0] ?? '—', hits[1] ?? '—'];
+}
 
 // Accepts the v2 aggregate shape ({ items: { [itemId]: { display_value } } })
 // as well as the legacy v1 shape (entries: [{ item_id, display_value }, …]).
@@ -321,57 +459,34 @@ async function reLoadAggregates() {
   try {
     const year = new Date().getFullYear();
     const folder = ONEDRIVE_BASE + '/data/rounds/' + year;
-    const items = await reListChildren(folder);
+    // Ask Graph for newest-by-name first and cap the response so we don't pull
+    // the entire year folder. The filename pattern embeds scheduled time as
+    // YYYY-MM-DD-HHMM, so lexical desc == chronological desc.
+    const items = await reListChildren(folder, '$orderby=name%20desc&$top=20');
     const names = items
       .filter(f => /^rounds-\d{4}-\d{2}-\d{2}-\d{4}\.json$/.test(f.name))
-      .map(f => f.name)
-      .sort()
-      .reverse();
+      .map(f => f.name);
 
     if (!names.length) return;
 
-    // Pick the two most-recent aggregates that match the CURRENT round_number.
+    // Show the two most-recently-scheduled round aggregates, regardless of
+    // round_number. Filenames embed the scheduled time as HHMM, so a reverse
+    // lexical sort of the year folder gives newest-scheduled first.
     //
-    // Previously this just grabbed the two most-recent aggregate files in the
-    // year folder, regardless of which round they belonged to. For a vessel
-    // running multiple rounds per day, a user who only fills one round per
-    // day was shown Prev-1 = some other round from a few hours ago and
-    // Prev-2 = another other-round a few hours before that — i.e. the Prev
-    // columns weren't comparable to what they were typing in.
-    //
-    // We now walk newest → oldest in small parallel batches and stop as soon
-    // as we have two same-round matches, bounding network cost while still
-    // working for any schedule shape. Aggregates produced before
-    // round_number was added to the schema (legacy) trigger a fallback to the
-    // old chronological behaviour so existing vessels' history still loads
-    // until they roll over to the new schema.
-    const wanted   = RE.roundNum;
-    const BATCH    = 6;
-    const MAX_SCAN = 30;  // ~5 days for a 6-round/day schedule — ample for 2 hits
-    const fetchAgg = name => reGet(folder + '/' + name).catch(() => null);
-
-    const matches      = [];
-    const allFetched   = [];
-    let   anyTaggedRn  = false;
-
-    for (let off = 0; off < Math.min(names.length, MAX_SCAN) && matches.length < 2; off += BATCH) {
-      const batch = await Promise.all(names.slice(off, off + BATCH).map(fetchAgg));
-      for (const c of batch) {
-        if (!c) continue;
-        allFetched.push(c);
-        if (c.round_number !== undefined) anyTaggedRn = true;
-        if (c.round_number === wanted && matches.length < 2) matches.push(c);
-      }
-    }
-
-    if (anyTaggedRn) {
-      RE.aggNew = matches[0] || null;
-      RE.aggOld = matches[1] || null;
-    } else {
-      // Legacy aggregates lack round_number — fall back to chronological.
-      RE.aggNew = allFetched[0] || null;
-      RE.aggOld = allFetched[1] || null;
-    }
+    // We also fetch a wider window (up to 6 aggregates) to support group-child
+    // history scoping: a child row only has history in rounds where the same
+    // parent item picked the same section, so its synthetic key may be absent
+    // from the two newest aggregates. The wider list is scanned per-child in
+    // reChildAggValues. Plain (non-group) items continue to use aggNew/aggOld
+    // directly so unchanged behaviour is preserved.
+    const WINDOW = Math.min(names.length, 6);
+    const windowNames = names.slice(0, WINDOW);
+    const fetched = await Promise.all(
+      windowNames.map(n => reGet(folder + '/' + n).catch(() => null))
+    );
+    RE.aggList = fetched.filter(a => a);
+    RE.aggNew  = RE.aggList[0] || null;
+    RE.aggOld  = RE.aggList[1] || null;
   } catch (_) {
     // Non-blocking — history columns remain —
   }
@@ -425,8 +540,8 @@ async function initRoundsEntry(sourceScreen, opts) {
     RE.scheduledTime  = inferred.scheduled_time;
   }
 
-  RE.flatItems = reFilterItems(cfg, RE.roundNum, reLocalDow());
-  RE.navItems  = RE.flatItems.filter(r => r.item.type !== 'heading');
+  RE.groupSel = {};
+  reBuildItems();
 
   if (!RE.navItems.length) {
     const dept   = (typeof currentDepartment !== 'undefined' && currentDepartment) || 'this department';
@@ -443,7 +558,9 @@ async function initRoundsEntry(sourceScreen, opts) {
   RE.activeSubfield  = null;
   reInstallSubfieldTracking();
 
-  // Pre-populate text items as empty (they're always submittable blank)
+  // Pre-populate text items as empty (they're always submittable blank).
+  // No-op for group children at this point since no section is selected yet;
+  // reBuildItems() runs again after groupSel changes to pick them up.
   for (const { item } of RE.navItems) {
     if (item.type === 'text') RE.values[item.item_id] = '';
   }
@@ -460,7 +577,10 @@ async function initRoundsEntry(sourceScreen, opts) {
     if (resume) {
       RE.values    = Object.assign(RE.values, draft.values);
       RE.secd      = draft.secd || {};
+      RE.groupSel  = draft.groupSel || {};
       RE.cursorIdx = (typeof draft.cursorIdx === 'number') ? draft.cursorIdx : 0;
+      // Rebuild with the restored group selections so child rows appear.
+      reBuildItems();
     } else {
       reClearDraft();
     }
@@ -568,11 +688,73 @@ function reAllRowsHTML() {
       out.push(reLatLonRowHTML(r, RE.navItems.indexOf(r)));
     } else if (r.item.type === 'tk_sounding' || r.item.type === 'sounding') {
       out.push(reSoundingRowHTML(r, RE.navItems.indexOf(r)));
+    } else if (r.item.type === 'group') {
+      out.push(reGroupParentRowHTML(r, RE.navItems.indexOf(r)));
     } else {
       out.push(reDataRowHTML(r, RE.navItems.indexOf(r)));
     }
   }
   return out.join('');
+}
+
+// Group parent row: shows the item label and a section-picker dropdown. The
+// child items appear as normal rows immediately below — they were inserted by
+// reExpandGroups so reAllRowsHTML walks straight through them.
+function reGroupParentRowHTML(r, ni) {
+  const active   = ni === RE.cursorIdx;
+  const iid      = r.item.item_id;
+  const group    = (RE.config.groups || []).find(g => g.group_id === r.item.group_id);
+  const selected = RE.groupSel[iid] || '';
+
+  // Sections already picked by *other* group items referencing the same group
+  // in this round are hidden from this dropdown — prevents accidental double-
+  // selection (which would produce duplicate synthetic item_ids and contaminate
+  // history for the second occurrence). The user's own current selection is
+  // always kept visible so the dropdown still shows what they picked. As soon
+  // as a peer dropdown is cleared back to "—", the section reappears here.
+  const taken = new Set();
+  for (const peer of RE.flatItems) {
+    if (peer.item.type !== 'group') continue;
+    if (peer.item.item_id === iid) continue;
+    if (peer.item.group_id !== r.item.group_id) continue;
+    const peerSel = RE.groupSel[peer.item.item_id];
+    if (peerSel) taken.add(peerSel);
+  }
+
+  // Sections marked offline in the Console group editor are hidden from the
+  // user-facing dropdown. They stay in the config so prior history isn't lost.
+  const sections = ((group && group.sections) || [])
+    .filter(s => !s.offline)
+    .filter(s => s.section_id === selected || !taken.has(s.section_id));
+
+  let opts = '<option value="">— select —</option>';
+  opts += sections.map(s =>
+    `<option value="${reEsc(s.section_id)}"${selected === s.section_id ? ' selected' : ''}>${reEsc(s.label || '(unnamed)')}</option>`
+  ).join('');
+
+  // If the referenced group has been deleted or the selection points at a
+  // section that no longer exists, surface that so the user can choose a real
+  // one rather than the dropdown silently snapping back.
+  let warn = '';
+  if (!group) {
+    warn = ' <span class="re-group-warn" style="color:var(--danger,#c00);font-size:11px">group missing</span>';
+  } else if (selected && !sections.some(s => s.section_id === selected)) {
+    warn = ' <span class="re-group-warn" style="color:var(--danger,#c00);font-size:11px">section missing</span>';
+  }
+
+  return `
+    <div class="re-row re-data-row re-group-row${active ? ' re-active-row' : ''}"
+         id="re-row-${ni}" data-ni="${ni}">
+      <div class="re-col-label">${reEsc(r.item.label)}${warn}</div>
+      <div class="re-col-hist">—</div>
+      <div class="re-col-hist">—</div>
+      <div class="re-col-entry re-entry-cell">
+        <select class="re-custom-sel re-group-sel"
+                onchange="reSetGroupSection('${reEsc(iid)}', this.value)">
+          ${opts}
+        </select>
+      </div>
+    </div>`;
 }
 
 function reSectionTitleHTML(label) {
@@ -590,8 +772,20 @@ function reDataRowHTML(r, ni) {
   const val    = RE.values[iid] ?? '';
   const done   = reItemComplete(r.item, iid);
 
-  const h1 = secd ? '—' : reAggValue(RE.aggOld, iid);
-  const h2 = secd ? '—' : reAggValue(RE.aggNew, iid);
+  // Group children: scan the wider aggregate window for prior rounds that had
+  // this exact synthetic key (i.e. same parent item + same section selected).
+  // Plain items keep the cheap two-aggregate lookup.
+  let h1, h2;
+  if (secd) {
+    h1 = '—'; h2 = '—';
+  } else if (r.item._parentItemId) {
+    const hist = reChildAggValues(iid);
+    h2 = hist[0]; // newest match → Prev-1 (right column)
+    h1 = hist[1]; // next-newest → Prev-2 (left column)
+  } else {
+    h1 = reAggValue(RE.aggOld, iid);
+    h2 = reAggValue(RE.aggNew, iid);
+  }
 
   return `
     <div class="re-row re-data-row${active ? ' re-active-row' : ''}${done ? ' re-done' : ''}"
@@ -750,12 +944,57 @@ function reItemComplete(item, iid) {
   if (item.type === 'text')     return true;
   if (item.type === 'checkbox') return v === 'true' || v === 'false';
   if (item.type === 'custom')   return !!v;
+  if (item.type === 'group')    return !!RE.groupSel[iid];
   if (item.type === 'latlon') {
     if (!v) return false;
     const p = v.split('|');
     return p.length === 6 && p[0] !== '' && p[1] !== '' && p[3] !== '' && p[4] !== '';
   }
   return v !== '' && v !== null && v !== undefined;
+}
+
+// Group section selection: confirm + discard any values already entered for
+// the previously-selected section, then re-expand and re-render so the new
+// section's child items appear.
+function reSetGroupSection(parentIid, sectionId) {
+  const prev = RE.groupSel[parentIid] || '';
+  if (prev === sectionId) return;
+
+  // If any child values from the previous section are present, confirm before
+  // wiping them.
+  const prefix = parentIid + ':';
+  const hasEntries = Object.keys(RE.values).some(k => k.startsWith(prefix) &&
+    RE.values[k] !== '' && RE.values[k] !== null && RE.values[k] !== undefined);
+  if (prev && hasEntries) {
+    const ok = window.confirm('Switching sections will discard values entered for the current selection. Continue?');
+    if (!ok) {
+      // Snap the <select> back to the previous selection.
+      reBuildItems(); reRenderGrid();
+      return;
+    }
+  }
+
+  // Discard child values + SEC'D flags under this parent's namespace.
+  for (const k of Object.keys(RE.values)) {
+    if (k.startsWith(prefix)) delete RE.values[k];
+  }
+  for (const k of Object.keys(RE.secd)) {
+    if (k.startsWith(prefix)) delete RE.secd[k];
+  }
+
+  if (sectionId) RE.groupSel[parentIid] = sectionId;
+  else delete RE.groupSel[parentIid];
+
+  reBuildItems();
+  // Pre-populate empty text values for the new children.
+  for (const { item } of RE.navItems) {
+    if (item.type === 'text' && !(item.item_id in RE.values)) RE.values[item.item_id] = '';
+  }
+  // Cursor may now point past the end if children were removed; clamp it.
+  if (RE.cursorIdx >= RE.navItems.length) RE.cursorIdx = Math.max(0, RE.navItems.length - 1);
+
+  reRenderGrid();
+  reSaveDraft();
 }
 
 // ── Grid refresh ──────────────────────────────────────────────────────────────
@@ -1306,6 +1545,15 @@ async function reConfirmSubmit() {
       if (item.type === 'heading') continue;
       const iid  = item.item_id;
       const secd = RE.secd[iid] || false;
+      // Group parent items record the section the user picked as their value.
+      // Group child items carry parent_item_id + parent_section_id so the
+      // aggregator and history lookup can scope to the right context.
+      let value;
+      if (item.type === 'group') {
+        value = RE.groupSel[iid] || null;
+      } else {
+        value = secd ? null : (RE.values[iid] ?? null);
+      }
       entries.push({
         section_id:           section.section_id,
         section_label:        section.label,
@@ -1319,7 +1567,13 @@ async function reConfirmSubmit() {
         sounding_measurement: item.sounding_measurement ?? null,
         tk_percent_tank_id:   item.tk_percent_tank_id   ?? null,
         tk_percent_capacity:  item.tk_percent_capacity  ?? null,
-        value:                secd ? null : (RE.values[iid] ?? null),
+        // Group linkage (omitted for plain items, present on group parents
+        // and on synthetic group-child entries).
+        group_id:             item.type === 'group' ? (item.group_id ?? null) : (item._parentGroupId ?? undefined),
+        parent_item_id:       item._parentItemId    ?? undefined,
+        parent_section_id:    item._parentSectionId ?? undefined,
+        base_item_id:         item._baseItemId      ?? undefined,
+        value,
         secd
       });
     }
