@@ -46,9 +46,10 @@ function reGraphUrl(path) {
          encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
 }
 
-function reGraphChildrenUrl(path) {
+function reGraphChildrenUrl(path, query) {
   return 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-         encodeURIComponent(path).replace(/%2F/g, '/') + ':/children';
+         encodeURIComponent(path).replace(/%2F/g, '/') + ':/children' +
+         (query ? '?' + query : '');
 }
 
 async function reRefreshToken() {
@@ -59,34 +60,74 @@ async function reRefreshToken() {
   return graphToken;
 }
 
+// Sync-pill gauge. beginNetworkOp/endNetworkOp live in index.html; guard so
+// roundsentry.js stays loadable in isolated tests where they're absent.
+const reNetBegin = () => { if (typeof beginNetworkOp === 'function') beginNetworkOp(); };
+const reNetEnd   = ok => { if (typeof endNetworkOp === 'function') endNetworkOp(ok); };
+
 async function reGet(path) {
   await reRefreshToken();
-  const resp = await fetch(reGraphUrl(path), {
-    headers: { 'Authorization': 'Bearer ' + graphToken }
-  });
-  if (resp.status === 404) return null;
-  if (!resp.ok) throw new Error('GET failed: ' + resp.status);
-  return resp.json();
+  reNetBegin();
+  try {
+    const resp = await fetch(reGraphUrl(path), {
+      headers: { 'Authorization': 'Bearer ' + graphToken },
+      cache: 'no-store'
+    });
+    if (resp.status === 404) { reNetEnd(true); return null; }
+    if (!resp.ok) throw new Error('GET failed: ' + resp.status);
+    const json = await resp.json();
+    reNetEnd(true);
+    return json;
+  } catch (err) {
+    reNetEnd(false);
+    throw err;
+  }
 }
 
 async function rePut(path, data) {
   await reRefreshToken();
-  const resp = await fetch(reGraphUrl(path), {
-    method: 'PUT',
-    headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data, null, 2)
-  });
-  if (!resp.ok) throw new Error('Save failed: ' + resp.status);
+  reNetBegin();
+  try {
+    const resp = await fetch(reGraphUrl(path), {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data, null, 2)
+    });
+    if (!resp.ok) throw new Error('Save failed: ' + resp.status);
+    reNetEnd(true);
+  } catch (err) {
+    reNetEnd(false);
+    throw err;
+  }
 }
 
-async function reListChildren(path) {
+// `query` is an optional raw query string (e.g. '$orderby=name desc&$top=20').
+// Graph paginates /children with @odata.nextLink; this follows the chain until
+// exhausted so callers see the full listing rather than only page 1. Callers
+// that only need the newest N files should pass $orderby + $top so the server
+// trims the result before paginating.
+async function reListChildren(path, query) {
   await reRefreshToken();
-  const resp = await fetch(reGraphChildrenUrl(path), {
-    headers: { 'Authorization': 'Bearer ' + graphToken }
-  });
-  if (!resp.ok) return [];
-  const json = await resp.json();
-  return json.value || [];
+  reNetBegin();
+  let url = reGraphChildrenUrl(path, query);
+  const out = [];
+  try {
+    while (url) {
+      const resp = await fetch(url, {
+        headers: { 'Authorization': 'Bearer ' + graphToken },
+        cache: 'no-store'
+      });
+      if (!resp.ok) { reNetEnd(false); return out; }
+      const json = await resp.json();
+      if (Array.isArray(json.value)) out.push(...json.value);
+      url = json['@odata.nextLink'] || null;
+    }
+    reNetEnd(true);
+    return out;
+  } catch (err) {
+    reNetEnd(false);
+    throw err;
+  }
 }
 
 // ── Draft persistence (offline data-loss mitigation) ─────────────────────────
@@ -321,57 +362,26 @@ async function reLoadAggregates() {
   try {
     const year = new Date().getFullYear();
     const folder = ONEDRIVE_BASE + '/data/rounds/' + year;
-    const items = await reListChildren(folder);
+    // Ask Graph for newest-by-name first and cap the response so we don't pull
+    // the entire year folder. The filename pattern embeds scheduled time as
+    // YYYY-MM-DD-HHMM, so lexical desc == chronological desc.
+    const items = await reListChildren(folder, '$orderby=name%20desc&$top=20');
     const names = items
       .filter(f => /^rounds-\d{4}-\d{2}-\d{2}-\d{4}\.json$/.test(f.name))
-      .map(f => f.name)
-      .sort()
-      .reverse();
+      .map(f => f.name);
 
     if (!names.length) return;
 
-    // Pick the two most-recent aggregates that match the CURRENT round_number.
-    //
-    // Previously this just grabbed the two most-recent aggregate files in the
-    // year folder, regardless of which round they belonged to. For a vessel
-    // running multiple rounds per day, a user who only fills one round per
-    // day was shown Prev-1 = some other round from a few hours ago and
-    // Prev-2 = another other-round a few hours before that — i.e. the Prev
-    // columns weren't comparable to what they were typing in.
-    //
-    // We now walk newest → oldest in small parallel batches and stop as soon
-    // as we have two same-round matches, bounding network cost while still
-    // working for any schedule shape. Aggregates produced before
-    // round_number was added to the schema (legacy) trigger a fallback to the
-    // old chronological behaviour so existing vessels' history still loads
-    // until they roll over to the new schema.
-    const wanted   = RE.roundNum;
-    const BATCH    = 6;
-    const MAX_SCAN = 30;  // ~5 days for a 6-round/day schedule — ample for 2 hits
-    const fetchAgg = name => reGet(folder + '/' + name).catch(() => null);
-
-    const matches      = [];
-    const allFetched   = [];
-    let   anyTaggedRn  = false;
-
-    for (let off = 0; off < Math.min(names.length, MAX_SCAN) && matches.length < 2; off += BATCH) {
-      const batch = await Promise.all(names.slice(off, off + BATCH).map(fetchAgg));
-      for (const c of batch) {
-        if (!c) continue;
-        allFetched.push(c);
-        if (c.round_number !== undefined) anyTaggedRn = true;
-        if (c.round_number === wanted && matches.length < 2) matches.push(c);
-      }
-    }
-
-    if (anyTaggedRn) {
-      RE.aggNew = matches[0] || null;
-      RE.aggOld = matches[1] || null;
-    } else {
-      // Legacy aggregates lack round_number — fall back to chronological.
-      RE.aggNew = allFetched[0] || null;
-      RE.aggOld = allFetched[1] || null;
-    }
+    // Show the two most-recently-scheduled round aggregates, regardless of
+    // round_number. Filenames embed the scheduled time as HHMM, so a reverse
+    // lexical sort of the year folder gives newest-scheduled first.
+    const [newName, oldName] = names;
+    const [aggNew, aggOld] = await Promise.all([
+      newName ? reGet(folder + '/' + newName).catch(() => null) : null,
+      oldName ? reGet(folder + '/' + oldName).catch(() => null) : null
+    ]);
+    RE.aggNew = aggNew;
+    RE.aggOld = aggOld;
   } catch (_) {
     // Non-blocking — history columns remain —
   }
