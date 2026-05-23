@@ -1124,8 +1124,15 @@ const RE_SUBFIELD_SEL = '.re-latlon-deg, .re-latlon-min, .re-snd-input, .re-tkp-
 // `reInstallSubfieldTracking`). We re-resolve it by row id + class + index so a
 // re-render of the grid doesn't invalidate the reference.
 function reActiveSubfieldInput() {
+  // Only honour a tracked subfield if it belongs to the item the cursor is
+  // currently on. Otherwise keypad input after moving from a lat/lon (or
+  // sounding / tk_percent) row to a plain numeric row gets misrouted back into
+  // the stale subfield — visible on rounds that include the Midnight Readings
+  // lat/lon item, where every numeric entry below it silently fails to accept
+  // input.
+  const currentIid = RE.navItems[RE.cursorIdx]?.item?.item_id;
   const tracked = RE.activeSubfield;
-  if (tracked) {
+  if (tracked && tracked.iid === currentIid) {
     const row = document.querySelector('[data-iid-latlon="' + cssEsc(tracked.iid) + '"]') ||
                 document.getElementById('re-row-' + reCursorIdxForIid(tracked.iid));
     if (row) {
@@ -1134,11 +1141,14 @@ function reActiveSubfieldInput() {
       if (el && el.tagName === 'INPUT') return el;
     }
   }
-  // Desktop / iOS fallback.
+  // Desktop / iOS fallback — also gated to the current cursor row so a
+  // lingering focus on a previous row's subfield can't hijack input either.
   const el = document.activeElement;
   if (!el || el.tagName !== 'INPUT') return null;
-  if (el.matches(RE_SUBFIELD_SEL)) return el;
-  return null;
+  if (!el.matches(RE_SUBFIELD_SEL)) return null;
+  const ownerRow = el.closest('[id^="re-row-"]');
+  if (ownerRow && ownerRow.id !== 're-row-' + RE.cursorIdx) return null;
+  return el;
 }
 
 function cssEsc(s) {
