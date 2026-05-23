@@ -1,5 +1,65 @@
 # IDMS Field PWA — Schema & Architecture Reference
-**Version 1.5 — F/V Araho**
+**Version 1.6 — F/V Araho**
+
+v1.6 *(2026-05-23)* — **Rounds Groups rendering · honest sync indicator · paginated/cached Graph reads · keypad subfield cursor scoping fix · supersedes v1.5 `reLoadAggregates` round_number filter.** Shipped as IDMS PWA **v0.2.7** (login-footer string in `index.html`).
+
+**Rounds aggregate read — rewrite (§20, §24 commentary supersedes v1.5).** `reLoadAggregates` no longer filters by `round_number`. The premise of the v1.5 fix (compare your value to the prior fills of the same numbered round) interacted badly with vessels running the same round twice per day — Prev-1 / Prev-2 ended up showing values 12 h and 24 h prior instead of the chronologically previous two rounds. The new shape:
+
+```js
+const items = await reListChildren(folder, '$orderby=name desc&$top=20');
+```
+
+Filenames embed scheduled time as `rounds-YYYY-MM-DD-HHMM.json` so a lexical-desc Graph sort is also chronological-desc. We then fetch a window of up to **6** newest aggregates into `RE.aggList` (newest-first). `RE.aggNew` / `RE.aggOld` are the first two of that list, used for plain items unchanged. The wider window is read per-row by group children (below).
+
+**`reListChildren` paginates and short-circuits caching (§20).** Two cooperating fixes:
+
+- Follows `@odata.nextLink` until the listing is exhausted. The previous implementation returned only `json.value` (Graph's first page, capped ~200) — once the year folder crossed that threshold the *newest* files fell off page 1 entirely under Graph's default `name asc` sort, and the PWA silently rendered stale Prev-1 / Prev-2 (or none at all). Callers that only want the newest N now pass an `$orderby=name desc&$top=N` query so the server narrows before paginating; the loop still follows nextLink as a defence in depth.
+- Both `reGet` and `reListChildren` pass `cache: 'no-store'`. Browser HTTP cache + bfcache could otherwise serve a stale Graph response on tab resume without ever hitting the network.
+
+**Honest sync indicator (§5, all dept hubs).** The "Synced / Not Synced / Syncing…" pill is now driven by a small network gauge rather than the lifecycle hint string callers used to pass. New state on `window`:
+
+```js
+var _netInFlight    = 0;     // in-flight network ops
+var _netLastSuccess = 0;     // epoch ms
+var _netLastFailure = 0;
+```
+
+Three helpers: `beginNetworkOp()` (increment + repaint), `endNetworkOp(ok)` (decrement + stamp + repaint), `hasQueuedWrites()` (scans `localStorage` for non-empty `fw_obs_queue_*` keys; drafts under `idms_re_draft_*` are *not* counted — those are in-progress work, not failed sync). Pill state derivation:
+
+| State | Condition |
+|---|---|
+| `syncing` | `inFlight > 0`, or no op has completed yet this session |
+| `offline` | `lastFailure > lastSuccess`, or any observation queue has items |
+| `synced` | otherwise |
+
+`renderSyncIndicator()` paints all four pill instances (`sync-indicator`, `er-sync-indicator`, `fa-sync-indicator`, `pu-sync-indicator` — the Factory and Purser pills were dead HTML pre-v1.6; live now). A `setInterval(renderSyncIndicator, 30 * 1000)` keeps the "N min ago" tooltip current and flips the pill amber when a write is queued without a fresh network event. Tooltip text: `Last synced HH:MM (N min ago)` / `Sync failed at HH:MM (…)` / `Changes queued. Last synced HH:MM (…)` / `Syncing now…` / `Not yet synced this session`. Set via `el.title` so hover (desktop) or long-press (mobile) reveals it.
+
+Wired into the four real network paths: `loadConfig` (GitHub / OneDrive crewconfig fetch), `writeLogFile` (5-min incident-log autosync), and `reGet` / `rePut` / `reListChildren` (all OneDrive traffic from `roundsentry.js`). `roundsentry.js` accesses the gauge via thin `reNetBegin` / `reNetEnd` shims that no-op if the globals aren't present, so the module stays loadable standalone. `updateSyncIndicator(state)` retained as a no-op back-compat shim — existing explicit calls still compile, hint strings ignored because the gauge is authoritative.
+
+**Rounds Groups — PWA rendering (§20, supersedes the v1.5 §20 item-type list).** New `RE.groupSel: { [parent_item_id]: section_id }` records the user's section pick per group-type round item. Persisted in drafts (§17) alongside `values` / `secd` / `cursorIdx`. Three pieces fit together:
+
+1. **`reExpandGroups(baseFlat, config)`** post-processes `reFilterItems` output. For each `type === 'group'` round item with a section selected, the items inside that section are inserted into the flat list directly after the parent row. Each synthetic child carries a derived `item_id = parentId + ':' + childId` and four meta fields (`_parentItemId`, `_parentGroupId`, `_parentSectionId`, `_baseItemId`) that submission propagates to the log (see IDMS-SCHEMA §22 group linkage fields). `_active_rounds` / `_active_days` are forced to `undefined` on children — child filtering is inherited from the parent round item, not re-evaluated per child.
+2. **`reBuildItems()`** is the canonical entry point. Called at `initRoundsEntry`, after draft restore, and from `reSetGroupSection` whenever a section pick changes. Rebuilds `RE.flatItems` and `RE.navItems` end-to-end. Cursor index is clamped if it lands past the new array length after a section was deselected and its children removed.
+3. **`reGroupParentRowHTML(r, ni)`** is the new row renderer. The entry cell is a `<select class="re-group-sel">` populated with the referenced group's sections (filtered for `!offline`, and minus any section already picked by a *peer* group item on the same round — see "peer filter" below). Selecting a section calls `reSetGroupSection(parentIid, sectionId)`, which:
+    - If values are already entered under this parent's namespace and the user is *switching* (not just picking for the first time), prompts a confirm dialog. Cancel snaps the dropdown back via re-render.
+    - Deletes any `RE.values[k]` / `RE.secd[k]` where `k` starts with `parentIid + ':'`.
+    - Updates `RE.groupSel`, calls `reBuildItems()`, pre-populates empty text values for any new text-type children, clamps cursor, re-renders, saves the draft.
+
+**Peer filter for groups (§20).** Sections already picked by other group items referencing the same group in the same round are removed from this dropdown — prevents duplicate synthetic `item_id`s (and the silent data contamination that would cause in the aggregate). The user's own current selection is always retained in the dropdown so it still shows what they picked; clearing a peer to "—" makes the section reappear here automatically because `reSetGroupSection` re-renders the whole grid.
+
+**Group section offline filter (§20).** Sections marked `offline: true` in the Console group editor are filtered out of `reGroupParentRowHTML`'s dropdown. If a previously-picked section is flipped offline mid-session it remains visible as the current selection (the filter chain explicitly keeps `s.section_id === selected`), so the user isn't surprised by their pick disappearing.
+
+**Submission (§22).** `reConfirmSubmit` iterates `RE.flatItems` (the post-expansion list). Group parent items log with `value = RE.groupSel[iid] || null` (a `section_id` UUID). Synthetic child entries log with their synthetic `item_id` and the four linkage fields. Plain rows submit unchanged. Aggregator (`buildRoundsAggregate`, Console main.js:1544) groups by `item_id`; synthetic keys produce their own rows in the aggregate's `items{}` map with zero code change required there.
+
+**Prev-1 / Prev-2 for group children — Stage 3 history scoping (§24).** Group child rows can't use the cheap two-aggregate lookup that plain items use: their synthetic key only exists in aggregates where the *same* parent picked the *same* section, which may not be the two most recent rounds. New helper `reChildAggValues(synthIid)` walks `RE.aggList` newest-first and returns up to the 2 most-recent non-null `display_value`s for the synthetic key — guaranteed to be from prior rounds with matching parent+section because the key encodes both. Plain items keep the existing `RE.aggNew` / `RE.aggOld` two-pointer lookup so their behaviour and bandwidth are unchanged.
+
+**Group parent's own history columns** display `—` for now. The parent's "value" is a `section_id` UUID; surfacing the previously-picked section *label* there would be the natural next step.
+
+**Keypad subfield input fix (§20).** `reActiveSubfieldInput()` now gates the tracked `RE.activeSubfield` on `tracked.iid === RE.navItems[RE.cursorIdx]?.item?.item_id`. The `document.activeElement` fallback similarly gates on owner-row matching the cursor row. Previously, tapping a lat/lon (or sounding / tk_percent) subfield left `RE.activeSubfield` armed forever — any subsequent navigation to a *numeric* item below sent every digit back into the stale subfield instead of the numeric value. Visible on every round that contained the Midnight Readings lat/lon item (every numeric below it silently rejected input); the same root cause produced an earlier user report of "values routing to one of the tank soundings." Cursor moves through `reBindEvents` (`scroll.click` → `reCursorTo(ni)`) so the gate always reflects the row the user just touched; in-row subfield switches (ft → in) keep working because `currentIid` stays constant within a row.
+
+**Cross-references.** Schema and Console side: see IDMS-SCHEMA v2.23 (`roundsconfig.json groups[]` shape, `type: "group"` item, `roundslog` linkage fields, Console UI changes, aggregator no-op compatibility). The v1.5 `reLoadAggregates` round_number filter described above is the same one removed in this version — re-read v1.5 in historical context only.
+
+---
 
 v1.5 *(2026-05-22)* — **Purser module + rounds-entry resilience + dept-swap pattern.** Adds a new role-gated "Purser" department, draft persistence for in-progress rounds, two-stage SEC'D arming, a force-round option on rounds entry, a "Select Round" backfill picker on the Begin Rounds modal, Android keypad input fixes, and a global swipe-back guard.
 

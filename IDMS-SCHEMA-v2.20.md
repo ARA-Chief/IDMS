@@ -1,5 +1,80 @@
 # IDMS Schema Specification
-**Version 2.22 — F/V Araho**
+**Version 2.23 — F/V Araho**
+
+v2.23 *(2026-05-23)* — **Rounds Groups (reusable section templates) · section-level Offline flag · collapsible sections in Rounds Setup · roundslog group-linkage fields · supersedes v1.5 PWA `reLoadAggregates` round_number filter.** Shipped as IDMS Console **v0.2.7**.
+
+**`roundsconfig.json` — new top-level `groups[]` array (§20).** A *group* is a reusable bag of sections used as a runtime template: a round item with `type: "group"` references one of these by `group_id`, and the field PWA renders a section-picker dropdown at entry time. The user picks one section; that section's items are then injected into the round below the parent row. Multiple round items can reference the same group — picks are scoped so the same section can't be chosen twice in one round (peer-filter detail under PWA-SCHEMA v1.6).
+
+```json
+{
+  "schema_version": 1,
+  "vessel": "F/V Araho",
+  "schedule": { … },
+  "sections": [ … ],
+  "groups": [
+    {
+      "group_id": "uuid",
+      "label": "Calibrate scales",
+      "sections": [
+        {
+          "section_id": "uuid",
+          "label": "Pre-shift",
+          "order": 1,
+          "offline": false,
+          "items": [ /* same item shape as a normal section.items[] */ ]
+        }
+      ]
+    }
+  ],
+  "changelog": [ … ]
+}
+```
+
+Notes on the group sub-tree:
+
+- Group sections **do not** carry `dept_key` — the parent round item that references the group owns dept routing.
+- Group section items **do not** carry `active_rounds` / `active_days` — round/day filtering is inherited from the parent round item.
+- `group.sections[].offline: boolean` (default `false`) hides the section from the user-facing dropdown in the PWA. The section stays in the config so prior history isn't lost; flip it back to make it live again.
+- Groups never contain `type: "group"` items (no nesting). Console disallows the type in the group editor; PWA defends in depth by skipping any nested-group child it encounters.
+
+**New item type `group` on regular round items (§20).** Added to the existing `item_type` discriminator. Carries one field:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `group_id` | string | yes | UUID of one entry in `roundsconfig.groups[]`. |
+
+`asset_code`, `unit`, `custom_options`, `add_oil_tank_id`, `sounding_*`, `tk_percent_*` are all `null`/omitted on a group item. `active_rounds` / `active_days` still apply: a group item respects round/day filtering just like any other item. The Console's Rounds Setup hides the `Active in:` editor row for the `group` type for visual cleanliness (the underlying data still serializes if previously set; field is no longer surface-editable). Type-change handler in `rounds.js` clears `group_id` on leaving the type and clears the other type-specific fields on entering it.
+
+**Console UI — Rounds Setup additions.** Three new affordances on `screen-rounds`:
+
+1. **Groups panel** between the Schedule panel and the sections list. Each row is `{ name input, item-count badge, Edit, ×Delete }`; `+ Add group` at the foot of the panel. Edit opens a sub-screen scoped to the group (heading: `Rounds — {group label}`); back button returns to the main view. Group editor reuses `buildSectionHTML` / `buildItemHTML` with an `inGroup` flag that suppresses the dept dropdown, `Active in:` row, and offers an `Offline` checkbox per section.
+2. **Delete-group with referrer check.** Deleting a group while round items still reference it is refused; the alert lists up to 8 referrers (`sectionLabel → itemLabel`) so the operator can fix them first. `rdFindGroupReferrers` walks all main-config items looking for `type === 'group' && group_id === target`.
+3. **Collapsible sections.** Each section header gains a `+`/`−` toggle, plus `Collapse all` / `Expand all` buttons in the toolbar. State persists in `localStorage` under `idms_rounds_collapsed_sections` (a JSON array of `section_id`s). Same Set is shared between the main view and the group editor since `section_id`s are globally unique UUIDs. Collapse is a DOM-only class toggle (`rounds-collapsed` on the section panel) — no re-render, so input focus survives expanding/collapsing peer sections.
+
+**Scope abstraction (`rdScopeSections`).** All section/item mutation helpers (`rdFindSection`, `rdMoveSectionUp/Down`, `rdAddItem`, etc.) now operate on whichever scope is active. `RD.editingGroupId` (null in main view, group UUID in editor view) drives the choice — no duplicate add/move/delete code paths.
+
+**`roundslog-*.json` — new linkage fields on group-child entries (§22).** The PWA submits one log entry per visible item, *including* synthesized children expanded from a selected group section. The parent group item itself logs with `value = section_id` (the user's pick). Each child carries four new identifying fields:
+
+| Field | Type | Where present | Notes |
+|---|---|---|---|
+| `group_id` | string \| null | parent + children | The referenced `groups[].group_id`. |
+| `parent_item_id` | string | children only | The `item_id` of the round item that referenced the group. |
+| `parent_section_id` | string | children only | The `section_id` of the group's section the user picked. |
+| `base_item_id` | string | children only | The original `item_id` of the child inside `groups[].sections[].items[]` (un-suffixed). |
+
+The child's own `item_id` is a **synthetic** key of the form `{parent_item_id}:{base_item_id}` — guarantees uniqueness when the same group is referenced from multiple round items, and acts as the join key into the aggregate `items{}` so history columns automatically scope to "same parent picked the same section." See PWA-SCHEMA v1.6 for the rendering side.
+
+**`rounds_entries` table (§18) — no schema change.** The four new payload fields above are *not* persisted to SQLite; `ingestRoundsLogV2` (main.js:1502) drops them at insert. Sufficient because `buildRoundsAggregate` (main.js:1544) groups by `item_id` alone — synthetic keys are stored verbatim and produce their own rows in the aggregate's `items{}` map without any code change. If a future Console report wants to drill into group context ("how often was section X picked under round item P"), the linkage fields remain available in the raw OneDrive log files.
+
+**Aggregate `display_value` for group parents — known polish item.** The parent's `display_value` will be the picked `section_id` UUID, not a human-friendly label. `roundsviewer.js` / Rough Log / Manual Entry tab don't currently translate it. Tracked as a follow-up; the data shape is right, only the read-side rendering is missing.
+
+**Console aggregator (§23) — no behavioural change required.** `buildRoundsAggregate` groups by `item_id`; synthetic keys produce their own entries in the resulting `items{}` map. `display_value` for child items follows the existing rule (most recently submitted non-null value, or sum for `add_oil`).
+
+**Cross-references.**
+- PWA rendering side: see PWA-SCHEMA v1.6 (section picker, synthetic-key submission, peer-section filtering, offline section filter, Prev-1/Prev-2 history via wider aggregate window).
+- `reLoadAggregates` round_number filter (PWA-SCHEMA v1.5 / IDMS-SCHEMA v2.22 §24 commentary) is **superseded** — see PWA-SCHEMA v1.6. Aggregates are now indexed and fetched by chronology + scheduled-time only; group-aware history scoping is achieved via the synthetic-key design above rather than aggregate-level filtering.
+
+---
 
 v2.22 *(2026-05-22)* — **Manual Round Entry · Rounds Setup dept dropdown · Add Oil year window + asset join · Production chart cone clipping + label cleanup · PWA Purser write surface.**
 
