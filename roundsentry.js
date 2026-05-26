@@ -1619,7 +1619,12 @@ async function reConfirmSubmit() {
       schema_version: 2,
       vessel:         RE.vessel,
       username,
-      display_name:   currentUser.name || username,
+      // Use the shared crew-display helper (handles nickname formatting) so
+      // the rounds log carries the same display name shown elsewhere in the
+      // UI. Falls back to currentUser.name, then username, if not available.
+      display_name:   (typeof getDisplayFullName === 'function' ? getDisplayFullName(currentUser) : '')
+                      || currentUser.name
+                      || username,
       round_number:   RE.roundNum,
       scheduled_time: RE.scheduledTime,
       submitted:      now.toISOString(),
