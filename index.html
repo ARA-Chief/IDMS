@@ -344,7 +344,7 @@
     .er-hub-tile-label { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; }
     .er-hub-tile-sub { font-size: 11px; color: var(--text-muted); text-align: center; line-height: 1.4; }
     /* Incinerator lamp on ER hub tile */
-    .incin-lamp { width: 28px; height: 28px; border-radius: 50%; background: #3a0d0d; border: 2px solid #5a1a1a; box-shadow: inset 0 -4px 6px rgba(0,0,0,0.5); transition: background 0.2s, box-shadow 0.2s, border-color 0.2s; }
+    .incin-lamp { display: inline-block; box-sizing: border-box; flex: 0 0 28px; width: 28px; height: 28px; aspect-ratio: 1 / 1; border-radius: 50%; background: #3a0d0d; border: 2px solid #5a1a1a; box-shadow: inset 0 -4px 6px rgba(0,0,0,0.5); transition: background 0.2s, box-shadow 0.2s, border-color 0.2s; }
     .incin-lamp.on { background: #ff2222; border-color: #ff5555; box-shadow: 0 0 14px 2px rgba(255,40,40,0.85), inset 0 -2px 4px rgba(140,0,0,0.6); }
     .incin-status-text { font-weight: 800; letter-spacing: 0.16em; }
     .incin-status-text.on  { color: #ff5555; }
@@ -1307,6 +1307,46 @@
     </div>
   </div>
 
+  <!-- ── OEE: EDIT OBSERVATION MODAL ── -->
+  <div class="modal-overlay" id="modal-oee-edit" style="display:none">
+    <div class="modal-card" style="text-align:left;max-width:540px">
+      <h3 class="modal-title" style="text-align:center;margin-bottom:4px">Edit Observation</h3>
+      <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:18px" id="oee-edit-context">—</p>
+      <div class="incin-field" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label>Start time</label>
+          <input id="oee-edit-start" type="datetime-local">
+        </div>
+        <div>
+          <label>Stop time</label>
+          <input id="oee-edit-stop" type="datetime-local">
+        </div>
+      </div>
+      <div class="incin-field" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label>Failure mode</label>
+          <select id="oee-edit-fm"></select>
+        </div>
+        <div>
+          <label>Coefficient</label>
+          <input id="oee-edit-coef" type="number" step="0.01" min="0">
+        </div>
+      </div>
+      <div class="incin-field">
+        <label>Notes (comment)</label>
+        <textarea id="oee-edit-notes" rows="3" style="width:100%;resize:vertical;box-sizing:border-box;background:var(--bg-2);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;font-size:13px;font-family:inherit"></textarea>
+      </div>
+      <div id="oee-edit-status" style="font-size:11px;color:var(--text-muted);min-height:14px;margin-bottom:6px"></div>
+      <div class="modal-actions" style="display:flex;justify-content:space-between">
+        <button class="modal-btn" style="background:#7f1d1d;color:#fee2e2;border:none" onclick="oeeEditDelete()">Delete</button>
+        <div style="display:flex;gap:8px">
+          <button class="modal-btn modal-btn-secondary" onclick="oeeEditClose()">Cancel</button>
+          <button class="modal-btn modal-btn-primary" onclick="oeeEditSave()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── OEE: ADD — SECTION PICKER ── -->
   <div class="screen" id="screen-oee-add-section">
     <div class="subscreen-header">
@@ -1423,6 +1463,7 @@
         </div>
       </div>
     </header>
+    <div class="active-timers-stack" id="er-active-timers-stack"></div>
     <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Engine Room</div>
     <div class="er-hub-grid">
       <button class="er-hub-tile" onclick="initEngineRoughLog('screen-engine-home')">
@@ -1462,6 +1503,16 @@
         </div>
         <div class="er-hub-tile-label">Incinerator</div>
         <div class="er-hub-tile-sub"><span class="incin-status-text off" id="incin-tile-status-text">OFF</span></div>
+      </button>
+      <button class="er-hub-tile" onclick="openAddOil()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M14 4l-4 6a5 5 0 108 0l-4-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M14 18v6M11 24h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Add Oil</div>
+        <div class="er-hub-tile-sub">Log lube oil top-up</div>
       </button>
       <button class="er-hub-tile" onclick="openEngineProfile()">
         <div class="er-hub-tile-icon">
@@ -1582,6 +1633,54 @@
       <div class="modal-actions">
         <button class="modal-btn modal-btn-secondary" onclick="incinCloseModal('modal-incin-manual')">Cancel</button>
         <button class="modal-btn modal-btn-primary" onclick="incinConfirmManual()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ADD OIL: FORM MODAL ── -->
+  <div class="modal-overlay" id="modal-addoil-form" style="display:none">
+    <div class="modal-card" style="text-align:left">
+      <h3 class="modal-title" style="text-align:center;margin-bottom:4px">Add Oil</h3>
+      <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px">Record a lube oil top-up.</p>
+      <div class="incin-field">
+        <label>Add (contents)</label>
+        <select id="addoil-contents"></select>
+      </div>
+      <div class="incin-field" id="addoil-contents-other-wrap" style="display:none">
+        <label>Contents description (free text)</label>
+        <input id="addoil-contents-other-text" type="text" placeholder="e.g. Mobilgard 410 NC">
+      </div>
+      <div class="incin-field">
+        <label>To (equipment)</label>
+        <select id="addoil-dest"></select>
+      </div>
+      <div class="incin-field">
+        <label>From (tank)</label>
+        <select id="addoil-from"></select>
+      </div>
+      <div class="incin-field" id="addoil-from-other-wrap" style="display:none">
+        <label>Source description (free text)</label>
+        <input id="addoil-from-other-text" type="text" placeholder="e.g. 5gal pail, drum #14, etc.">
+      </div>
+      <div class="incin-field" style="margin-bottom:6px">
+        <label>Quantity (USG)</label>
+        <input id="addoil-qty" type="number" step="0.1" min="0" inputmode="decimal">
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary" onclick="addOilCloseForm()">Cancel</button>
+        <button class="modal-btn modal-btn-primary" onclick="addOilOpenConfirm()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ADD OIL: CONFIRMATION MODAL ── -->
+  <div class="modal-overlay" id="modal-addoil-confirm" style="display:none">
+    <div class="modal-card" style="text-align:left">
+      <h3 class="modal-title" style="text-align:center;margin-bottom:20px">Confirm Add Oil</h3>
+      <p id="addoil-confirm-text" style="font-size:14px;text-align:center;margin-bottom:20px;line-height:1.4"></p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary" onclick="addOilCloseConfirm()">Cancel</button>
+        <button class="modal-btn modal-btn-primary" onclick="addOilCommit()">OK</button>
       </div>
     </div>
   </div>
@@ -3300,7 +3399,13 @@ function renderOeeObsList() {
     var notesHtml = o.notes ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">' + escapeHtml(o.notes) + '</div>' : '';
     var userHtml  = o.source_user ? '<span style="font-size:11px;color:var(--text-muted)"> · ' + escapeHtml(o.source_user) + '</span>' : '';
 
-    return '<div style="padding:12px 14px;border-bottom:1px solid var(--border)">'
+    // Rows with an obs_id are clickable → edit modal. Rows without (legacy
+    // pre-Phase-5 submissions) render static and tooltip-explain why.
+    var hasId = !!o.obs_id;
+    var rowAttrs = hasId
+      ? 'data-obs-id="' + escapeHtml(String(o.obs_id)) + '" style="padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer" onclick="openOeeEdit(this.dataset.obsId)"'
+      : 'style="padding:12px 14px;border-bottom:1px solid var(--border);opacity:0.75" title="No obs_id on this row — submitted before edit tracking was added; re-submit to enable editing."';
+    return '<div ' + rowAttrs + '>'
          + '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'
          + '<span style="font-size:13px;font-weight:600;color:var(--text-primary);min-width:42px">' + escapeHtml(timePart) + '</span>'
          + oeeBadge(o.source || 'pwa')
@@ -7258,6 +7363,197 @@ async function pushObservationEventToOneDrive(username, observation) {
   if (!resp.ok) throw new Error('Phase-5 event PUT failed: ' + resp.status);
 }
 
+// Phase-5 correction/deletion writers — mirror Console's
+// appendObservationCorrection / appendObservationDeletion contract from
+// sync-factory-obs.js so the Console replay code path can reconstruct edit
+// state from either side. event_id derived from target obs_id + suffix so
+// retries are idempotent under If-None-Match: *.
+async function pushObservationCorrectionToOneDrive(username, targetObsId, patch, before) {
+  await obsRefreshToken();
+  var nowIso  = new Date().toISOString();
+  var eventId = targetObsId + '-corr-' + nowIso.replace(/[:.\-]/g, '');
+  var tsForFn = nowIso.replace(/[:.\-]/g, '');
+  var filename = tsForFn + '-' + eventId + '.json';
+  var path = 'Documents/IDMS/data/factory/observations/events/' + filename;
+  var eventObj = {
+    schema_version: 1,
+    event_id:       eventId,
+    event_type:     'observation_correction',
+    actor:          username,
+    timestamp:      nowIso,
+    payload:        { target_obs_id: targetObsId, patch: patch, before: before }
+  };
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+            encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+  var resp = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json', 'If-None-Match': '*' },
+    body:    JSON.stringify(eventObj, null, 2)
+  });
+  if (resp.status === 412) return;
+  if (!resp.ok) throw new Error('Correction PUT failed: ' + resp.status);
+}
+
+async function pushObservationDeletionToOneDrive(username, targetObsId) {
+  await obsRefreshToken();
+  var nowIso  = new Date().toISOString();
+  var eventId = targetObsId + '-del';
+  var tsForFn = nowIso.replace(/[:.\-]/g, '');
+  var filename = tsForFn + '-' + eventId + '.json';
+  var path = 'Documents/IDMS/data/factory/observations/events/' + filename;
+  var eventObj = {
+    schema_version: 1,
+    event_id:       eventId,
+    event_type:     'observation_deletion',
+    actor:          username,
+    timestamp:      nowIso,
+    payload:        { target_obs_id: targetObsId }
+  };
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+            encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+  var resp = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json', 'If-None-Match': '*' },
+    body:    JSON.stringify(eventObj, null, 2)
+  });
+  if (resp.status === 412) return;
+  if (!resp.ok) throw new Error('Deletion PUT failed: ' + resp.status);
+}
+
+// ── OEE EDIT MODAL ───────────────────────────────────────────────────────────
+// Click a row in the OEE Audit list → opens a modal mirroring the Console
+// edit modal: start/stop time, failure mode, coefficient, notes, save + delete.
+// Save → appendObservationCorrection event; Delete → appendObservationDeletion.
+var OEE_EDIT = { targetObsId: null, before: null };
+
+function _oeeFindObsById(id) {
+  return (OEE.allObs || []).find(function(o) { return o && o.obs_id === id; }) || null;
+}
+
+function _oeeIsoToLocalInput(iso) {
+  // Mirror Console's _isoToLocalInputValue — strip to first 16 chars so the
+  // datetime-local input shows the stored components without a TZ shift.
+  return iso ? String(iso).slice(0, 16) : '';
+}
+
+function _oeeLocalInputToIso(local) {
+  if (!local) return null;
+  return local.length === 16 ? local + ':00' : local;
+}
+
+function _oeePopulateFmDropdown(sel, sectionId, currentFmId) {
+  if (!sel) return;
+  sel.innerHTML = '<option value="">(none)</option>';
+  var modes = (FMEA_CFG && FMEA_CFG.failure_modes) || [];
+  modes.forEach(function(m) {
+    if (m.enabled === false) return;
+    // If a section is supplied and the mode has section_ids, filter.
+    if (sectionId && Array.isArray(m.section_ids) && m.section_ids.length && m.section_ids.indexOf(sectionId) === -1) return;
+    var o = document.createElement('option');
+    o.value = m.failure_mode_id || m.id || '';
+    o.textContent = m.label || m.name || o.value;
+    if (currentFmId && o.value === currentFmId) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+function openOeeEdit(obsId) {
+  var o = _oeeFindObsById(obsId);
+  if (!o) { alert('Observation not found.'); return; }
+  OEE_EDIT.targetObsId = obsId;
+  // Snapshot of editable fields so the correction event records the prior
+  // state — mirrors Console's `before` payload contract.
+  OEE_EDIT.before = {
+    obs_timestamp:      o.obs_timestamp || null,
+    obs_stop_timestamp: o.obs_stop_timestamp || null,
+    failure_mode_id:    o.failure_mode_id || null,
+    coefficient:        (o.coefficient != null) ? Number(o.coefficient) : null,
+    notes:              o.notes || ''
+  };
+
+  document.getElementById('oee-edit-context').textContent =
+    (o.section_label || '—') + (o.source_user ? ' · ' + o.source_user : '') + (o.source ? ' · ' + o.source : '');
+  document.getElementById('oee-edit-start').value = _oeeIsoToLocalInput(o.obs_timestamp);
+  document.getElementById('oee-edit-stop').value  = _oeeIsoToLocalInput(o.obs_stop_timestamp);
+  document.getElementById('oee-edit-coef').value  = (o.coefficient != null) ? String(o.coefficient) : '1';
+  document.getElementById('oee-edit-notes').value = o.notes || '';
+  _oeePopulateFmDropdown(document.getElementById('oee-edit-fm'), o.section_id, o.failure_mode_id);
+  var statusEl = document.getElementById('oee-edit-status');
+  if (statusEl) statusEl.textContent = '';
+  document.getElementById('modal-oee-edit').style.display = 'flex';
+}
+
+function oeeEditClose() {
+  document.getElementById('modal-oee-edit').style.display = 'none';
+  OEE_EDIT.targetObsId = null;
+  OEE_EDIT.before = null;
+}
+
+async function oeeEditSave() {
+  if (!OEE_EDIT.targetObsId) { oeeEditClose(); return; }
+  var statusEl = document.getElementById('oee-edit-status');
+  if (statusEl) { statusEl.textContent = 'Saving…'; statusEl.style.color = 'var(--text-muted)'; }
+
+  var startVal = document.getElementById('oee-edit-start').value || '';
+  var stopVal  = document.getElementById('oee-edit-stop').value  || '';
+  var fmVal    = document.getElementById('oee-edit-fm').value    || '';
+  var coefVal  = document.getElementById('oee-edit-coef').value;
+  var notesVal = document.getElementById('oee-edit-notes').value || '';
+
+  // Build a sparse patch: only include fields that actually changed vs `before`.
+  // Keeps the correction event small and the audit log focused.
+  var patch = {};
+  var newStart = startVal ? _oeeLocalInputToIso(startVal) : null;
+  var newStop  = stopVal  ? _oeeLocalInputToIso(stopVal)  : null;
+  var newFm    = fmVal || null;
+  var newCoef  = (coefVal === '' || coefVal == null) ? null : Number(coefVal);
+  if (newStart !== OEE_EDIT.before.obs_timestamp)      patch.obs_timestamp      = newStart;
+  if (newStop  !== OEE_EDIT.before.obs_stop_timestamp) patch.obs_stop_timestamp = newStop;
+  if (newFm    !== OEE_EDIT.before.failure_mode_id)    patch.failure_mode_id    = newFm;
+  if (newCoef  !== OEE_EDIT.before.coefficient)        patch.coefficient        = newCoef;
+  if (notesVal !== (OEE_EDIT.before.notes || ''))      patch.notes              = notesVal;
+
+  if (!Object.keys(patch).length) {
+    if (statusEl) { statusEl.textContent = 'No changes.'; }
+    setTimeout(oeeEditClose, 500);
+    return;
+  }
+
+  var username = (currentUser && currentUser.username) || 'unknown';
+  try {
+    await pushObservationCorrectionToOneDrive(username, OEE_EDIT.targetObsId, patch, OEE_EDIT.before);
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = 'Save failed: ' + e.message; statusEl.style.color = 'var(--danger)'; }
+    return;
+  }
+
+  // Optimistic local update so the list reflects the edit immediately. The
+  // Console-side replay rebuilds canonical state from events on next sync.
+  var local = _oeeFindObsById(OEE_EDIT.targetObsId);
+  if (local) Object.keys(patch).forEach(function(k) { local[k] = patch[k]; });
+  renderOeeObsList();
+  oeeEditClose();
+}
+
+async function oeeEditDelete() {
+  if (!OEE_EDIT.targetObsId) { oeeEditClose(); return; }
+  if (!confirm('Delete this observation? This action is recorded as an audit event and can be reversed by an admin.')) return;
+  var statusEl = document.getElementById('oee-edit-status');
+  if (statusEl) { statusEl.textContent = 'Deleting…'; statusEl.style.color = 'var(--text-muted)'; }
+  var username = (currentUser && currentUser.username) || 'unknown';
+  var targetId = OEE_EDIT.targetObsId;
+  try {
+    await pushObservationDeletionToOneDrive(username, targetId);
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = 'Delete failed: ' + e.message; statusEl.style.color = 'var(--danger)'; }
+    return;
+  }
+  // Drop the row locally; Console replay will hide it on next sync as well.
+  OEE.allObs = (OEE.allObs || []).filter(function(o) { return o.obs_id !== targetId; });
+  renderOeeObsList();
+  oeeEditClose();
+}
+
 // OneDrive log file I/O — uses Microsoft Graph with the existing PWA token.
 // Throws when there is no token (caller queues for later flush).
 function obsGraphUrl(username, dateStr) {
@@ -8641,7 +8937,31 @@ function incinReplay(events) {
   var list = Object.keys(byId).map(function(k) { return byId[k]; })
                    .filter(function(s) { return !s.deleted; });
   list.sort(function(a, b) { return (a.start_time < b.start_time) ? 1 : -1; });
-  var open = list.find(function(s) { return !s.stop_time; }) || null;
+
+  // Concurrency rule: only one physical incinerator exists. If two users race
+  // and both manage to write a session_start before either replays, multiple
+  // open (no stop_time) sessions can appear. Collapse them into ONE canonical
+  // session — earliest start_time wins, qty is summed. Subsequent additions /
+  // end / corrections will land against whichever session_id their writer used
+  // and merge naturally on the next replay.
+  var openList = list.filter(function(s) { return !s.stop_time; });
+  var open = null;
+  if (openList.length === 1) {
+    open = openList[0];
+  } else if (openList.length > 1) {
+    openList.sort(function(a, b) { return (a.start_time < b.start_time) ? -1 : 1; });
+    var canonical = openList[0];
+    var mergedQty = 0;
+    openList.forEach(function(s) { mergedQty += Number(s.qty || 0); });
+    canonical.qty = mergedQty;
+    canonical._aggregated_from = openList.slice(1).map(function(s) { return s.session_id; });
+    // Drop the non-canonical duplicates from the visible list so the table
+    // doesn't show phantom rows.
+    var dropIds = {};
+    openList.slice(1).forEach(function(s) { dropIds[s.session_id] = true; });
+    list = list.filter(function(s) { return !dropIds[s.session_id]; });
+    open = canonical;
+  }
   return { sessions: list, byId: byId, openSession: open };
 }
 
@@ -8737,7 +9057,49 @@ function updateIncinTileLamp() {
     txt.classList.toggle('on', on);
     txt.classList.toggle('off', !on);
   }
+  renderIncineratorTimerBar();
 }
+
+// Persistent timer bar on the ER home screen — mirrors the Factory
+// active-timer-bar pattern. Single bar (only one incinerator on board);
+// the 1s clock-tick interval updates #incin-bar-clock in place.
+function renderIncineratorTimerBar() {
+  var stack = document.getElementById('er-active-timers-stack');
+  if (!stack) return;
+  var s = INCIN.openSession;
+  if (!s) { stack.innerHTML = ''; return; }
+  var elapsedSec = Math.floor((Date.now() - new Date(s.start_time).getTime()) / 1000);
+  if (!Number.isFinite(elapsedSec) || elapsedSec < 0) elapsedSec = 0;
+  // 30-min warning threshold matches Factory bars; for incinerator this is informational only.
+  var warn = elapsedSec >= 1800;
+  var tankLabel = incinTankName(s.source_tank);
+  stack.innerHTML =
+    '<div class="active-timer-bar" id="incin-timer-bar" onclick="openIncineratorLog()">' +
+      '<span class="timer-bar-dot' + (warn ? ' warning' : '') + '" style="background:#ff4444"></span>' +
+      '<div class="timer-bar-info">' +
+        '<div class="timer-bar-name">Incinerator running</div>' +
+        '<div class="timer-bar-cat">Source: ' + tankLabel + '</div>' +
+      '</div>' +
+      '<div class="timer-bar-clock' + (warn ? ' warning' : '') + '" id="incin-bar-clock">' +
+        formatElapsed(elapsedSec) +
+      '</div>' +
+    '</div>';
+}
+
+// Wire incinerator bar into the existing 1-second clock tick.
+// formatElapsed is already defined by the factory timer module.
+(function() {
+  setInterval(function() {
+    var s = INCIN.openSession;
+    if (!s) return;
+    var clk = document.getElementById('incin-bar-clock');
+    if (!clk) return;
+    var elapsedSec = Math.floor((Date.now() - new Date(s.start_time).getTime()) / 1000);
+    if (!Number.isFinite(elapsedSec) || elapsedSec < 0) elapsedSec = 0;
+    clk.textContent = formatElapsed(elapsedSec);
+    if (elapsedSec >= 1800) clk.classList.add('warning');
+  }, 1000);
+})();
 
 function renderIncineratorScreen() {
   var btn = document.getElementById('incin-action-btn');
@@ -8812,6 +9174,22 @@ async function incinConfirmStart() {
   var sel = document.getElementById('incin-start-source');
   var tankId = sel ? sel.value : '';
   if (!tankId) { alert('Pick a source tank.'); return; }
+
+  // Pre-flight refresh: the only physical incinerator must not have two open
+  // sessions. Reload from OneDrive first to catch a session another user just
+  // started. (A true sub-poll race can still slip through; incinReplay
+  // aggregates such duplicates on the next refresh — see incinReplay.)
+  try { await loadIncinerator(); } catch (_) {}
+  if (INCIN.openSession) {
+    var who = (INCIN.openSession.actor && INCIN.openSession.actor.name)
+           || (INCIN.openSession.actor && INCIN.openSession.actor.username)
+           || 'another user';
+    incinCloseModal('modal-incin-start');
+    alert('Incinerator already running (started by ' + who + '). Returning to the log screen.');
+    openIncineratorLog();
+    return;
+  }
+
   var session_id = erUuid();
   var nowIso = new Date().toISOString();
   try {
@@ -9090,11 +9468,311 @@ async function pushOrbInboxEntry(session) {
   showScreen = function(id) {
     origShowScreen.apply(this, arguments);
     if (id === 'screen-engine-home') {
-      // Fire-and-forget; lamp will update when load finishes.
+      // Paint timer bar immediately from in-memory state, then refresh from OneDrive.
+      try { renderIncineratorTimerBar(); } catch (_) {}
       try { loadIncinerator(); } catch (_) {}
     }
   };
 })();
+
+// ════════════════════════════════════════════════════════════════
+// ADD OIL — logs a lube-oil top-up from a vessel lube tank (or
+// free-text "Other" source) into a piece of equipment. On commit:
+//   1. If a real lube tank was selected: append a correction-style
+//      entry to fuelstate.json's lube_log[] (quantity negative) AND
+//      update tanks[].volume so other PWA users see the new level
+//      without waiting for the Console replay.
+//   2. Always: append a Rough Log (Engine Room dept.) entry via
+//      erWriteTaskRoughLogEntry — same helper Tasks already uses.
+// Multi-writer note: fuelstate.json is currently RMW'd by both Console
+// and PWA — universal ETag is Phase 9. This mirrors the existing PWA
+// roughlog pattern; the risk surface is unchanged.
+// ════════════════════════════════════════════════════════════════
+
+var ADDOIL = {
+  lubeTanks:  [],   // [{tank_id, abbreviation, name, ...}]
+  components: [],   // [{label, asset_code, item_id, add_oil_tank_id, unit}]
+  loading:    false
+};
+
+var ROUNDSCONFIG_PATH = 'Documents/IDMS/config/roundsconfig.json';
+
+async function addOilLoadLubeTanks() {
+  try {
+    await obsRefreshToken();
+    var resp = await fetch(incinGraphUrl(VESSELCONFIG_PATH), {
+      headers: { 'Authorization': 'Bearer ' + graphToken }
+    });
+    if (!resp.ok) { ADDOIL.lubeTanks = []; return; }
+    var cfg = await resp.json();
+    var tanks = (cfg && cfg.tanks) || [];
+    ADDOIL.lubeTanks = tanks.filter(function(t) { return t && t.category === 'lube_oil'; });
+  } catch (_) { ADDOIL.lubeTanks = []; }
+}
+
+async function addOilLoadComponents() {
+  try {
+    await obsRefreshToken();
+    var resp = await fetch(incinGraphUrl(ROUNDSCONFIG_PATH), {
+      headers: { 'Authorization': 'Bearer ' + graphToken }
+    });
+    if (!resp.ok) { ADDOIL.components = []; return; }
+    var cfg = await resp.json();
+    // Schema: { sections: [{ section_label, items: [{ item_type, item_label, asset_code, add_oil_tank_id, unit, ... }] }] }
+    var sections = (cfg && cfg.sections) || [];
+    var out = [];
+    sections.forEach(function(sec) {
+      var items = (sec && sec.items) || [];
+      items.forEach(function(it) {
+        if (it && it.item_type === 'add_oil') {
+          out.push({
+            label:            (sec.section_label ? sec.section_label + ' — ' : '') + (it.item_label || it.item_id || 'Unnamed'),
+            asset_code:       it.asset_code || null,
+            item_id:          it.item_id || null,
+            add_oil_tank_id:  it.add_oil_tank_id || null,
+            unit:             it.unit || 'USG'
+          });
+        }
+      });
+    });
+    ADDOIL.components = out;
+  } catch (_) { ADDOIL.components = []; }
+}
+
+function addOilDistinctContents() {
+  var seen = {};
+  var out = [];
+  (ADDOIL.lubeTanks || []).forEach(function(t) {
+    var c = (t && t.contents) ? String(t.contents).trim() : '';
+    if (c && !seen[c]) { seen[c] = true; out.push(c); }
+  });
+  out.sort(function(a, b) { return a.localeCompare(b); });
+  return out;
+}
+
+function addOilFillSelect(sel, placeholder, options, valueFn, labelFn) {
+  if (!sel) return;
+  sel.innerHTML = '';
+  var first = document.createElement('option');
+  first.value = ''; first.textContent = placeholder;
+  sel.appendChild(first);
+  (options || []).forEach(function(opt) {
+    var o = document.createElement('option');
+    o.value = valueFn(opt);
+    o.textContent = labelFn(opt);
+    sel.appendChild(o);
+  });
+  var other = document.createElement('option');
+  other.value = '__OTHER__'; other.textContent = 'Other (write-in)…';
+  sel.appendChild(other);
+}
+
+function addOilPopulateDropdowns() {
+  var contentsSel = document.getElementById('addoil-contents');
+  var destSel     = document.getElementById('addoil-dest');
+  var fromSel     = document.getElementById('addoil-from');
+
+  var contents = addOilDistinctContents();
+  if (contents.length) {
+    addOilFillSelect(contentsSel, '— select contents —', contents,
+      function(c) { return c; }, function(c) { return c; });
+  } else if (contentsSel) {
+    contentsSel.innerHTML = '<option value="">(no lube-oil contents in vesselconfig)</option>'
+                          + '<option value="__OTHER__">Other (write-in)…</option>';
+  }
+
+  if (ADDOIL.lubeTanks.length) {
+    addOilFillSelect(fromSel, '— select tank —', ADDOIL.lubeTanks,
+      function(t) { return t.tank_id; },
+      function(t) { return t.name || t.abbreviation || t.tank_id; });
+  } else if (fromSel) {
+    fromSel.innerHTML = '<option value="">(no lube-oil tanks in vesselconfig)</option>'
+                      + '<option value="__OTHER__">Other (write-in)…</option>';
+  }
+
+  if (destSel) {
+    destSel.innerHTML = '';
+    if (!ADDOIL.components.length) {
+      destSel.innerHTML = '<option value="">(no add-oil components in roundsconfig)</option>';
+    } else {
+      var firstD = document.createElement('option');
+      firstD.value = ''; firstD.textContent = '— select equipment —';
+      destSel.appendChild(firstD);
+      ADDOIL.components.forEach(function(c, idx) {
+        var o = document.createElement('option');
+        o.value = String(idx);
+        o.textContent = c.label;
+        destSel.appendChild(o);
+      });
+    }
+  }
+  addOilToggleOthers();
+}
+
+function addOilToggleOthers() {
+  var cSel = document.getElementById('addoil-contents');
+  var fSel = document.getElementById('addoil-from');
+  var cWrap = document.getElementById('addoil-contents-other-wrap');
+  var fWrap = document.getElementById('addoil-from-other-wrap');
+  if (cSel && cWrap) cWrap.style.display = (cSel.value === '__OTHER__') ? '' : 'none';
+  if (fSel && fWrap) fWrap.style.display = (fSel.value === '__OTHER__') ? '' : 'none';
+}
+
+async function openAddOil() {
+  if (ADDOIL.loading) return;
+  ADDOIL.loading = true;
+  try {
+    document.getElementById('addoil-qty').value = '';
+    document.getElementById('addoil-contents-other-text').value = '';
+    document.getElementById('addoil-from-other-text').value     = '';
+    // Show modal immediately with placeholder while we load.
+    document.getElementById('modal-addoil-form').style.display = 'flex';
+    await Promise.all([addOilLoadLubeTanks(), addOilLoadComponents()]);
+    addOilPopulateDropdowns();
+    var cSel = document.getElementById('addoil-contents');
+    var fSel = document.getElementById('addoil-from');
+    if (cSel) cSel.onchange = addOilToggleOthers;
+    if (fSel) fSel.onchange = addOilToggleOthers;
+  } finally { ADDOIL.loading = false; }
+}
+
+function addOilCloseForm() {
+  document.getElementById('modal-addoil-form').style.display = 'none';
+}
+function addOilCloseConfirm() {
+  document.getElementById('modal-addoil-confirm').style.display = 'none';
+}
+
+function addOilTankFullName(tankId) {
+  var t = (ADDOIL.lubeTanks || []).find(function(x) { return x.tank_id === tankId; });
+  if (t) return t.name || t.abbreviation || tankId;
+  return tankId || '—';
+}
+
+function addOilReadForm() {
+  var contentsVal = (document.getElementById('addoil-contents') || {}).value || '';
+  var fromVal     = (document.getElementById('addoil-from')     || {}).value || '';
+  var dstIdx      = (document.getElementById('addoil-dest')     || {}).value || '';
+  var qty         = Number((document.getElementById('addoil-qty') || {}).value || 0);
+  var contentsOther = ((document.getElementById('addoil-contents-other-text') || {}).value || '').trim();
+  var fromOther     = ((document.getElementById('addoil-from-other-text')     || {}).value || '').trim();
+  var dst = (dstIdx === '' ? null : ADDOIL.components[Number(dstIdx)]) || null;
+
+  return {
+    contentsKind:  (contentsVal === '__OTHER__') ? 'other' : (contentsVal ? 'list' : ''),
+    contentsValue: (contentsVal && contentsVal !== '__OTHER__') ? contentsVal : contentsOther,
+    fromKind:      (fromVal === '__OTHER__') ? 'other' : (fromVal ? 'tank' : ''),
+    fromTankId:    (fromVal && fromVal !== '__OTHER__') ? fromVal : null,
+    fromText:      fromOther,
+    dest:          dst,
+    qty:           qty
+  };
+}
+
+function addOilOpenConfirm() {
+  var f = addOilReadForm();
+  if (!f.contentsKind) { alert('Please select contents.'); return; }
+  if (f.contentsKind === 'other' && !f.contentsValue) { alert('Please describe the contents.'); return; }
+  if (!f.dest) { alert('Please select an equipment destination.'); return; }
+  if (!f.fromKind) { alert('Please select a source tank.'); return; }
+  if (f.fromKind === 'other' && !f.fromText) { alert('Please describe the source.'); return; }
+  if (!(f.qty > 0)) { alert('Please enter a quantity greater than 0.'); return; }
+
+  var fromLabel = (f.fromKind === 'tank') ? addOilTankFullName(f.fromTankId) : f.fromText;
+  var msg = 'Add ' + f.contentsValue + ' to ' + f.dest.label
+          + ' from ' + fromLabel + ', qty. ' + f.qty.toFixed(2) + ' USG';
+  document.getElementById('addoil-confirm-text').textContent = msg;
+  document.getElementById('modal-addoil-confirm').style.display = 'flex';
+}
+
+// ── Tank deduction: append a correction entry to lube_log[] and update tanks[].volume.
+async function addOilDeductFromTank(tankId, qty) {
+  await obsRefreshToken();
+  var resp = await fetch(incinGraphUrl(FUELSTATE_PATH), {
+    headers: { 'Authorization': 'Bearer ' + graphToken }
+  });
+  var data;
+  if (resp.ok) data = await resp.json();
+  else data = { schema_version: 2, tanks: [], lube_log: [], waste_log: [] };
+  if (!Array.isArray(data.lube_log)) data.lube_log = [];
+  if (!Array.isArray(data.tanks))    data.tanks    = [];
+
+  // Update the running snapshot volume so other PWA readers see the new level immediately.
+  var prevVol = null;
+  var t = data.tanks.find(function(x) { return x && x.tank_id === tankId; });
+  if (t) {
+    prevVol = Number(t.volume);
+    var newVol = Math.max(0, prevVol - Number(qty));
+    t.volume = Number(newVol.toFixed(2));
+  }
+  var qtyRemaining = (t && Number.isFinite(Number(t.volume))) ? Number(t.volume) : null;
+
+  var actorName = (currentUser && (currentUser.name || currentUser.username)) || '';
+  data.lube_log.push({
+    id:            Date.now(),
+    timestamp:     new Date().toISOString(),
+    from_tank_id:  tankId,
+    to_tank_id:    null,
+    quantity:      -Math.abs(Number(qty)),
+    to_type:       'add_oil',
+    qty_remaining: qtyRemaining,
+    correction_by: actorName
+  });
+  data.lube_log.sort(function(a, b) {
+    return (a.timestamp || '').localeCompare(b.timestamp || '');
+  });
+
+  await fetch(incinGraphUrl(FUELSTATE_PATH), {
+    method:  'PUT',
+    headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+    body:    JSON.stringify(data, null, 2)
+  });
+}
+
+async function addOilCommit() {
+  var f = addOilReadForm();
+  if (!f.dest || !(f.qty > 0)) { addOilCloseConfirm(); return; }
+  var btn = document.querySelector('#modal-addoil-confirm .modal-btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  var fromLabel = (f.fromKind === 'tank') ? addOilTankFullName(f.fromTankId) : f.fromText;
+  var body = 'Added ' + f.qty.toFixed(2) + ' USG ' + f.contentsValue
+           + ' to ' + f.dest.label
+           + (f.dest.asset_code ? ' (' + f.dest.asset_code + ')' : '')
+           + ' from ' + fromLabel;
+
+  try {
+    if (f.fromKind === 'tank') {
+      try { await addOilDeductFromTank(f.fromTankId, f.qty); }
+      catch (e) { console.error('[addOil] tank deduction failed', e); alert('Tank deduction failed — rough log NOT written. Try again.'); throw e; }
+    }
+    var nowIso = new Date().toISOString();
+    var d = new Date(nowIso);
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    var entry = {
+      id:           erUuid(),
+      timestamp:    nowIso,
+      date:         d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
+      time_label:   pad(d.getHours()) + ':' + pad(d.getMinutes()),
+      department:   'engine',
+      source:       'pwa',
+      category:     'Oil Transfer',
+      user:         (currentUser && currentUser.username) || '',
+      display_name: (currentUser && (currentUser.name || currentUser.username)) || '',
+      body:         body,
+      equipment_id: f.dest.asset_code || null,
+      ref_id:       null
+    };
+    await erWriteTaskRoughLogEntry(entry);
+
+    addOilCloseConfirm();
+    addOilCloseForm();
+  } catch (_) {
+    // already alerted on the deduction-failure branch; nothing further
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'OK'; }
+  }
+}
 
 </script>
 <script src="roundsentry.js"></script>
