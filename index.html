@@ -9510,6 +9510,48 @@ async function addOilLoadLubeTanks() {
   } catch (_) { ADDOIL.lubeTanks = []; }
 }
 
+// Build the visible dropdown label for one destination. Prefers the Equipment-
+// Setup name (looked up from ER_ASSETS_CACHE by asset_code) over the rounds-
+// config item label — user explicitly asked for "601.001" to render as
+// "Main Engine". Falls back to the rounds-config label when the asset isn't
+// in the assets.csv yet (e.g. cache cold or asset newly added).
+function addOilFormatDestLabel(assetCode, rawLabel, prefix, kind) {
+  var equipName = null;
+  if (assetCode && Array.isArray(ER_ASSETS_CACHE)) {
+    var hit = ER_ASSETS_CACHE.find(function(a) { return a && a.code === assetCode; });
+    if (hit && hit.name) equipName = hit.name;
+  }
+  // Equipment name wins; rounds-config label is shown after it for context
+  // when both exist and differ (e.g. equipment is "Main Engine" but the
+  // rounds item is "Main Engine ME L.O. Tk." — both useful to the operator).
+  var head;
+  if (equipName && rawLabel && equipName !== rawLabel) {
+    head = equipName + ' — ' + rawLabel;
+  } else {
+    head = equipName || rawLabel || 'Unnamed';
+  }
+  var label = (prefix ? prefix + ' · ' : '') + head;
+  if (assetCode) label += ' (' + assetCode + ')';
+  if (kind === 'tk_percent') label += ' [tank]';
+  return label;
+}
+
+// Re-emit .label on every component using the now-loaded ER_ASSETS_CACHE.
+// Called from openAddOil after the assets fetch resolves, so the initial
+// dropdown render gets the equipment-setup names. Safe to call multiple times.
+function addOilRelabelComponentsFromAssets() {
+  (ADDOIL.components || []).forEach(function(c) {
+    c.label = addOilFormatDestLabel(c.asset_code, c._rawLabel, c._labelPrefix, c.source_kind);
+  });
+  // Re-sort alphabetically by the new labels and re-render the dropdown if
+  // it's currently open.
+  ADDOIL.components.sort(function(a, b) { return a.label.localeCompare(b.label); });
+  var destSel = document.getElementById('addoil-dest');
+  if (destSel && document.getElementById('modal-addoil-form').style.display !== 'none') {
+    addOilPopulateDropdowns();
+  }
+}
+
 async function addOilLoadComponents() {
   try {
     await obsRefreshToken();
@@ -9518,23 +9560,81 @@ async function addOilLoadComponents() {
     });
     if (!resp.ok) { ADDOIL.components = []; return; }
     var cfg = await resp.json();
-    // Schema: { sections: [{ section_label, items: [{ item_type, item_label, asset_code, add_oil_tank_id, unit, ... }] }] }
-    var sections = (cfg && cfg.sections) || [];
+
+    // roundsconfig.json shape (per roundsentry.js reExpandGroups):
+    //   cfg.sections[]            top-level sections; items may be type='group' refs
+    //     .items[].type            add_oil | tk_percent | numeric | group | heading | ...
+    //     .items[].label           display label (NOT 'item_label' — that's the submit payload's rename)
+    //     .items[].asset_code, .add_oil_tank_id, .unit, .item_id
+    //   cfg.groups[]              reusable group templates referenced by group-type items
+    //     .group_id, .label
+    //     .sections[].section_id, .label
+    //       .items[]               <-- Main Engine / Aux Engine items typically live HERE
+    //
+    // Destinations include BOTH:
+    //   - type === 'add_oil'     dedicated add-oil entries
+    //   - type === 'tk_percent'  tank-level inspections (per user request: any
+    //                            item in the Tank Level Inspection table is a
+    //                            real piece of equipment that can take oil —
+    //                            e.g. asset_code 601.001 = Main Engine)
+    // De-duped by item_id+asset_code so the same physical tank doesn't render
+    // twice if it appears via both a top-level section and a group template.
     var out = [];
-    sections.forEach(function(sec) {
-      var items = (sec && sec.items) || [];
-      items.forEach(function(it) {
-        if (it && it.item_type === 'add_oil') {
-          out.push({
-            label:            (sec.section_label ? sec.section_label + ' — ' : '') + (it.item_label || it.item_id || 'Unnamed'),
-            asset_code:       it.asset_code || null,
-            item_id:          it.item_id || null,
-            add_oil_tank_id:  it.add_oil_tank_id || null,
-            unit:             it.unit || 'USG'
-          });
-        }
+    var seen = {};
+
+    function pushDest(it, labelPrefix, kind) {
+      if (!it) return;
+      var rawLabel = it.label || it.item_id || 'Unnamed';
+
+      var key = (it.item_id || '') + '|' + (it.asset_code || '') + '|' + kind;
+      if (seen[key]) return;
+      seen[key] = true;
+
+      // Stash the raw label/prefix on the component so addOilRelabelComponentsFromAssets
+      // can rebuild .label after the equipment assets cache is hot.
+      out.push({
+        label:           addOilFormatDestLabel(it.asset_code || null, rawLabel, labelPrefix, kind),
+        _rawLabel:       rawLabel,
+        _labelPrefix:    labelPrefix || '',
+        asset_code:      it.asset_code || null,
+        item_id:         it.item_id || null,
+        add_oil_tank_id: it.add_oil_tank_id || it.tk_percent_tank_id || null,
+        unit:            it.unit || 'USG',
+        source_kind:     kind
+      });
+    }
+
+    function isDestType(t) {
+      return t === 'add_oil' || t === 'tk_percent';
+    }
+
+    // (1) Top-level section items.
+    (cfg.sections || []).forEach(function(sec) {
+      var prefix = sec && (sec.label || sec.section_label) || '';
+      (sec && sec.items || []).forEach(function(it) {
+        if (it && isDestType(it.type)) pushDest(it, prefix, it.type);
       });
     });
+
+    // (2) Items nested inside group templates. The same group can be referenced
+    // from multiple rounds, so we emit one dropdown entry per (group → section)
+    // pair regardless of how many rounds reference it — the user picks which
+    // physical asset to top up, not which round.
+    (cfg.groups || []).forEach(function(grp) {
+      var grpLabel = grp && (grp.label || grp.group_id) || '';
+      (grp && grp.sections || []).forEach(function(secInGrp) {
+        var secLabel = secInGrp && (secInGrp.label || secInGrp.section_label || secInGrp.section_id) || '';
+        var prefix = grpLabel && secLabel ? grpLabel + ' · ' + secLabel
+                   : (grpLabel || secLabel);
+        (secInGrp && secInGrp.items || []).forEach(function(it) {
+          if (it && isDestType(it.type)) pushDest(it, prefix, it.type);
+        });
+      });
+    });
+
+    // Sort alphabetically by visible label so the dropdown is predictable.
+    out.sort(function(a, b) { return a.label.localeCompare(b.label); });
+
     ADDOIL.components = out;
   } catch (_) { ADDOIL.components = []; }
 }
@@ -9627,7 +9727,18 @@ async function openAddOil() {
     document.getElementById('addoil-from-other-text').value     = '';
     // Show modal immediately with placeholder while we load.
     document.getElementById('modal-addoil-form').style.display = 'flex';
-    await Promise.all([addOilLoadLubeTanks(), addOilLoadComponents()]);
+    // Load the assets CSV in parallel — its [{code, name}] entries let
+    // addOilLoadComponents resolve asset_code (e.g. '601.001') to the
+    // canonical Equipment-Setup display name ('Main Engine') instead of
+    // showing the rounds-config item label.
+    await Promise.all([
+      addOilLoadLubeTanks(),
+      addOilLoadComponents(),
+      (typeof erLoadAssets === 'function' ? erLoadAssets() : Promise.resolve([]))
+    ]);
+    // Re-label components now that the assets cache is hot. Components were
+    // built without name resolution; rebuild labels in place using the cache.
+    addOilRelabelComponentsFromAssets();
     addOilPopulateDropdowns();
     var cSel = document.getElementById('addoil-contents');
     var fSel = document.getElementById('addoil-from');
