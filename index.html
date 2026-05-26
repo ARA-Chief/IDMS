@@ -343,6 +343,32 @@
     .er-hub-tile-icon { opacity: 0.8; }
     .er-hub-tile-label { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; }
     .er-hub-tile-sub { font-size: 11px; color: var(--text-muted); text-align: center; line-height: 1.4; }
+    /* Incinerator lamp on ER hub tile */
+    .incin-lamp { width: 28px; height: 28px; border-radius: 50%; background: #3a0d0d; border: 2px solid #5a1a1a; box-shadow: inset 0 -4px 6px rgba(0,0,0,0.5); transition: background 0.2s, box-shadow 0.2s, border-color 0.2s; }
+    .incin-lamp.on { background: #ff2222; border-color: #ff5555; box-shadow: 0 0 14px 2px rgba(255,40,40,0.85), inset 0 -2px 4px rgba(140,0,0,0.6); }
+    .incin-status-text { font-weight: 800; letter-spacing: 0.16em; }
+    .incin-status-text.on  { color: #ff5555; }
+    .incin-status-text.off { color: var(--text-muted); }
+    /* Incinerator log screen */
+    .incin-action-btn { display: block; width: calc(100% - 24px); margin: 16px 12px; padding: 22px; font-size: 22px; font-weight: 800; letter-spacing: 0.12em; border-radius: var(--radius-lg); border: none; cursor: pointer; }
+    .incin-action-btn.start { background: #16a34a; color: #fff; }
+    .incin-action-btn.stop  { background: #dc2626; color: #fff; }
+    .incin-action-btn:active { transform: scale(0.98); }
+    .incin-table-wrap { padding: 0 12px 16px; }
+    .incin-table-head { display: flex; justify-content: space-between; align-items: center; margin: 4px 4px 8px; }
+    .incin-table-head h3 { margin: 0; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+    .incin-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .incin-table th { text-align: left; padding: 8px 6px; color: var(--text-muted); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid var(--border); font-weight: 600; }
+    .incin-table td { padding: 10px 6px; border-bottom: 1px solid var(--border); color: var(--text-primary); vertical-align: middle; }
+    .incin-table tr.open td { background: rgba(220,38,38,0.08); }
+    .incin-table .row-actions { white-space: nowrap; }
+    .incin-table .row-actions button { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; margin-left: 4px; }
+    .incin-table .row-actions button.danger { color: var(--danger); border-color: rgba(220,38,38,0.4); }
+    .incin-empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+    .incin-field { display: block; margin-bottom: 14px; text-align: left; }
+    .incin-field label { display: block; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+    .incin-field input, .incin-field select { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; color: var(--text-primary); font-size: 14px; outline: none; }
+    .incin-ret-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
     /* ── ENGINE ROOM TASKS ── */
     .er-task-stat { flex: 1; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 8px; text-align: center; }
     .er-task-stat-num { font-size: 22px; font-weight: 700; color: var(--text-primary); line-height: 1; }
@@ -1430,6 +1456,13 @@
         <div class="er-hub-tile-label">Tasks</div>
         <div class="er-hub-tile-sub">Maintenance &amp; checks</div>
       </button>
+      <button class="er-hub-tile" onclick="openIncineratorLog()">
+        <div class="er-hub-tile-icon">
+          <span class="incin-lamp" id="incin-tile-lamp" aria-hidden="true"></span>
+        </div>
+        <div class="er-hub-tile-label">Incinerator</div>
+        <div class="er-hub-tile-sub"><span class="incin-status-text off" id="incin-tile-status-text">OFF</span></div>
+      </button>
       <button class="er-hub-tile" onclick="openEngineProfile()">
         <div class="er-hub-tile-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -1443,6 +1476,116 @@
     </div>
   </div>
 
+  <!-- ── ENGINE ROOM: INCINERATOR LOG ── -->
+  <div class="screen" id="screen-incinerator-log">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen('screen-engine-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>Incinerator</h2>
+      <button class="icon-btn" onclick="loadIncinerator()" aria-label="Refresh" title="Refresh">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M15 9a6 6 0 11-1.5-3.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <path d="M15 3v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+    <button id="incin-action-btn" class="incin-action-btn start" onclick="incinPrimaryAction()">START</button>
+    <div class="incin-table-wrap">
+      <div class="incin-table-head">
+        <h3>Sessions</h3>
+        <button class="icon-btn" onclick="incinOpenManualAdd()" aria-label="Add row" title="Add row" style="font-size:20px;font-weight:400;line-height:1">+</button>
+      </div>
+      <table class="incin-table">
+        <thead>
+          <tr><th>Start</th><th>Stop</th><th>Source</th><th style="text-align:right">Qty</th><th></th></tr>
+        </thead>
+        <tbody id="incin-table-body"></tbody>
+      </table>
+      <div id="incin-empty" class="incin-empty" style="display:none">No sessions yet.</div>
+    </div>
+  </div>
+
+  <!-- ── INCINERATOR: START MODAL ── -->
+  <div class="modal-overlay" id="modal-incin-start" style="display:none">
+    <div class="modal-card" style="text-align:left">
+      <h3 class="modal-title" style="text-align:center;margin-bottom:4px">Begin Incinerator Operation</h3>
+      <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px">Select source tank to start the session.</p>
+      <div class="incin-field">
+        <label>Source Tank</label>
+        <select id="incin-start-source"></select>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary" onclick="incinCloseModal('modal-incin-start')">Cancel</button>
+        <button class="modal-btn modal-btn-primary" onclick="incinConfirmStart()">Begin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── INCINERATOR: STOP MODAL ── -->
+  <div class="modal-overlay" id="modal-incin-stop" style="display:none">
+    <div class="modal-card" style="text-align:left">
+      <h3 class="modal-title" style="text-align:center;margin-bottom:4px">Stop Incinerator Operation</h3>
+      <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px">Confirm quantity of oil incinerated.</p>
+      <div class="incin-field">
+        <label>Quantity Incinerated (USG)</label>
+        <input id="incin-stop-qty" type="number" step="0.1" min="0" inputmode="decimal">
+      </div>
+      <div class="incin-field" style="margin-bottom:6px">
+        <label>Retained (USG, auto from tank level)</label>
+        <input id="incin-stop-retained" type="number" step="0.1" min="0" inputmode="decimal">
+        <div class="incin-ret-hint" id="incin-stop-retained-hint"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary" onclick="incinCloseModal('modal-incin-stop')">Cancel</button>
+        <button class="modal-btn modal-btn-primary" onclick="incinConfirmStop()">Confirm Stop</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── INCINERATOR: ADD-TO-SESSION MODAL ── -->
+  <div class="modal-overlay" id="modal-incin-add-qty" style="display:none">
+    <div class="modal-card" style="text-align:left">
+      <h3 class="modal-title" style="text-align:center;margin-bottom:4px">Add to Active Session</h3>
+      <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px" id="incin-add-qty-current"></p>
+      <div class="incin-field">
+        <label>Add Qty (USG)</label>
+        <input id="incin-add-qty-input" type="number" step="0.1" min="0" inputmode="decimal">
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary" onclick="incinCloseModal('modal-incin-add-qty')">Cancel</button>
+        <button class="modal-btn modal-btn-primary" onclick="incinConfirmAddQty()">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── INCINERATOR: MANUAL ROW MODAL (add / edit) ── -->
+  <div class="modal-overlay" id="modal-incin-manual" style="display:none">
+    <div class="modal-card" style="text-align:left">
+      <h3 class="modal-title" id="incin-manual-title" style="text-align:center;margin-bottom:20px">Add Session</h3>
+      <div class="incin-field">
+        <label>Start Time</label>
+        <input id="incin-manual-start" type="datetime-local">
+      </div>
+      <div class="incin-field">
+        <label>Stop Time (leave blank if still running)</label>
+        <input id="incin-manual-stop" type="datetime-local">
+      </div>
+      <div class="incin-field">
+        <label>Source Tank</label>
+        <select id="incin-manual-source"></select>
+      </div>
+      <div class="incin-field">
+        <label>Quantity (USG)</label>
+        <input id="incin-manual-qty" type="number" step="0.1" min="0" inputmode="decimal">
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-secondary" onclick="incinCloseModal('modal-incin-manual')">Cancel</button>
+        <button class="modal-btn modal-btn-primary" onclick="incinConfirmManual()">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── ENGINE ROOM: ROUGH LOG ── -->
   <div class="screen" id="screen-engine-roughlog"></div>
 
@@ -1452,9 +1595,9 @@
       <button class="back-btn" onclick="showScreen(erTasksBackScreen || 'screen-engine-home')">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
-      <h2>Tasks &amp; Maintenance</h2>
+      <h2>Maintenance &amp; Tasks</h2>
       <button class="icon-btn" onclick="openErTaskCreateModal()" aria-label="New Task" title="New Task" style="font-size:20px;font-weight:400;line-height:1">+</button>
-      <button class="icon-btn" onclick="loadEngineTasks()" aria-label="Refresh">
+      <button class="icon-btn" onclick="refreshEngineTasks()" aria-label="Refresh">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <path d="M15 9a6 6 0 11-1.5-3.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
           <path d="M15 4v4h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1464,7 +1607,7 @@
     <div class="er-task-filterbar">
       <div class="er-task-filter">
         <label>Status</label>
-        <select id="er-task-filter-status" onchange="renderEngineTasksList()">
+        <select id="er-task-filter-status" onchange="onErTaskFilterStatusChange()">
           <option value="active" selected>All Active</option>
           <option value="open">Open</option>
           <option value="investigating">Investigating</option>
@@ -1472,6 +1615,7 @@
           <option value="waiting_opportunity">Waiting Opportunity</option>
           <option value="shipyard">Shipyard</option>
           <option value="other">Other</option>
+          <option value="closed">Closed (90 days)</option>
         </select>
       </div>
       <div class="er-task-filter">
@@ -1590,15 +1734,33 @@
         </div>
       </div>
 
-      <div class="er-form-row" style="margin-top:10px">
-        <label class="er-form-label">Department <span style="color:var(--danger)">*</span></label>
-        <select id="er-create-dept" class="er-form-input">
-          <option value="">— Select department —</option>
-          <option value="engine">Engine Room</option>
-          <option value="factory">Factory</option>
-          <option value="deck">Deck</option>
-          <option value="vessel">Vessel / General</option>
-        </select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+        <div class="er-form-row" style="margin-bottom:0">
+          <label class="er-form-label">Department <span style="color:var(--danger)">*</span></label>
+          <select id="er-create-dept" class="er-form-input">
+            <option value="">— Select department —</option>
+            <option value="engine">Engine Room</option>
+            <option value="factory">Factory</option>
+            <option value="deck">Deck</option>
+            <option value="vessel">Vessel / General</option>
+          </select>
+        </div>
+        <!-- Task Status — mirrors the Console Update modal so a field user
+             can create an already-closed task as a service report without
+             a separate input form. Default 'open' preserves prior behaviour. -->
+        <div class="er-form-row" style="margin-bottom:0">
+          <label class="er-form-label">Task Status</label>
+          <select id="er-create-status" class="er-form-input">
+            <option value="open" selected>Open</option>
+            <option value="investigating">Investigating</option>
+            <option value="waiting_parts">Waiting Parts</option>
+            <option value="waiting_opportunity">Waiting Opportunity</option>
+            <option value="shipyard">Shipyard</option>
+            <option value="other">Other</option>
+            <option value="completed">Close (Completed)</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
@@ -3646,7 +3808,14 @@ var ER_TASKS_STATE = {
   loaded:          false,
   editing:         null, // task_id currently in modal
   eqCfg:           null, // cached equipmentconfig.json (for code_range calc on create)
-  expanded:        null  // task_id currently expanded in the list
+  expanded:        null, // task_id currently expanded in the list
+  // Closed-task records (separate file pool — data/tasks/records/{yyyy}/).
+  // Lazily loaded the first time the user selects the "Closed" status filter
+  // option. Refresh button re-fetches.
+  closedRecords:        [],
+  closedRecordsLoaded:  false,
+  closedRecordsLoading: false,
+  closedExpanded:       null // record_id currently expanded
 };
 
 function deptKeyForCurrentUser() {
@@ -3657,7 +3826,7 @@ function deptKeyForCurrentUser() {
   return '';
 }
 
-// Back-screen for the shared Tasks & Maintenance screen. Set by the hub
+// Back-screen for the shared Maintenance & Tasks screen. Set by the hub
 // wrappers (Engine Room / Factory) so the back button returns to the right hub.
 var erTasksBackScreen = 'screen-engine-home';
 
@@ -3677,7 +3846,7 @@ function openEngineTasks(backScreen) {
   loadEngineTasks();
 }
 
-// Factory hub wrappers — reuse the same Tasks & Maintenance and Rough Log
+// Factory hub wrappers — reuse the same Maintenance & Tasks and Rough Log
 // screens. The screens already filter by `deptKeyForCurrentUser()`, which
 // reflects the active department, so a Factory user sees Factory tasks /
 // log entries by default and new entries are tagged 'factory'.
@@ -4597,12 +4766,197 @@ async function loadEngineTasks() {
   }
 }
 
+// Refresh button — re-fetch whichever pool is currently in view. When the
+// user is on "Closed", that's the records pool; otherwise it's the active
+// task definitions.
+function refreshEngineTasks() {
+  var statusSel = document.getElementById('er-task-filter-status');
+  if (statusSel && statusSel.value === 'closed') {
+    ER_TASKS_STATE.closedRecordsLoaded = false;
+    loadEngineClosedRecords().finally(function() { renderEngineTasksList(); });
+    renderEngineTasksList();
+  } else {
+    loadEngineTasks();
+  }
+}
+
+// Triggered when the user changes the Status filter. Closed-tasks live in a
+// separate file pool (data/tasks/records/) — lazy-load them the first time
+// "Closed" is picked, then re-render. Other statuses just re-render from
+// already-loaded definitions.
+function onErTaskFilterStatusChange() {
+  var sel = document.getElementById('er-task-filter-status');
+  var val = sel ? sel.value : 'active';
+  if (val === 'closed' && !ER_TASKS_STATE.closedRecordsLoaded && !ER_TASKS_STATE.closedRecordsLoading) {
+    loadEngineClosedRecords().finally(function() { renderEngineTasksList(); });
+  }
+  renderEngineTasksList();
+}
+
+// Fetch every task records file under data/tasks/records/{yyyy}/ for the
+// year range covering the past 90 days (so a switch-over near Jan 1 doesn't
+// drop December). Flatten records, sort by completed_at desc, keep only the
+// past 90 days. Mirrors the Console's default window.
+async function loadEngineClosedRecords() {
+  if (!graphToken) return;
+  ER_TASKS_STATE.closedRecordsLoading = true;
+  try {
+    var now      = new Date();
+    var thisYear = now.getFullYear();
+    var minDate  = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    var minIso   = minDate.toISOString();
+    // Years that overlap the past 90 days. Usually [thisYear]; near Jan 1
+    // adds [thisYear - 1] so we don't silently miss December tasks.
+    var years    = (minDate.getFullYear() === thisYear) ? [thisYear] : [thisYear, minDate.getFullYear()];
+
+    var all = [];
+    for (var yi = 0; yi < years.length; yi++) {
+      var yr = years[yi];
+      var listUrl = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/records/'
+                  + yr + ':/children?$select=id,name';
+      var listResp;
+      try {
+        listResp = await fetch(listUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
+      } catch (e) { continue; }
+      if (!listResp || (!listResp.ok && listResp.status !== 404)) continue;
+      if (listResp.status === 404) continue;
+      var listData = await listResp.json();
+      var files = (listData.value || []).filter(function(f) {
+        return f.name && f.name.slice(-5) === '.json';
+      });
+      for (var fi = 0; fi < files.length; fi++) {
+        var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/records/'
+                + yr + '/' + encodeURIComponent(files[fi].name) + ':/content';
+        try {
+          var r = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+          if (!r.ok) continue;
+          var data = await r.json();
+          if (!data || !Array.isArray(data.records)) continue;
+          for (var ri = 0; ri < data.records.length; ri++) all.push(data.records[ri]);
+        } catch (e) { /* skip file */ }
+      }
+    }
+
+    // Keep past 90 days only, newest first.
+    all = all.filter(function(rec) { return (rec.completed_at || '') >= minIso; });
+    all.sort(function(a, b) { return (b.completed_at || '').localeCompare(a.completed_at || ''); });
+
+    ER_TASKS_STATE.closedRecords = all;
+    ER_TASKS_STATE.closedRecordsLoaded = true;
+  } catch (err) {
+    console.warn('[ER Tasks] Closed records load failed:', err);
+    ER_TASKS_STATE.closedRecords = [];
+    // Leave loaded = false so the user can retry by re-selecting "Closed" or
+    // hitting Refresh.
+  } finally {
+    ER_TASKS_STATE.closedRecordsLoading = false;
+  }
+}
+
+// Render the closed-tasks list. Records have a different schema than active
+// task definitions (completed_at, closed_by_*, description_work, close_notes,
+// equipment_ids as JSON string). Roles/department filters still apply.
+function renderEngineClosedRecordsList(listEl, countEl) {
+  var roleFilter = (document.getElementById('er-task-filter-role') || {}).value || '';
+
+  if (ER_TASKS_STATE.closedRecordsLoading) {
+    listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:14px">Loading closed tasks…</div>';
+    if (countEl) countEl.textContent = '—';
+    return;
+  }
+
+  var records = ER_TASKS_STATE.closedRecords.filter(function(r) {
+    if (roleFilter && r.role && r.role !== roleFilter) return false;
+    return true;
+  });
+
+  if (countEl) {
+    countEl.textContent = records.length + (records.length === 1 ? ' closed task' : ' closed tasks')
+                        + ' (past 90 days)';
+  }
+
+  if (records.length === 0) {
+    var allCount = ER_TASKS_STATE.closedRecords.length;
+    var hint     = allCount > 0
+      ? 'No closed tasks match the role filter.'
+      : 'No tasks have been closed in the past 90 days.';
+    listEl.innerHTML = '<div style="padding:40px 16px;text-align:center;color:var(--text-muted);font-size:13px">' + hint + '</div>';
+    return;
+  }
+
+  var html = '';
+  records.forEach(function(r) {
+    var equipIds = [];
+    try { equipIds = typeof r.equipment_ids === 'string' ? JSON.parse(r.equipment_ids) : (r.equipment_ids || []); } catch(e) { equipIds = []; }
+    var equipStr   = equipIds.length ? equipIds.join(', ') : '';
+    var dateStr    = r.completed_at ? r.completed_at.slice(0, 10) : '';
+    var closedBy   = r.closed_by_name || r.completed_by_name || r.closed_by_user || r.completed_by_user || '';
+    var isExpanded = ER_TASKS_STATE.closedExpanded === r.record_id;
+
+    html += '<div class="er-task-row' + (isExpanded ? ' er-task-row-expanded' : '')
+      +    '" onclick="toggleErClosedExpand(\'' + erEscapeAttr(r.record_id) + '\')">'
+      + '<div class="er-task-row-body">'
+      +   '<div class="er-task-row-title">' + erEscapeHtml(r.title || '(untitled)') + '</div>'
+      +   '<div class="er-task-row-meta">'
+      +     (dateStr ? '<span>' + erEscapeHtml(dateStr) + '</span>' : '')
+      +     (r.priority ? '<span>' + erEscapeHtml(r.priority) + '</span>' : '')
+      +     (r.category ? '<span class="er-task-cat-pill">' + erEscapeHtml(r.category) + '</span>' : '')
+      +     (equipStr ? '<span class="er-task-row-equip">' + erEscapeHtml(equipStr) + '</span>' : '')
+      +     (closedBy ? '<span>by ' + erEscapeHtml(closedBy) + '</span>' : '')
+      +   '</div>'
+      + '</div>'
+      + '<span class="er-task-status-pill er-task-status-completed">Closed</span>'
+      + '</div>';
+
+    if (isExpanded) {
+      html += '<div class="er-task-detail" onclick="event.stopPropagation()">';
+      if (r.description_work) {
+        html += '<div class="er-task-detail-section">Work done</div>'
+              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.description_work) + '</div>';
+      }
+      if (r.close_notes) {
+        html += '<div class="er-task-detail-section">Notes</div>'
+              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.close_notes) + '</div>';
+      }
+      // Compact metadata grid — same look as active-task detail panel.
+      var meta = [];
+      if (r.failure_mode)       meta.push(['Failure mode', r.failure_mode]);
+      if (r.failure_mechanism)  meta.push(['Failure mechanism', r.failure_mechanism]);
+      if (r.detection_method)   meta.push(['Detection method', r.detection_method]);
+      if (r.equipment_hours != null && r.equipment_hours !== '') {
+        meta.push(['Equipment hours', String(r.equipment_hours)]);
+      }
+      if (r.role)               meta.push(['Role', r.role]);
+      if (r.completed_at)       meta.push(['Completed at', r.completed_at.slice(0, 16).replace('T', ' ')]);
+      if (meta.length) {
+        html += '<dl class="er-task-detail-grid">';
+        meta.forEach(function(pair) {
+          html += '<dt>' + erEscapeHtml(pair[0]) + '</dt><dd>' + erEscapeHtml(pair[1]) + '</dd>';
+        });
+        html += '</dl>';
+      }
+      html += '</div>';
+    }
+  });
+  listEl.innerHTML = html;
+}
+
+function toggleErClosedExpand(recordId) {
+  ER_TASKS_STATE.closedExpanded = (ER_TASKS_STATE.closedExpanded === recordId) ? null : recordId;
+  renderEngineTasksList();
+}
+
 function renderEngineTasksList() {
   var listEl = document.getElementById('er-tasks-list');
   var countEl = document.getElementById('er-task-count');
   if (!listEl) return;
 
   var statusFilter = (document.getElementById('er-task-filter-status') || {}).value || 'active';
+  // "Closed" is a separate data pool — dispatch before the active-task render.
+  if (statusFilter === 'closed') {
+    renderEngineClosedRecordsList(listEl, countEl);
+    return;
+  }
   var roleFilter   = (document.getElementById('er-task-filter-role')   || {}).value || '';
   var deptFilter   = deptKeyForCurrentUser();
 
@@ -5279,6 +5633,7 @@ function openErTaskCreateModal() {
   ids.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
   var catEl  = document.getElementById('er-create-category');  if (catEl)  catEl.value  = 'CHK';
   var prioEl = document.getElementById('er-create-priority');  if (prioEl) prioEl.value = 'Normal';
+  var statEl = document.getElementById('er-create-status');    if (statEl) statEl.value = 'open';
   var fmEl   = document.getElementById('er-create-fm');        if (fmEl)   fmEl.value   = '';
   var recEl  = document.getElementById('er-create-recurring'); if (recEl)  recEl.checked = false;
   erCreateToggleRecurring(false);
@@ -5358,6 +5713,42 @@ function erTaskCodeRange(equipIds, eqCfg) {
   return String(top);
 }
 
+// Append a completion record to the OneDrive equipment-record file for
+// `primaryEqId`'s code-top. Mirrors IDMS-Console's writeTaskEquipmentRecord
+// so a PWA-created-and-closed task lands in the same source-of-truth file
+// the Console reads from. Console ingest (poll on data/tasks/records/) will
+// pick this up on its next cycle and populate task_records in SQLite.
+async function erTaskWriteEquipmentRecord(record, primaryEqId, year) {
+  var top      = String(primaryEqId || '').split('.')[0] || 'misc';
+  var filename = top + '-' + year + '.json';
+  var url      = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/records/'
+               + year + '/' + encodeURIComponent(filename) + ':/content';
+  var data;
+  try {
+    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+    if (resp.ok) {
+      data = await resp.json();
+      if (!data || !Array.isArray(data.records)) {
+        data = { schema_version: 1, year: year, equipment_code_top: top, records: [] };
+      }
+    } else if (resp.status === 404) {
+      data = { schema_version: 1, year: year, equipment_code_top: top, records: [] };
+    } else {
+      throw new Error('Fetch failed: ' + resp.status);
+    }
+  } catch(e) {
+    if (e.message && e.message.indexOf('Fetch failed') === 0) throw e;
+    data = { schema_version: 1, year: year, equipment_code_top: top, records: [] };
+  }
+  data.records.push(record);
+  var putResp = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(data, null, 2)
+  });
+  if (!putResp.ok) throw new Error('Record save failed: ' + putResp.status);
+}
+
 async function erTaskCreateInDefinitionsFile(filename, task) {
   var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/definitions/' + encodeURIComponent(filename) + ':/content';
   var data;
@@ -5407,6 +5798,7 @@ async function submitErTaskCreate() {
 
   var category  = (document.getElementById('er-create-category')   || {}).value || 'CHK';
   var priority  = (document.getElementById('er-create-priority')   || {}).value || 'Normal';
+  var status    = (document.getElementById('er-create-status')     || {}).value || 'open';
   var role      = ((document.getElementById('er-create-role')      || {}).value || '').trim();
   var assigned  = ((document.getElementById('er-create-assigned')  || {}).value || '').trim();
   var fmCode    = (document.getElementById('er-create-fm')         || {}).value || '';
@@ -5451,6 +5843,23 @@ async function submitErTaskCreate() {
         attachments: attachments
       });
     }
+    // If the user is creating the task in any non-default status (e.g. closing
+    // it out as a service report), emit a synthetic transition event so the
+    // Console event log shows the creation-time status change. from_status is
+    // 'open' to match the implicit default a task would have been born with.
+    if (status !== 'open') {
+      events.push({
+        event_id:    erUuid(),
+        task_id:     taskId,
+        type:        'transition',
+        from_status: 'open',
+        to_status:   status,
+        comment:     null,
+        actor_user:  currentUser.username || 'unknown',
+        actor_name:  currentUser.name || currentUser.username || 'Unknown',
+        occurred_at: now
+      });
+    }
 
     if (saveBtn && files.length) saveBtn.textContent = 'Saving…';
 
@@ -5465,7 +5874,7 @@ async function submitErTaskCreate() {
       assigned_to:    assigned || null,
       description:    desc || null,
       skill_tags:     skillTags.length ? JSON.stringify(skillTags) : null,
-      status:         'open',
+      status:         status,
       recurring:      recurring ? 1 : 0,
       interval:       interval || null,
       interval_hours: eqHours,
@@ -5481,21 +5890,77 @@ async function submitErTaskCreate() {
     var filename = 'tasks-' + codeRange + '-' + year + '.json';
     await erTaskCreateInDefinitionsFile(filename, task);
 
+    // Closed-on-create path: also write a completion record into the equipment
+    // records file so the Console picks up a real task_records row on its next
+    // poll. Mirrors the Console Quick Close payload exactly. Fields that the
+    // Console captures via its own form map onto what we already have in the
+    // create form (description → description_work, notes → close_notes, etc.).
+    // Cancelled doesn't generate a record — Console's Cancelled path doesn't either.
+    if (status === 'completed') {
+      var record = {
+        record_id:         erUuid(),
+        task_id:           taskId,
+        title:             title,
+        equipment_ids:     JSON.stringify(ER_CREATE_ASSETS),
+        category:          category,
+        priority:          priority,
+        role:              role || null,
+        completed_by_user: currentUser.username || 'unknown',
+        completed_by_name: currentUser.name || currentUser.username || 'Unknown',
+        started_at:        now,
+        completed_at:      now,
+        equipment_hours:   eqHours,
+        description_work:  desc || null,
+        items_used:        null,
+        follow_up:         0,
+        follow_up_notes:   null,
+        skill_tags:        skillTags.length ? JSON.stringify(skillTags) : null,
+        failure_mode:      fmCode || null,
+        failure_mechanism: null,
+        detection_method:  null,
+        closed_by_user:    currentUser.username || 'unknown',
+        closed_by_name:    currentUser.name || currentUser.username || 'Unknown',
+        close_notes:       notes || null
+      };
+      try {
+        await erTaskWriteEquipmentRecord(record, primaryEqId, year);
+      } catch (recErr) {
+        // Don't block UI flow on a record-write failure — the task itself was
+        // saved with status=completed and a transition event, so the Console
+        // will still see it as closed; the missing record can be backfilled
+        // by re-closing the task from the Console (Close button → Task
+        // Creation re-route writes the record). Surface to console for
+        // diagnosis.
+        console.warn('[ER Create] Completion record write failed', recErr);
+      }
+    }
+
     ER_TASKS_STATE.tasks.push({ task: task, file: filename });
     closeErTaskCreateModal();
     renderEngineTasksList();
 
+    var rlBody, rlSource;
+    if (status === 'completed') {
+      rlSource = 'task_closure';
+      rlBody   = 'Task created and closed: ' + title + (desc ? ' — ' + desc.slice(0, 200) : '');
+    } else if (status === 'cancelled') {
+      rlSource = 'task_creation';
+      rlBody   = 'Task created (cancelled): ' + title;
+    } else {
+      rlSource = 'task_creation';
+      rlBody   = 'Task created: ' + title;
+    }
     erWriteTaskRoughLogEntry({
       id:           erUuid(),
       timestamp:    now,
       date:         now.slice(0, 10),
       time_label:   now.slice(11, 16),
       department:   dept,
-      source:       'task_creation',
+      source:       rlSource,
       category:     'Service Report',
       user:         currentUser.username || 'unknown',
       display_name: currentUser.name || currentUser.username || 'Unknown',
-      body:         'Task created: ' + title,
+      body:         rlBody,
       equipment_id: primaryEqId !== 'misc' ? primaryEqId : null,
       ref_id:       taskId
     }).catch(function() {});
@@ -6705,6 +7170,22 @@ async function flushObservationQueue(username) {
 }
 
 async function pushObservationToOneDrive(username, dateStr, observation) {
+  // Architecture refactor Phase 5 — dual-write. Append an immutable event
+  // file first; only after that succeeds touch the legacy observations[]
+  // array. Console-side reads both during the transition window; once the
+  // PWA has been running cleanly for one trip cycle, the legacy write can
+  // be dropped (Phase 10 cleanup). The event-folder write is idempotent on
+  // retry — graphPut with If-None-Match: * + a stable obs_id-as-event_id
+  // makes a duplicate append a 412 no-op rather than a clobber.
+  try {
+    await pushObservationEventToOneDrive(username, observation);
+  } catch (e) {
+    // Propagate so the caller's queue path picks this up — we'd rather
+    // queue and retry both writes together than leave the new format
+    // empty while the legacy array keeps growing.
+    throw e;
+  }
+
   // Read current log file: try OneDrive, fall back to cache
   var cacheKey = obsCacheKey(username, dateStr);
   var logFile = null;
@@ -6734,6 +7215,47 @@ async function pushObservationToOneDrive(username, dateStr, observation) {
 
   await putLogToOneDrive(username, dateStr, logFile);
   try { localStorage.setItem(cacheKey, JSON.stringify(logFile)); } catch(e) {}
+}
+
+// Phase 5 — append a factory observation as an immutable event file under
+// data/factory/observations/events/{iso}-{event_id}.json. Filename rules
+// follow architecture.md (Console: graph.js `_eventFilename`): strip ':',
+// '.', and '-' from the timestamp so lex-sort = chrono-sort. The obs_id
+// is reused as event_id so retries are idempotent — graphPut uses
+// If-None-Match: * and a 412 means "this event already landed" (no-op).
+async function pushObservationEventToOneDrive(username, observation) {
+  await obsRefreshToken();
+
+  var nowIso = new Date().toISOString();
+  var eventId = observation.obs_id; // stable id; allows idempotent retry
+  var tsForFn = nowIso.replace(/[:.\-]/g, '');
+  var filename = tsForFn + '-' + eventId + '.json';
+  var path = 'Documents/IDMS/data/factory/observations/events/' + filename;
+
+  var eventObj = {
+    schema_version: 1,
+    event_id:       eventId,
+    event_type:     'observation',
+    actor:          username,
+    timestamp:      nowIso,
+    payload:        observation
+  };
+
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+            encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+  var resp = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Authorization':  'Bearer ' + graphToken,
+      'Content-Type':   'application/json',
+      'If-None-Match':  '*'
+    },
+    body: JSON.stringify(eventObj, null, 2)
+  });
+  // 412 = already exists at this path. That's an idempotent retry; not an
+  // error. Anything else non-2xx surfaces so the queue retries.
+  if (resp.status === 412) return;
+  if (!resp.ok) throw new Error('Phase-5 event PUT failed: ' + resp.status);
 }
 
 // OneDrive log file I/O — uses Microsoft Graph with the existing PWA token.
@@ -7974,6 +8496,604 @@ function erlEsc(str) {
       if (e.cancelable) e.preventDefault();
     }
   }, { passive: false });
+})();
+
+// ════════════════════════════════════════════════════════════════
+// INCINERATOR — append-only event log on OneDrive; drives ER lamp,
+// session table, and writes an ORB Code-C Item-12 inbox event on stop
+// so IDMS-Console can ingest it into data/orb/orb-{year}.json (Console
+// stays the sole writer of the year file). Event shape mirrors the
+// factory-observation Phase-5 pattern.
+// ════════════════════════════════════════════════════════════════
+
+var INCIN = {
+  sessions:    [],   // replayed state, sorted by start_time desc
+  byId:        {},   // session_id -> session
+  openSession: null, // session with no stop_time
+  vesselTanks: [],   // from config/vesselconfig.json (waste_oil only)
+  fuelState:   null, // cached on screen-open / before stop
+  loading:     false,
+  manualEditingId: null
+};
+
+var INCIN_BASE_PATH    = 'Documents/IDMS/data/incinerator/events';
+var ORB_INBOX_PATH     = 'Documents/IDMS/data/orb/inbox';
+var VESSELCONFIG_PATH  = 'Documents/IDMS/config/vesselconfig.json';
+var FUELSTATE_PATH     = 'Documents/IDMS/data/fuel/fuelstate.json';
+
+function incinGraphUrl(path) {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/'
+       + encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+}
+function incinGraphChildrenUrl(path) {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/'
+       + encodeURIComponent(path).replace(/%2F/g, '/') + ':/children?$select=id,name';
+}
+
+function incinActor() {
+  return (currentUser && currentUser.username) || 'unknown';
+}
+
+// MM/DD HH:MM in local time. Used for table display only; events keep ISO.
+function incinFormatStamp(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return padTwo(d.getMonth() + 1) + '/' + padTwo(d.getDate()) + ' '
+       + padTwo(d.getHours()) + ':' + padTwo(d.getMinutes());
+}
+
+function incinIsoFromLocalInput(v) {
+  // <input type=datetime-local> gives "YYYY-MM-DDTHH:MM" in local time.
+  if (!v) return null;
+  var d = new Date(v);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+function incinLocalInputFromIso(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.getFullYear() + '-' + padTwo(d.getMonth() + 1) + '-' + padTwo(d.getDate())
+       + 'T' + padTwo(d.getHours()) + ':' + padTwo(d.getMinutes());
+}
+function incinHHMM(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  return padTwo(d.getHours()) + ':' + padTwo(d.getMinutes());
+}
+function incinHoursBetween(startIso, stopIso) {
+  if (!startIso || !stopIso) return 0;
+  var ms = new Date(stopIso).getTime() - new Date(startIso).getTime();
+  return Math.max(0, ms / 3600000);
+}
+
+// ── EVENT WRITE ─────────────────────────────────────────────────
+// Append a single immutable event file. Filename is sort-stable (strip
+// ':', '.', '-' from the ISO timestamp). event_id reused on retry so
+// If-None-Match: * gives idempotent 412 no-ops.
+async function pushIncinEvent(eventType, payload, opts) {
+  await obsRefreshToken();
+  var nowIso  = new Date().toISOString();
+  var eventId = (opts && opts.eventId) || erUuid();
+  var tsForFn = nowIso.replace(/[:.\-]/g, '');
+  var path    = INCIN_BASE_PATH + '/' + tsForFn + '-' + eventId + '.json';
+  var body = {
+    schema_version: 1,
+    event_id:   eventId,
+    event_type: eventType,
+    actor:      incinActor(),
+    timestamp:  nowIso,
+    payload:    payload
+  };
+  var resp = await fetch(incinGraphUrl(path), {
+    method: 'PUT',
+    headers: {
+      'Authorization':  'Bearer ' + graphToken,
+      'Content-Type':   'application/json',
+      'If-None-Match':  '*'
+    },
+    body: JSON.stringify(body, null, 2)
+  });
+  if (resp.status === 412) return body; // already landed
+  if (!resp.ok) throw new Error('Incinerator event PUT failed: ' + resp.status);
+  return body;
+}
+
+// ── EVENT REPLAY ────────────────────────────────────────────────
+// Reduce raw events into a sessions[] array. Order is by event timestamp
+// (filename is already sort-stable), but each session's *displayed* time
+// is its session_start payload time.
+function incinReplay(events) {
+  var byId = {};
+  events.forEach(function(ev) {
+    var p = ev.payload || {};
+    var sid = p.session_id;
+    if (!sid) return;
+    if (ev.event_type === 'session_start') {
+      if (!byId[sid]) {
+        byId[sid] = {
+          session_id:  sid,
+          start_time:  p.start_time || ev.timestamp,
+          stop_time:   null,
+          source_tank: p.source_tank || null,
+          qty:         Number(p.qty || 0),
+          deleted:     false,
+          actor:       ev.actor
+        };
+      }
+    } else if (ev.event_type === 'session_addition') {
+      if (byId[sid]) byId[sid].qty = Number(byId[sid].qty || 0) + Number(p.qty_add || 0);
+    } else if (ev.event_type === 'session_end') {
+      if (byId[sid]) {
+        byId[sid].stop_time = p.stop_time || ev.timestamp;
+        if (p.qty != null) byId[sid].qty = Number(p.qty);
+        if (p.retained != null) byId[sid].retained = Number(p.retained);
+      }
+    } else if (ev.event_type === 'session_correction') {
+      if (byId[sid] && p.patch) {
+        Object.keys(p.patch).forEach(function(k) { byId[sid][k] = p.patch[k]; });
+      }
+    } else if (ev.event_type === 'session_deletion') {
+      if (byId[sid]) byId[sid].deleted = true;
+    }
+  });
+
+  var list = Object.keys(byId).map(function(k) { return byId[k]; })
+                   .filter(function(s) { return !s.deleted; });
+  list.sort(function(a, b) { return (a.start_time < b.start_time) ? 1 : -1; });
+  var open = list.find(function(s) { return !s.stop_time; }) || null;
+  return { sessions: list, byId: byId, openSession: open };
+}
+
+// ── ONEDRIVE LOAD ───────────────────────────────────────────────
+async function loadIncinerator() {
+  if (INCIN.loading) return;
+  INCIN.loading = true;
+  try {
+    await obsRefreshToken();
+    // List event files
+    var resp = await fetch(incinGraphChildrenUrl(INCIN_BASE_PATH), {
+      headers: { 'Authorization': 'Bearer ' + graphToken }
+    });
+    var files = [];
+    if (resp.ok) {
+      var j = await resp.json();
+      files = (j.value || []).filter(function(f) { return f.name && f.name.endsWith('.json'); });
+    } else if (resp.status !== 404) {
+      throw new Error('Graph children failed: ' + resp.status);
+    }
+    files.sort(function(a, b) { return a.name < b.name ? -1 : 1; });
+
+    var events = [];
+    await Promise.all(files.map(async function(f) {
+      try {
+        var r = await fetch(incinGraphUrl(INCIN_BASE_PATH + '/' + f.name), {
+          headers: { 'Authorization': 'Bearer ' + graphToken }
+        });
+        if (!r.ok) return;
+        events.push(await r.json());
+      } catch (_) {}
+    }));
+    events.sort(function(a, b) { return (a.timestamp || '') < (b.timestamp || '') ? -1 : 1; });
+
+    var state = incinReplay(events);
+    INCIN.sessions    = state.sessions;
+    INCIN.byId        = state.byId;
+    INCIN.openSession = state.openSession;
+
+    // Load vessel tanks in parallel (needed for source-name display + dropdown)
+    await loadVesselTanks();
+  } finally {
+    INCIN.loading = false;
+    renderIncineratorScreen();
+    updateIncinTileLamp();
+  }
+}
+
+async function loadVesselTanks() {
+  try {
+    await obsRefreshToken();
+    var resp = await fetch(incinGraphUrl(VESSELCONFIG_PATH), {
+      headers: { 'Authorization': 'Bearer ' + graphToken }
+    });
+    if (!resp.ok) { INCIN.vesselTanks = []; return; }
+    var cfg = await resp.json();
+    var tanks = (cfg && cfg.tanks) || [];
+    INCIN.vesselTanks = tanks.filter(function(t) { return t && t.category === 'waste_oil'; });
+  } catch (_) { INCIN.vesselTanks = []; }
+}
+
+async function loadFuelStateSnapshot() {
+  try {
+    await obsRefreshToken();
+    var resp = await fetch(incinGraphUrl(FUELSTATE_PATH), {
+      headers: { 'Authorization': 'Bearer ' + graphToken }
+    });
+    if (!resp.ok) { INCIN.fuelState = null; return null; }
+    INCIN.fuelState = await resp.json();
+    return INCIN.fuelState;
+  } catch (_) { INCIN.fuelState = null; return null; }
+}
+
+function incinTankName(tankId) {
+  var t = (INCIN.vesselTanks || []).find(function(x) { return x.tank_id === tankId; });
+  if (t) return t.abbreviation || t.name || tankId;
+  return tankId || '—';
+}
+function incinTankVolume(tankId) {
+  if (!INCIN.fuelState || !Array.isArray(INCIN.fuelState.tanks)) return null;
+  var t = INCIN.fuelState.tanks.find(function(x) { return x.tank_id === tankId; });
+  return t ? Number(t.volume) : null;
+}
+
+// ── RENDER ──────────────────────────────────────────────────────
+function updateIncinTileLamp() {
+  var lamp = document.getElementById('incin-tile-lamp');
+  var txt  = document.getElementById('incin-tile-status-text');
+  var on   = !!INCIN.openSession;
+  if (lamp) lamp.classList.toggle('on', on);
+  if (txt)  {
+    txt.textContent = on ? 'ON' : 'OFF';
+    txt.classList.toggle('on', on);
+    txt.classList.toggle('off', !on);
+  }
+}
+
+function renderIncineratorScreen() {
+  var btn = document.getElementById('incin-action-btn');
+  if (btn) {
+    var on = !!INCIN.openSession;
+    btn.textContent = on ? 'STOP' : 'START';
+    btn.className   = 'incin-action-btn ' + (on ? 'stop' : 'start');
+  }
+  var tbody = document.getElementById('incin-table-body');
+  var empty = document.getElementById('incin-empty');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!INCIN.sessions.length) {
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  INCIN.sessions.forEach(function(s) {
+    var tr = document.createElement('tr');
+    if (!s.stop_time) tr.className = 'open';
+    tr.innerHTML =
+        '<td>' + escapeHtml(incinFormatStamp(s.start_time)) + '</td>'
+      + '<td>' + (s.stop_time ? escapeHtml(incinFormatStamp(s.stop_time)) : '<span style="color:#dc2626;font-weight:700">ON</span>') + '</td>'
+      + '<td>' + escapeHtml(incinTankName(s.source_tank)) + '</td>'
+      + '<td style="text-align:right">' + (Number(s.qty || 0).toFixed(1)) + '</td>'
+      + '<td class="row-actions">'
+        + '<button onclick="incinEditSession(\'' + s.session_id + '\')">Edit</button>'
+        + '<button class="danger" onclick="incinDeleteSession(\'' + s.session_id + '\')">Delete</button>'
+      + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function incinPopulateTankSelect(selectId, currentId) {
+  var sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = '';
+  if (!INCIN.vesselTanks.length) {
+    var o = document.createElement('option');
+    o.value = ''; o.textContent = '(no waste-oil tanks in vesselconfig)';
+    sel.appendChild(o);
+    return;
+  }
+  INCIN.vesselTanks.forEach(function(t) {
+    var o = document.createElement('option');
+    o.value = t.tank_id;
+    o.textContent = (t.abbreviation ? t.abbreviation + ' — ' : '') + (t.name || t.tank_id);
+    if (currentId && t.tank_id === currentId) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+// ── ENTRY POINTS ───────────────────────────────────────────────
+function openIncineratorLog() {
+  showScreen('screen-incinerator-log');
+  renderIncineratorScreen();
+  loadIncinerator(); // fires async refresh; renders again on completion
+}
+
+function incinPrimaryAction() {
+  if (INCIN.openSession) incinOpenStopModal();
+  else                   incinOpenStartModal();
+}
+
+// ── START FLOW ─────────────────────────────────────────────────
+async function incinOpenStartModal() {
+  if (!INCIN.vesselTanks.length) await loadVesselTanks();
+  incinPopulateTankSelect('incin-start-source', null);
+  incinShowModal('modal-incin-start');
+}
+async function incinConfirmStart() {
+  var sel = document.getElementById('incin-start-source');
+  var tankId = sel ? sel.value : '';
+  if (!tankId) { alert('Pick a source tank.'); return; }
+  var session_id = erUuid();
+  var nowIso = new Date().toISOString();
+  try {
+    await pushIncinEvent('session_start', {
+      session_id:  session_id,
+      start_time:  nowIso,
+      source_tank: tankId,
+      qty:         0
+    });
+  } catch (e) { alert('Failed to start session: ' + e.message); return; }
+  incinCloseModal('modal-incin-start');
+  await loadIncinerator();
+}
+
+// ── STOP FLOW ──────────────────────────────────────────────────
+async function incinOpenStopModal() {
+  var s = INCIN.openSession;
+  if (!s) return;
+  await loadFuelStateSnapshot();
+  var retained = incinTankVolume(s.source_tank);
+  var qtyEl = document.getElementById('incin-stop-qty');
+  var retEl = document.getElementById('incin-stop-retained');
+  var hintEl = document.getElementById('incin-stop-retained-hint');
+  if (qtyEl) qtyEl.value = (Number(s.qty || 0)).toFixed(1);
+  if (retEl) retEl.value = (retained != null) ? Number(retained).toFixed(1) : '';
+  if (hintEl) hintEl.textContent = (retained != null)
+    ? 'Current ' + incinTankName(s.source_tank) + ' volume from fuelstate.json'
+    : 'fuelstate.json had no entry for this tank — enter manually.';
+  incinShowModal('modal-incin-stop');
+}
+async function incinConfirmStop() {
+  var s = INCIN.openSession;
+  if (!s) { incinCloseModal('modal-incin-stop'); return; }
+  var qty      = Number((document.getElementById('incin-stop-qty')      || {}).value || 0);
+  var retained = Number((document.getElementById('incin-stop-retained') || {}).value || 0);
+  var nowIso = new Date().toISOString();
+  try {
+    await pushIncinEvent('session_end', {
+      session_id: s.session_id,
+      stop_time:  nowIso,
+      qty:        qty,
+      retained:   retained
+    });
+    // Build the merged session view for the ORB inbox write
+    var closed = {
+      session_id:  s.session_id,
+      start_time:  s.start_time,
+      stop_time:   nowIso,
+      source_tank: s.source_tank,
+      qty:         qty,
+      retained:    retained
+    };
+    await pushOrbInboxEntry(closed);
+  } catch (e) { alert('Failed to stop session: ' + e.message); return; }
+  incinCloseModal('modal-incin-stop');
+  await loadIncinerator();
+}
+
+// ── ADD-TO-SESSION FLOW ────────────────────────────────────────
+function incinOpenAddQty() {
+  var s = INCIN.openSession;
+  if (!s) return;
+  var msg = document.getElementById('incin-add-qty-current');
+  if (msg) msg.textContent = 'Current session total: ' + Number(s.qty || 0).toFixed(1) + ' USG';
+  var inp = document.getElementById('incin-add-qty-input');
+  if (inp) inp.value = '';
+  incinShowModal('modal-incin-add-qty');
+}
+async function incinConfirmAddQty() {
+  var s = INCIN.openSession;
+  if (!s) { incinCloseModal('modal-incin-add-qty'); return; }
+  var add = Number((document.getElementById('incin-add-qty-input') || {}).value || 0);
+  if (!(add > 0)) { alert('Enter a positive quantity.'); return; }
+  try {
+    await pushIncinEvent('session_addition', {
+      session_id: s.session_id,
+      qty_add:    add
+    });
+  } catch (e) { alert('Failed to add qty: ' + e.message); return; }
+  incinCloseModal('modal-incin-add-qty');
+  await loadIncinerator();
+}
+
+// ── MANUAL ADD / EDIT / DELETE ─────────────────────────────────
+async function incinOpenManualAdd() {
+  // While a session is open, the manual "+" button instead routes to
+  // the "ADD qty to active session" flow per the feature spec.
+  if (INCIN.openSession) { incinOpenAddQty(); return; }
+  if (!INCIN.vesselTanks.length) await loadVesselTanks();
+  INCIN.manualEditingId = null;
+  var title = document.getElementById('incin-manual-title');
+  if (title) title.textContent = 'Add Session';
+  document.getElementById('incin-manual-start').value = '';
+  document.getElementById('incin-manual-stop').value  = '';
+  document.getElementById('incin-manual-qty').value   = '';
+  incinPopulateTankSelect('incin-manual-source', null);
+  incinShowModal('modal-incin-manual');
+}
+
+async function incinEditSession(sessionId) {
+  if (!INCIN.vesselTanks.length) await loadVesselTanks();
+  var s = INCIN.byId[sessionId];
+  if (!s) return;
+  INCIN.manualEditingId = sessionId;
+  var title = document.getElementById('incin-manual-title');
+  if (title) title.textContent = 'Edit Session';
+  document.getElementById('incin-manual-start').value = incinLocalInputFromIso(s.start_time);
+  document.getElementById('incin-manual-stop').value  = incinLocalInputFromIso(s.stop_time);
+  document.getElementById('incin-manual-qty').value   = (s.qty != null) ? Number(s.qty).toFixed(1) : '';
+  incinPopulateTankSelect('incin-manual-source', s.source_tank);
+  incinShowModal('modal-incin-manual');
+}
+
+async function incinConfirmManual() {
+  var startIso = incinIsoFromLocalInput((document.getElementById('incin-manual-start') || {}).value);
+  var stopIso  = incinIsoFromLocalInput((document.getElementById('incin-manual-stop')  || {}).value);
+  var tankId   = (document.getElementById('incin-manual-source') || {}).value || '';
+  var qty      = Number((document.getElementById('incin-manual-qty') || {}).value || 0);
+  if (!startIso) { alert('Start time is required.'); return; }
+  if (!tankId)   { alert('Source tank is required.'); return; }
+  var editingId = INCIN.manualEditingId;
+  try {
+    if (editingId) {
+      var patch = {
+        start_time:  startIso,
+        stop_time:   stopIso,
+        source_tank: tankId,
+        qty:         qty
+      };
+      await pushIncinEvent('session_correction', {
+        session_id: editingId,
+        patch:      patch
+      });
+      // If edit closed an open session, also write the ORB inbox entry.
+      var before = INCIN.byId[editingId];
+      if (before && !before.stop_time && stopIso) {
+        await loadFuelStateSnapshot();
+        await pushOrbInboxEntry({
+          session_id:  editingId,
+          start_time:  startIso,
+          stop_time:   stopIso,
+          source_tank: tankId,
+          qty:         qty,
+          retained:    incinTankVolume(tankId)
+        });
+      }
+    } else {
+      var sid = erUuid();
+      await pushIncinEvent('session_start', {
+        session_id:  sid,
+        start_time:  startIso,
+        source_tank: tankId,
+        qty:         qty
+      });
+      if (stopIso) {
+        await loadFuelStateSnapshot();
+        var retained = incinTankVolume(tankId);
+        await pushIncinEvent('session_end', {
+          session_id: sid,
+          stop_time:  stopIso,
+          qty:        qty,
+          retained:   retained
+        });
+        await pushOrbInboxEntry({
+          session_id:  sid,
+          start_time:  startIso,
+          stop_time:   stopIso,
+          source_tank: tankId,
+          qty:         qty,
+          retained:    retained
+        });
+      }
+    }
+  } catch (e) { alert('Failed to save: ' + e.message); return; }
+  incinCloseModal('modal-incin-manual');
+  await loadIncinerator();
+}
+
+async function incinDeleteSession(sessionId) {
+  if (!confirm('Delete this incinerator session? This cannot be undone.')) return;
+  try {
+    await pushIncinEvent('session_deletion', { session_id: sessionId });
+  } catch (e) { alert('Failed to delete: ' + e.message); return; }
+  await loadIncinerator();
+}
+
+// ── MODAL HELPERS ──────────────────────────────────────────────
+function incinShowModal(id) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = 'flex';
+}
+function incinCloseModal(id) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = 'none';
+}
+
+// ── ORB INBOX WRITE (Code C, Item 12 — incineration of sludge) ─
+// Console keeps single-writer ownership of data/orb/orb-{year}.json;
+// the PWA appends to data/orb/inbox/ and Console ingests on ORB-screen
+// open + manual refresh (sync-orb-inbox.js, paired Console PR).
+async function pushOrbInboxEntry(session) {
+  await obsRefreshToken();
+
+  var tank = (INCIN.vesselTanks || []).find(function(t) { return t.tank_id === session.source_tank; });
+  var tankLabel = tank ? (tank.abbreviation || tank.name || session.source_tank) : session.source_tank;
+
+  var hours    = incinHoursBetween(session.start_time, session.stop_time);
+  var startHM  = incinHHMM(session.start_time);
+  var stopHM   = incinHHMM(session.stop_time);
+  var qty      = Number(session.qty || 0);
+  var retained = (session.retained != null) ? Number(session.retained) : null;
+  var dateIso  = (session.start_time || new Date().toISOString()).slice(0, 10);
+
+  var fields = {
+    c12_qty:            qty,
+    c12_incin_source:   session.source_tank,
+    c12_incin_retained: retained,
+    c12_incin_hours:    Number(hours.toFixed(2)),
+    c12_incin_start:    startHM,
+    c12_incin_stop:     stopHM
+  };
+
+  // Match Console's orbBuildNarrative template for 12_incin.
+  // Line 12  : "{qty} USG from {tank}, ret. {retained} USG"
+  // Line 12.3: "Incinerated, {hours} hrs, {start} to {stop}"
+  var line12  = qty.toFixed(1) + ' USG from ' + tankLabel + ', ret. '
+              + (retained != null ? retained.toFixed(1) : '—') + ' USG';
+  var line123 = 'Incinerated, ' + hours.toFixed(2) + ' hrs, ' + (startHM || '—') + ' to ' + (stopHM || '—');
+  var narrative = '12. ' + line12 + '\n12.3 ' + line123;
+
+  var eventId = 'incin-' + session.session_id;
+  var nowIso  = new Date().toISOString();
+  var tsForFn = nowIso.replace(/[:.\-]/g, '');
+  var path    = ORB_INBOX_PATH + '/' + tsForFn + '-' + eventId + '.json';
+
+  var body = {
+    schema_version: 1,
+    event_id:   eventId,
+    event_type: 'orb_entry_proposed',
+    actor:      incinActor(),
+    timestamp:  nowIso,
+    payload: {
+      source:        'incinerator',
+      source_ref:    session.session_id,
+      entry: {
+        date_iso:  dateIso,
+        code:      'C',
+        items:     ['12'],
+        status:    'draft',
+        source:    'auto',
+        fields:    fields,
+        narrative: narrative
+      }
+    }
+  };
+
+  var resp = await fetch(incinGraphUrl(path), {
+    method: 'PUT',
+    headers: {
+      'Authorization':  'Bearer ' + graphToken,
+      'Content-Type':   'application/json',
+      'If-None-Match':  '*'
+    },
+    body: JSON.stringify(body, null, 2)
+  });
+  if (resp.status === 412) return; // already landed (idempotent)
+  if (!resp.ok) throw new Error('ORB inbox PUT failed: ' + resp.status);
+}
+
+// Lamp on hub: refresh whenever the engine-home screen is shown.
+// loadIncinerator does its own renderIncineratorScreen + lamp update;
+// we also kick a lightweight load when the hub is visited so the lamp
+// reflects cross-user state without needing the user to open the screen.
+(function() {
+  var origShowScreen = showScreen;
+  showScreen = function(id) {
+    origShowScreen.apply(this, arguments);
+    if (id === 'screen-engine-home') {
+      // Fire-and-forget; lamp will update when load finishes.
+      try { loadIncinerator(); } catch (_) {}
+    }
+  };
 })();
 
 </script>

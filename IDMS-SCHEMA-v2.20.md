@@ -1,5 +1,246 @@
 # IDMS Schema Specification
-**Version 2.23 — F/V Araho**
+**Version 2.29 — F/V Araho**
+
+v2.29 *(2026-05-25)* — **Architecture refactor Phases 4 & 5; Maintenance & Tasks UI consolidation; rounds-comment attachments; minor security/UX hardening.** Closes the OEE data-loss incident (silent multi-writer corruption of `data/factory/logs/report-{date}-{user}.json`) by moving factory observations onto an append-only OneDrive event log. Asset event history follows the same pattern as a clean cutover (the legacy `event_history[]` inline array was never populated by Console renderer code). Closed Tasks gains filter parity with Active. The Close-button flow consolidates into Task Creation; Manual Entry is retired. Rounds comments now carry photo attachments. Schema version of every existing on-disk file is unchanged; all changes are additive at the file-format level and additive-with-cutover at the folder level.
+
+**Architecture refactor Phase 5 — factory observations as immutable events.** New folder `data/factory/observations/events/{iso}-{event_id}.json`, one file per observation, append-only with `If-None-Match: *`. Event envelope follows `docs/architecture.md` exactly: `{schema_version: 1, event_id, event_type, timestamp, actor, payload}`. Three `event_type` values: `observation` (payload is the full `capacity_observations` row shape including `obs_id`, `obs_timestamp`, `section_id`, `oee_session_id`, `source`, etc.), `observation_correction` (payload `{target_obs_id, patch, before}` — edits append a new event, never mutate the original), `observation_deletion` (payload `{target_obs_id}`). Filename is `{iso}-{event_id}.json` with `:`, `.`, and `-` stripped from the timestamp so lex-sort = chrono-sort. The per-user log `data/factory/logs/report-{date}-{user}.json` is retained for `incidents` / `active` / `resolved` (single-writer per file — the correct-by-construction pattern); the `observations[]` array on that file is left in place during the dual-read window and removed in Phase 10.
+
+- New renderer module `src/renderer/js/sync-factory-obs.js` exposes `window.factoryObsSync.{appendObservationEvent, appendObservationCorrection, appendObservationDeletion, syncFactoryObsFromOneDrive, rebuildFactoryObsFromOneDrive, migrateFactoryObsOnce}`. Walking the event folder is cursor-driven via the Phase 0 `ingest_cursors` table (`subsystem='factory_observations'`, `scope_key=''`).
+- `production.js` paths rewritten: `submitOeeSession` (line ~3993) and the ad-hoc observation submit (line ~2032) now call `factoryObsSync.appendObservationEvent(obs)` — *not* the legacy `appendObservationsToLogFile` RMW. `editObservationOnDrive` / `deleteObservationOnDrive` rewritten to append correction / deletion events, then update `capacity_observations` in SQLite eagerly so the editing client sees consistent state without waiting for a sync pass. The dead `appendObservationsToLogFile` shim was removed once all callers were rewritten.
+- `ingest.js` `pollNow()` adds a `factoryObsSync.syncFactoryObsFromOneDrive()` pass after the production-state poll. The legacy `ingestObservationsFromLog` dual-read on `payload.observations` survives the transition; both feed the same `capacity_observations` table via `_OBS_UPSERT_SQL` keyed on `obs_id`, so a duplicate from a stale legacy file is a no-op.
+- One-shot migration `migrateFactoryObsOnce()` walks every `report-*.json`, splits each `observations[]` element into an event file (event_id reused from `obs_id` for idempotent retry; `If-None-Match: *` 412 = "already there"), then PUTs the report back with `observations: []`. Migration is gated by `electron-store` flag `migrations.factory_observations_v1`; flag is set only when zero per-file failures, so a partial-failure run is automatically retryable. Pre-flight `db:preMigrationBackup` snapshots `idms.db` → `idms.db.pre-factory-obs-v1.bak`.
+- New IPC `db:resetCapacityObservations` (`DELETE FROM capacity_observations; DELETE FROM ingest_cursors WHERE subsystem='factory_observations'`) used by `rebuildFactoryObsFromOneDrive` and surfaced via Settings → Diagnostics → factory_observations → Rebuild.
+- `DIAG_REGISTRY` entry registered for `factory_observations` with `rebuild` returning `{delegated_to: 'renderer', action: 'rebuildFactoryObsFromOneDrive'}` and `verify` returning `{sqlite_counts: {capacity_observations: <N>, by_source: {…}}, span: {earliest, latest}}`.
+- Settings → Diagnostics → Rebuild dispatch fixed: `settings.js runDiagAction` now resolves the `delegated_to: 'renderer'` hint by looking up `window[action]` and awaiting it — previously it just rendered the hint JSON as status text. Same generic dispatch applies to existing trips / fuel_history rebuilds, which now actually execute.
+
+**Architecture refactor Phase 4 — asset event history as OneDrive events.** New folder `data/assets/{code_range}/events/{iso}-{event_id}.json`. Event envelope same shape as Phase 5; `event_type` is the asset-event verb (`oil_change`, `repair`, `inspection`, `config_update`, …); payload is `{asset_id, asset_no, code_range, actor_name, data: {…}}`. SQLite `asset_event_history` becomes a derived cache; OneDrive is source of truth. The deprecated `appendAssetEventToFile(codeRange, assetNo, eventEntry)` helper in `graph.js` is retired (was unused PWA-contract scaffolding for the now-replaced RMW `assets[].event_history[]` inline array); the comment block points readers at `appendAssetEvent` instead.
+
+- New renderer module `src/renderer/js/sync-asset-events.js` exposes `window.assetEventsSync.{appendAssetEvent, syncAssetEventsFromOneDrive, rebuildAssetEventsFromOneDrive, migrateAssetEventsOnce}`. Range list discovered each pass via `listAssetEventRanges()` (filters folder children under `data/assets/`); each range carries its own cursor (`subsystem='asset_events'`, `scope_key=<code_range>`).
+- `graph.js` adds `assetEventsFolder(codeRange)`, `listAssetEventRanges()`, `listAssetEventsSince(codeRange, sinceFilename)`, `getAssetEventByName(codeRange, filename)`, `appendAssetEvent(codeRange, eventObj)` — all wrappers over the Phase 0 primitives.
+- New IPCs `db:resetAssetEventHistory` (with cursor cleanup) and `db:getAssetEventHistoryForMigration` (returns every row with `data_json` for re-emission as events).
+- Migration `migrateAssetEventsOnce()` short-circuits when `listAssetEventRanges()` is non-empty (other clients already started writing — let regular sync catch up), otherwise re-emits any `asset_event_history` rows as events keyed by their existing `event_id` for idempotent retry. In practice the table is empty on most installs (Console renderer never called `db:appendAssetEvent` directly under the legacy regime), so the migration sets the flag and exits.
+- `DIAG_REGISTRY` entry registered for `asset_events` with verify returning `{sqlite_counts: {asset_event_history: <N>, by_range: {…}}, span}`. Rebuild dispatches `rebuildAssetEventsFromOneDrive` via the same renderer mechanism as Phase 5.
+- Migration flag: `electron-store` `migrations.asset_events_v1`. Pre-flight backup tag: `asset-events-v1`.
+
+**Phase 0 foundations clarification (no schema change).** `graphAppendEvent` / `graphListEventsSince` / `graphGetWithEtag` / `graphPutIfMatch` and the `ingest_cursors` table were verified-shipped in `graph.js` (lines 694–804) and `main.js` (lines 4242–4284, 4639–4673). The `cursor:*` and `diag:*` IPCs surface in `preload.js` as `window.idms.cursor.{get,set,list}` and `window.idms.diag.{listSubsystems, listIngestCursors, rebuildFromOneDrive, verifyAgainstOneDrive, preMigrationBackup}`. The `backupDbBeforeMigration(versionTag)` helper writes `idms.db.pre-{tag}.bak` to `userData` idempotently. Documented here because the memory referenced these as "not started" before this session.
+
+**Closed Tasks — filter parity with Active.** `getTaskRecords` filter (main.js) extended to accept `department`, `role`, `priority`, `categories` in addition to the existing `task_id, equipment_id, date_from, date_to, user, search`. Department filter derives the code-range list from `equipment_assignments` and matches against the *first* entry of the JSON-stringified `equipment_ids` using two LIKE patterns per range — `["{rangeFrom}.%` (hierarchical, e.g. `["100.05.01"…]`) and `["{rangeFrom}"%` (bare, e.g. `["100"]`) — mirroring the `getTasks` convention. `categories` accepts an array and emits `category IN (?,?,…)`. Renderer-side: `TASKS.closed.filters` extended with `department`, `role`, `user` (mapped to `closed_by_user` in the IPC), `priority`, `categories`; `buildClosedTasksTabHtml` renders the same six dropdowns the Active tab renders — Status omitted (records are always closed), Assigned-To repurposed as "Closed By" because the relevant identity on a record is who closed it (`closed_by_user`), not who it was assigned to. New helpers `taskReadClosedFilters` / `taskResetClosedFilters` follow the same shape as the active-tab helpers; `bindClosedTasksTabEvents` wires the category multi-select dropdown and calls `populateRoleSelect` / `populateUserSelect` to fill dropdowns from the crew config (identical UX to Active). Default date range widened from 7 to 90 days in `defaultClosedDateRange()`; empty state now probes for the most-recent close and surfaces "Most recent closed task is {date}. Widen the date range to see it." when the filter is hiding everything.
+
+**Task Creation — Status selector, close-record write, and Close-button re-route.** Task Creation tab is now the single canonical write path for the entire task lifecycle. New Status dropdown in `buildTaskCreationHtml` mirrors the PWA's: `open / investigating / waiting_parts / waiting_opportunity / shipyard / other / completed / cancelled`. Submit synthesizes a `transition` event in `task.events` whenever the status genuinely changed (`priorStatus !== status` for an edit, or `status !== 'open'` for a fresh create); from-state defaults to `'open'` for a fresh create or the prior status for an edit. When `status === 'completed' && priorStatus !== 'completed'`, the submit *also* builds a `task_records` row and writes it via `writeTaskEquipmentRecord(record, primaryEqId, year)` + `ingestTaskRecords` for the local SQLite mirror. Convention matches the PWA's `submitErTaskCreate` exactly: Description → `description_work`, Notes → `close_notes`, `equipment_hours` taken from the Equipment Hours Interval field (intentional symmetry with PWA — same field, dual-use). `cancelled` does not generate a record (matches PWA + Console's prior Cancel path). Rough Log entry source flips to `task_closure` when closing; the new task lands on the Closed Tasks tab on submit.
+
+- **Close-button re-route.** The Close button on each active task row no longer opens the legacy Quick Close modal — it calls new `openCloseTaskInCreation(taskId)`, which pre-loads `TASKS.create.context` from the task, fans out `TASKS.create.assets / skillTags / isRecurring / files`, sets new flag `TASKS.create.startAsClose = true`, and `switchTaskTab('create')`s. `buildTaskCreationHtml` honours `startAsClose` by defaulting the Status dropdown to `completed`, the form title to "Close Task", and the submit button to "Close Task". The flag is cleared on Cancel, Submit success, and on +New Task so it never leaks. The submit path already handles `priorStatus !== 'completed' && status === 'completed'` as "close-existing-task" (writes the record + transition event); no separate code path required.
+- **Manual Entry tab retired.** Removed from the tab bar in `renderTasksShell`. `switchTaskTab('manual')` redirects to `'active'` as a safety net for stale call sites. `buildManualEntryHtml` / `submitManualEntry` remain in the file as dead code, scheduled for removal in a later cleanup pass once the close-via-create flow has bedded in.
+- **Quick Close modal retired.** `openQuickCloseModal` is now an alias for `openCloseTaskInCreation` so any cached reference falls through to the new path; the original body is renamed `_legacyOpenQuickCloseModal` and is not wired into any handler.
+
+**Rounds comments — photo attachments (Console-side render).** The §22 comment object on `rounds_entries.comments_json` already passed `attachments` through verbatim (the ingest at `main.js` line ~1526 is `JSON.stringify(e.comments)` with no per-field filtering). Console-side `rvRenderCommentsModal` in `roundsviewer.js` now renders a thumbnail row under each existing comment (`<img data-thumb-path data-full-path>` markup matching Rough Log / Tasks), streams thumbnails via the shared `loadEventLogThumbnails` helper from `tasks.js`, and tap-on-thumbnail opens the existing `openAttachmentLightbox` for the 1080×1024 full image. The "Add comment" modal gains a click-or-drag photo zone (`.rv-cmt-photo-zone`), live preview tiles with × removal, an error region preserving text + staged photos on upload failure, and renamed actions **Cancel** / **Add comment**. Photo uploads reuse the existing global `taskUploadAttachments(itemId, files)` — same resize sizes (1080×1024 full + 240×180 thumb @ 0.85 JPEG), same target folder `data/assets/pictures/{item_id}/`. New comments include `attachments[]` only when at least one photo successfully uploaded; photo-only comments (empty text + 1+ photos) are allowed. CSS additions are scoped to `.rv-cmt-*` to avoid bleeding into anything else.
+
+**Password input masking + Skill Tags edit gating.** Two small UX/security passes:
+
+- `users.js` line ~289 and `crew.js` line ~633 — password `<input>` `type="text"` → `type="password"`. Added `autocomplete="new-password"` to suppress Chrome's saved-credentials autofill. The on-disk plaintext storage in `crewconfig.json` is unaffected and remains a tracked separate concern; this change covers input masking only.
+- `crewsetup.js` Skill Tags tab — new `canEditSkillTags()` helper (`true` iff `permission_tier === 'admin'` OR `isPurserRole(user)`). When false: + Add Skill Tag button hidden behind a "Read-only — Purser or Admin to edit." hint; per-row Edit / Delete buttons replaced with a `read-only` label; `wireSkillTagsTab()` bails before attaching listeners and clears any in-flight `editingSkillTag`. Defense in depth — even if the buttons were somehow rendered through a re-render glitch, the listeners aren't wired.
+
+**Misc cleanups.**
+
+- `appendObservationsToLogFile` (production.js line ~2058) deleted — three-line shim with zero callers after the Phase 5 refactor.
+- Settings → Diagnostics dispatch fix (covered above) is generic across all subsystems, so existing trips / fuel_history Rebuild buttons now execute instead of just rendering the hint JSON. Verify behaviour is unchanged.
+- PWA contract documentation: new files `IDMS-Console/docs/phase-4-5-pwa-contract.md` (Phases 4 & 5 dual-write protocol, event envelope, folder layout, verification) and `IDMS-Console/docs/rounds-comments-pwa-contract.md` (comment shape with attachments, photo upload procedure, submission pseudocode, UX expectations). Each is self-contained so a future PWA session doesn't need to grep the Console repo.
+
+Files touched (Console): `src/main/main.js` (DIAG_REGISTRY entries, `db:resetCapacityObservations`, `db:resetAssetEventHistory`, `db:getAssetEventHistoryForMigration`, `getTaskRecords` filter extensions), `src/preload/preload.js` (new IPC surfaces), `src/renderer/index.html` (load `sync-factory-obs.js` and `sync-asset-events.js`), `src/renderer/js/app.js` (startup hooks for Phases 4 & 5), `src/renderer/js/graph.js` (asset event primitives, retired `appendAssetEventToFile`), `src/renderer/js/sync-factory-obs.js` (NEW), `src/renderer/js/sync-asset-events.js` (NEW), `src/renderer/js/production.js` (OEE/ad-hoc submit + edit/delete rewritten, shim deleted), `src/renderer/js/ingest.js` (`syncFactoryObsFromOneDrive` in `pollNow`), `src/renderer/js/tasks.js` (Closed filters, Status selector, Close re-route, Manual Entry removal), `src/renderer/js/roundsviewer.js` (comment thumbnails + photo picker), `src/renderer/js/users.js`, `src/renderer/js/crew.js` (password masking), `src/renderer/js/crewsetup.js` (Skill Tags gating), `src/renderer/js/settings.js` (Diag rebuild dispatch), `docs/phase-4-5-pwa-contract.md` (NEW), `docs/rounds-comments-pwa-contract.md` (NEW). PWA-side companions cross-reference IDMS PWA-SCHEMA v1.8.
+
+---
+
+v2.28 *(2026-05-25)* — **Oil Record Book: C/11 sounded volumes become walker-derivable on recompute.** Resolves a workflow snag where inserting a missed C/D entry chronologically before a C/11 sounding left the sounding's per-tank row volumes stale, with no way to refresh them short of manual re-entry. The displayed C/11 row is a working draft figure, not a record of the physical sounding — the bound paper ORB remains the authoritative record of what was actually measured at the time. OneDrive `orb-{year}.json` format unchanged; behaviour change only.
+
+**Walker anchor demotion for C/11.** `orbWalkTankVolume` previously treated every C/11 `c11_tank_rows[].volume` as a hard anchor on equal footing with L loadout values and H bunker per-row totals. C/11 row volumes are now demoted to *soft anchors*: they seed the walker only when no earlier hard anchor (L loadout, H bunker row, or stored C/D `ret.` field) exists in the cascade for that tank. The moment any earlier hard anchor is found, the walker walks past the C/11 row and applies deltas from `orbEntryTankDeltas` over every intervening entry. Hard anchors retain their existing precedence order; the only change is C/11's tier.
+
+**Recompute paths updated.** `orbComputeRetainedForEntry` extended to compute `c11_tank_rows[i].volume` for every row of a C/11 entry, using the walker as above. Three triggers fire it, same as the C/D `ret.` cascade:
+
+1. **Form save** — non-destructive: blank C/11 row volumes auto-fill, manually-entered values preserved.
+2. **Per-row `Upd` button** on a C/11 entry — overwrites every row's `volume` with the walker-computed value; also recomputes `c11_total` (row sum) and `c11_manual_total` (signed delta vs prior C/11). Replaces the previous no-op behaviour where Upd on a C/11 row only re-summed `c11_total` from existing row values.
+3. **`Update all ret. (draft)` button** — cascades through C/11 entries in chronological order, overwriting row volumes the same way it overwrites C/D `ret.` fields. L loadouts remain skipped (user-anchored).
+
+The "manually-entered values preserved" carve-out only applies to the form-save path; Upd and Update All overwrite unconditionally, matching their existing C/D behaviour.
+
+**First-C/11-of-year fallback.** When the walker finds no earlier hard anchor for a tank (typical at year start before the first L loadout is logged), the C/11 row's own stored `volume` continues to anchor itself — the walker returns the stored value unchanged. Once an L loadout is added before that C/11, the next Upd or Update All will switch the row to walker-derived. Operators should be aware that the first Update All after adding an early-year loadout may shift C/11 sounding values to match the loadout-plus-deltas line.
+
+**`c11_manual_total` recompute.** `c11_manual_total` is recomputed alongside `c11_total` on every Upd or Update All pass: `c11_manual_total = c11_total − prior_c11_total` where prior is the most recent C/11 entry strictly before this one by `(date_iso, sequence_no)`. No clamp — negative values continue to flag disposal exceeding collection between soundings. Manual overrides to `c11_manual_total` are *not* preserved across Upd or Update All; if an operator needs a specific value, they re-enter it after the cascade.
+
+**Net change column rendering.** Unchanged. C/11 entries still render their post-recompute row volumes in `var(--accent)` italic as a state line. The values shown will now reflect any chronological insertions made since the C/11 was last touched, which is the point of the change.
+
+**Reconciliation panel.** Unaffected. Reconciliation continues to use only L entries as endpoints and sums non-L deltas between them; C/11 entries contribute no deltas (snapshot-only) and never appeared in reconciliation math. The integrity check that today's C/11-vs-ledger disagreement implicitly provided is *intentionally* removed by this change — the draft is a calculator, not an audit trail, and the workflow assumption is that entries are reviewed once and transcribed, not preserved as a parallel record.
+
+**Operator-facing implications.**
+
+- Inserting a missed C/D entry chronologically before a C/11 and running Update All will silently update the C/11 row volumes. No diff, no toast. This is intentional; the displayed value is a working draft figure.
+- Editing a C/11 row volume by hand still works (form save preserves manual entries on blank-fill only — manually overwriting an existing value and saving will overwrite back on the next Upd or Update All).
+- Operators who want to record what they physically sounded should do so in the paper ORB, not rely on the Console row value persisting unmodified.
+
+Files: `oilrecord.js` — `orbWalkTankVolume` (soft-anchor tier added for C/11), `orbComputeRetainedForEntry` (C/11 row volume computation added), `orbUpdateEntryRetained` (C/11 branch extended via per-row diff helper `orbDiffC11Rows`), `orbUpdateAllDraftRetained` (no logic change — already cascades through all non-L entries; the C/11 branch in compute now does work where it previously didn't), `submitOrbEntry` (form-save handler extended with per-row non-destructive merge for `c11_tank_rows`).
+
+---
+
+v2.27 *(2026-05-24)* — **Oil Record Book: drafting-helper refit.** The ORB page in IDMS-Console pivoted from a sign/transcribe regulatory workflow to a calculator-assisted draft helper. This entry covers everything that changed between v2.25 and now. The OneDrive `orb-{year}.json` file format is unchanged at the top level (`schema_version` still 1); changes are additive to the entries array and field shapes.
+
+**Workflow changes (Console UI).** Signing, signatures, the Transcribed tab, the Mark Transcribed button, the sequence-number / officer / status columns, and the row-selection checkboxes are all removed. New entries continue to be written with `status: 'draft'`, `transcribed_status: 'draft'`, `officer_sig: null`, and a monotonic `sequence_no` so the on-disk schema stays unchanged and old entries load cleanly — but the UI no longer reads those fields. The draft entries table is now `Date | Code | Items | Net change | Actions` with per-row actions `Edit · Upd · Del`.
+
+**Per-entry net change column.** A new compact rendering of each entry's volume impact, computed inline from `orbEntryTankDeltas`. Fuel & diesel deltas aggregate into one `Fuel ±X USG` line (vessels have many small fuel tanks per bunker); everything else (lube, waste oil/sludge, bilge, water, uncategorized) renders per tank using the tank's abbreviation token. Unattributed deltas append as a final `Misc ±X USG`. C/11 auto-soundings are snapshots, not deltas — they render the per-tank current retained volumes in `var(--accent)` italic to read as a state line rather than a change line.
+
+**Per-entry per-tank delta extraction (`orbEntryTankDeltas`).** Returns `{ tankDeltas: { [tank_token]: signedNumber }, unattributed: number, note?: string }`. The delta map is keyed by the canonical tank token (abbreviation when configured, else name) so name↔abbreviation drift across legacy entries collapses cleanly. Per-code semantics:
+
+| Code & item | Tank A (−qty) | Tank B (+qty) | Notes |
+|---|---|---|---|
+| C/12 Sludge internal transfer | `c12_from_tank` OR `c12_from_other` (if matches a tank) | `c12_to_tank` | Internal — net zero |
+| C/12 Sludge transfer to facility | `c12_from_tank` | — | Leaves the ship |
+| C/12 Oil residue collected | `c12_collect_from` (if matches a tank) | `c12_collect_to` | Source typically free-text (drip pans, sumps); credit-only when source isn't tracked |
+| C/12 Incineration | `c12_incin_source` | — | Oil destroyed |
+| C/12 Evaporation | `c12_evap_source` | — | Water removed |
+| C/12 legacy `c12_method` shape | `c12_tanks_emptied` | `c12_tank_dest` (if "To another tank") | Read-fallback for pre-v2.24 burn_log auto-drafts |
+| D bilge → reception | `d_source_tank` | — | Leaves the ship |
+| D bilge transfer | `d_source_tank` | `d_dest_tank` | Internal — net zero |
+| D bilge water disposal (OWS) | `d_source_tank` OR `d_ows_source` (if matches a tank) | — | Free-text bilge wells fall through to `unattributed` |
+| H bunkering | — | each `fuel_tanks_list[].tank_name` and `lube_tanks_list[].tank_name` at that row's `qty_tonnes` (in the user's selected volume unit despite the legacy key name) | Fuel/lube added |
+| A, B, G | unattributed | unattributed | Free-text tank/qty fields |
+| C/11, E, F, I | (no delta) | | Snapshot or non-quantified |
+
+**Reconciliation panel — grouped by tank type.** When the draft list for a year contains ≥2 `L` (Tank Loadout) entries, the Console renders a reconciliation table below the entries table. Tanks bucket into category groups via `orbReconGroupFor(tankToken)`:
+
+| Group | Categories |
+|---|---|
+| Fuel & Diesel | `fuel`, `fuel_oil`, `diesel`, `mgo`, `hfo`, `dfo`, `gasoline` |
+| Lube | `lube`, `lubricating_oil`, `lube_oil` |
+| Waste Oil / Sludge | `waste_oil`, `slop`, `holding` |
+| Bilge | `bilge` |
+| Water | `fresh_water`, `potable_water`, `water` |
+| Misc | (fallback for uncategorized tanks or tanks not in vesselConfig) |
+
+Each group renders a header, per-tank rows, and a subtotal (Oldest · Adjustments · Expected · Actual · Error). The table closes with an "Unattributed adjustments" row (free-text source on A/B/G/D-OWS) and a bold Grand total. Error colour-coding: green ≤ 0.005, amber ≤ 1.0, red beyond.
+
+**Tank tokens — canonical form.** Across the entire ORB module, tank references are stored and displayed as `orbTankToken(t)` — the tank's `abbreviation` when set in vesselConfig (Vessel Setup → Liquid Cargo & Fuel Tanks → "Short name"), falling back to `name`. `orbCanonicalTank(val)` resolves any stored string (abbreviation, name, or legacy free-text) to the configured tank's canonical token; `orbSameTank(a, b)` is used everywhere two tank references are compared (walker, delta extractor, reconciliation grouping). Auto-draft paths (H bunker rows, C sludge transfers, C incineration, E OWS, D transfers, legacy C/12, legacy bilge D) all write `orbTankToken(tank)` so the on-disk values match what manual entries produce.
+
+`orbCanonicalTank` resolves in three passes, first match wins:
+
+1. **Exact** string match against token, name, or abbreviation.
+2. **Case-insensitive exact** match after whitespace normalization.
+3. **Case-insensitive after stripping a trailing tank-noun suffix** (`" tank"`, `" tk"`, `" tk."`, `" t."`) — so legacy auto-drafts that stored `"dirty oil tank"` resolve to the configured `"Dirty Oil"` token.
+
+Fuzzy steps deliberately don't do partial / substring matching, which would risk collapsing `"Sludge Tk A"` and `"Sludge Tk B"` onto each other. Unresolved values (genuinely free-text bilge wells, etc.) flow through unchanged so they still show up in the Misc bucket without being silently rewritten. The migration (`orbMigrateYearEntries`) runs the resolver over every tank field on year-file load, so fuzzy-matched legacy values are persisted to disk as canonical tokens.
+
+**Item-prose form layout (Code C/12 + Code D).** Each MARPOL item renders as one labelled row with inline inputs matching the printed ORB phrasing. Templates live in `C_ITEM_TEMPLATES` and `D_ITEM_TEMPLATES`; the same parts list drives both the form (`orbRenderItemRow`) and the narrative builder (`orbRenderTemplateNarrative`) so the editor and the printed line can never drift. Part types:
+
+```js
+{ text: '... {vl} ...' }                              // literal, {vl} expands to volume unit
+{ input: 'field_key', type: 'text'|'tank_select'|'time'|'select',
+  tankSet?, options?, placeholder?, width?,
+  showIf?: f => boolean }                             // hide-when-false
+{ either: [partA, partB], glue: ' or ' }              // tank dropdown + free-text alternative
+```
+
+`showIf` predicates gate visibility uniformly across the form, narrative, and "has any value" check (used to skip empty item lines). `either` parts render both alternatives side-by-side; the narrative collapses to whichever is filled (joined by glue if both).
+
+**Code C — item structure** (replaces v2.23's `c12_method` flat shape):
+
+| Item dropdown value | Form / narrative |
+|---|---|
+| `11 – Voyage/weekly sludge report` | Per-tank `[tank ▾][cap auto-fill][ret. manual]` rows, then 11.3 (auto-sum, editable) and 11.4 (signed auto-calc vs prior sounding, editable). Aliases legacy `11 – Weekly sounding`. |
+| `12 – Sludge internal transfer` | 12 `[qty] from [tank ▾] or [other text]`, ret. + 12.2 `To [tank ▾]`, ret. Aliases `12 – Sludge transfer`. |
+| `12 – Sludge transfer to facility` | 12 `[qty] from [tank ▾]`, ret. + 12.1 `Landed, [destination]` |
+| `12 – Oil residue collected by manual operation` | 12 `[qty] collected from [tank ▾] or [other text]` + 12.4 `Transferred to [tank ▾]`, ret. Aliases `12 – Oil residue collected & transferred`. |
+| `12 – Incineration of sludge` | 12 `[qty] from [tank ▾]`, ret. + 12.3 `Incinerated, [hrs] hrs, [start] to [stop]`. Aliases `12 – Incineration of oil residue`. |
+| `12 – Evaporation of water` | 12 `[qty] water from [tank ▾]`, ret. + 12.4 `Evaporated to atmosphere` |
+
+`C_ITEM_ALIASES` maps every legacy item label forward; `orbCItem(fields)` returns the short item identifier (`'11'`, `'12_internal'`, `'12_facility'`, `'12_collect'`, `'12_incin'`, `'12_evap'`) used in all the per-item branches.
+
+**Code D — sub-type structure** (adds OWS, reshapes Reception):
+
+| `sub_type` value | Item 13 | Item 14 | Item 15.x |
+|---|---|---|---|
+| `Oily bilge water to reception facility` | qty + source tank + **capacity** + **source-retained** | start/stop | **15.2** destination facility + location *(was 15.1 positions in v2.23)* |
+| `Oily bilge water transfer` | qty + source tank | start/stop | 15.3 dest tank + dest-retained |
+| `Bilge water disposal (OWS)` *(new)* | qty + `[tank ▾ from waste_oil/bilge/slop/holding] or [other text]` + capacity + source-retained (the last two are `showIf: f => !!f.d_source_tank` — they don't render for free-text sources because a bilge well doesn't have a meaningful capacity) | start/stop | **15.1** `[hemi N/S] [deg]° [min]', [hemi W/E] [deg]° [min]', start` × two rows (start + stop) |
+
+Legacy reception `d_pos_start` / `d_pos_stop` (combined-text 15.1 positions) are preserved in the narrative and surfaced in a "Legacy 15.1 positions" annotation in the form so they aren't dropped on re-save. Legacy bilge-disposal entries with `quantity_m3` / `method` (pre-v2.24) are migrated to the modern `d_qty` / `sub_type` shape on year-file load.
+
+**Tank Loadout (code `L`)** — unchanged from v2.25 except the lifecycle constraints simplified (signing is now globally removed). Loadouts still anchor the reconciliation; their per-tank values are never auto-overwritten by the Update buttons.
+
+**`ret.` auto-calc + Update buttons.** A walker (`orbWalkTankVolume`) finds a tank's latest known volume by walking entries chronologically backward from a target entry: anchors include loadout values, C/11 snapshot rows, H bunker per-row `total_tonnes`, and stored `ret.` fields on prior C/D entries. Between anchors it applies deltas from `orbEntryTankDeltas` so a transfer-out with no stored ret. still propagates correctly. `orbComputeRetainedForEntry(entry, allEntries)` uses the walker to compute every applicable `ret.` field for the entry. Three triggers fire it:
+
+1. **Form save** — non-destructive: blank ret. fields auto-fill, manual overrides preserved.
+2. **Per-row `Upd` button** — overwrites the entry's ret. fields with computed values.
+3. **`Update all ret. (draft)` button** in the panel head — cascades chronologically through every non-`L` draft entry. Loadouts skipped (user-anchored).
+
+C/11 entries are handled by the same machinery: `out.c11_total` = sum of `c11_tank_rows[].volume`, `out.c11_manual_total` = current total − prior C/11 sounding's total (signed; no clamp — a negative value flags disposal exceeding collection between soundings).
+
+**H bunker auto-total** — when the user enters a `qty added` or picks a tank in an H tank row, the row's `total onboard` auto-fills as `prior_known_volume(tank) + qty`. Manual edits to the total are clobbered by the next qty/tank change (matches the "total should always reflect the addition" requirement).
+
+**Tooling: idempotent migration.** `orbMigrateYearEntries(year)` runs after every year-file load (gated on `vesselConfig` being available). Applies safe transformations:
+
+1. Pre-v2.27 D bilge auto-drafts with `quantity_m3` / `method` / `time_start` → `d_qty` / `sub_type: 'Oily bilge water transfer'` / `d_time_start` so the delta extractor sees them.
+2. Legacy C/12 item labels → current canonical values (already aliased at read; this persists the canonical value on disk).
+3. Tank tokens canonicalized across every field that stores a tank reference (scalar fields, H per-tank rows, C/11 snapshot rows, L loadout rows).
+4. Narrative + `items[]` rebuilt for any entry whose fields changed.
+
+Fully idempotent — entries already matching the current schema are untouched and no save happens. Save errors are caught and logged; the next load retries.
+
+**Tooling: dismissed auto-drafts.** New `dismissed_source_refs: []` array on the year file. When the user deletes an auto-drafted entry, its `source_ref` lands here; `orbIngestFromFuelState` skips refs in this list so deletions are sticky across machines / sessions.
+
+**Refresh discipline.** `loadOrbTabData` reads directly from in-memory `ORB.yearData[year].entries` (not from a SQLite query). Every mutation path updates this array synchronously before saving — so the entry table and reconciliation panel can never lag a just-completed edit. SQLite remains a derived cache; OneDrive is the durable source of truth.
+
+---
+
+v2.25 *(2026-05-24)* — **Oil Record Book: Tank Loadout entry type + draft reconciliation.** Console-only addition to the ORB schema; the existing MARPOL codes A–I are untouched and the OneDrive `orb-{year}.json` file structure is unchanged.
+
+**New entry code `L`** — "Tank Loadout (working draft only — not transcribed)". Stored in the same `orb_entries` table / `orb-{year}.json` `entries[]` array as MARPOL entries, distinguished by `code: "L"`. Field shape:
+
+```json
+{
+  "code": "L",
+  "fields": {
+    "loadout_tank_rows": [
+      { "tank_id": "...", "name": "Aft Diesel P", "volume": "1250.0" },
+      { "tank_id": "...", "name": "Aft Diesel S", "volume": null },
+      { "tank_id": "...", "name": "Waste Oil 1",  "volume": "812.5" }
+    ]
+  },
+  "items": ["loadout"]
+}
+```
+
+`volume` is a string in the user's selected `orb_settings.volume_unit` (USG or m³). `null` means "tank exists but value unknown for this loadout" — these tanks are skipped in reconciliation rather than treated as zero.
+
+**Lifecycle constraints for code L:**
+- Cannot be signed (`orbSignEntry` rejects with a toast).
+- Cannot be marked transcribed (the signed-precondition naturally blocks this).
+- Never emitted to the printed/transcribed ORB or the PDF export.
+- Filtered out of the Transcribed tab by the existing `transcribed_status = 'transcribed'` SQL filter, since L can never reach that status.
+
+**Reconciliation panel** — when the draft list for a year contains ≥2 `L` entries, the Console renders a per-tank reconciliation table below the entries table. Logic: take the oldest L (by `(date_iso, sequence_no)`) and the newest L; for every non-L entry strictly between them, compute per-tank deltas via `orbEntryTankDeltas(entry)`; compare `oldest + sum(deltas)` to `newest` per tank. Deltas that can't be tank-attributed (free-text tanks on A/B; free-text qty on G) accumulate in a separate "Unattributed adjustments" row so the user can see the gap.
+
+**Per-code delta semantics encoded in `orbEntryTankDeltas`:**
+
+| Code & item            | Tank A (− qty) | Tank B (+ qty) | Notes |
+|---|---|---|---|
+| C/12 Sludge transfer   | `c12_from_tank`    | `c12_to_tank`     | Internal — net zero |
+| C/12 Oil residue coll. | `c12_collect_from` | `c12_collect_to`  | Internal — net zero |
+| C/12 Incineration      | `c12_incin_source` | —                 | Oil destroyed |
+| C/12 Evaporation       | `c12_evap_source`  | —                 | Water removed |
+| D bilge → reception    | `d_source_tank`    | —                 | Leaves the ship |
+| D bilge transfer       | `d_source_tank`    | `d_dest_tank`     | Internal — net zero |
+| H bunkering            | —                  | each `fuel_tanks_list[].tank_name` and `lube_tanks_list[].tank_name` at that row's `qty_tonnes` (which is in the user's selected volume unit despite the legacy key name) | Fuel added |
+| A, B, G                | unattributed       | unattributed      | Free-text tank/qty fields |
+| C/11, E, F, I          | (no delta)         |                   | Snapshot or non-quantified |
+
+**Schema version stays at 1.** The change is additive to the entries array; older code paths that don't know about code `L` will simply ignore those records (they don't match any MARPOL filter and don't appear in transcribed/PDF flows).
+
+v2.24 *(2026-05-24)* — **Per-item `comments[]` thread on roundslog entries (§22).** Additive field; `schema_version` stays at 2.
+
+Each entry inside `roundslog-*.json` may carry a `comments` array. Empty array allowed; absent field is treated as empty. Each comment is `{ text: string, author: string, timestamp: string (ISO 8601) }`. Append-only across two writers:
+
+- **PWA** — user taps the item label during rounds entry; entries land in `RE.comments[item_id]` and ship inline on submit (PWA-SCHEMA v1.7).
+- **Console** — reviewer opens any item from the Rounds Log detail panel and appends. The new comment is written into the *most-recently-submitted* contributing roundslog for that item (read-modify-write on the JSON; no ETag guard yet — Phase 9 will harden). Prior comments from any author are never modified or deleted.
+
+**SQLite mirror.** New nullable column `rounds_entries.comments_json` (TEXT, JSON-encoded `comments[]`). Populated by `ingestRoundsLogV2` and updated in place by the new `rounds:updateEntryComments` IPC after the OneDrive write. Reads in `rounds:getRoundDetail` now include this column so the Console can render badges and modal threads without an extra Graph fetch per row.
+
+**Multi-source rendering.** When a round was submitted by N users, the Console-side detail row collapses to a single visible row but retains `sources[]` (one per contributing roundslog file). The comments badge sums comment counts across all sources; the modal renders the union sorted by `timestamp`. Author and timestamp are *rendered* concatenated as `"— {author}, YYYY-MM-DD HH:MM"`; structurally they remain separate fields.
 
 v2.23 *(2026-05-23)* — **Rounds Groups (reusable section templates) · section-level Offline flag · collapsible sections in Rounds Setup · roundslog group-linkage fields · supersedes v1.5 PWA `reLoadAggregates` round_number filter.** Shipped as IDMS Console **v0.2.7**.
 

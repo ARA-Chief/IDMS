@@ -19,6 +19,11 @@ const RE = {
   // the user currently has selected. Child items only render once a section
   // is picked. Persisted in drafts so resume restores the same view.
   groupSel:     {},   // parent_item_id → section_id
+  // Per-item comment thread captured during this round entry. Each entry is
+  // {text, author, timestamp}. Persisted in the draft and shipped inline on
+  // every item entry of the submitted roundslog (§22 — see schema doc).
+  // Console reviewers append to the same array after submission.
+  comments:     {},   // item_id → [{text, author, timestamp}]
   aggNew:       null, // entries[] from most recent aggregate file
   aggOld:       null, // entries[] from second-most-recent aggregate file
   // Wider history window used by group-child rows. Group children only have
@@ -162,7 +167,9 @@ function reSaveDraft() {
     });
     const hasSecd = Object.keys(RE.secd || {}).some(k => RE.secd[k]);
     const hasGroup = Object.keys(RE.groupSel || {}).length > 0;
-    if (!hasValues && !hasSecd && !hasGroup) return;
+    const hasCmt = Object.keys(RE.comments || {}).some(k =>
+      Array.isArray(RE.comments[k]) && RE.comments[k].length > 0);
+    if (!hasValues && !hasSecd && !hasGroup && !hasCmt) return;
     const payload = {
       saved_at:     new Date().toISOString(),
       round_number: RE.roundNum,
@@ -170,6 +177,7 @@ function reSaveDraft() {
       values:       RE.values,
       secd:         RE.secd,
       groupSel:     RE.groupSel,
+      comments:     RE.comments,
       cursorIdx:    RE.cursorIdx,
     };
     localStorage.setItem(reDraftKey(), JSON.stringify(payload));
@@ -555,6 +563,7 @@ async function initRoundsEntry(sourceScreen, opts) {
   RE.cursorIdx       = 0;
   RE.values          = {};
   RE.secd            = {};
+  RE.comments        = {};
   RE.activeSubfield  = null;
   reInstallSubfieldTracking();
 
@@ -578,6 +587,7 @@ async function initRoundsEntry(sourceScreen, opts) {
       RE.values    = Object.assign(RE.values, draft.values);
       RE.secd      = draft.secd || {};
       RE.groupSel  = draft.groupSel || {};
+      RE.comments  = draft.comments || {};
       RE.cursorIdx = (typeof draft.cursorIdx === 'number') ? draft.cursorIdx : 0;
       // Rebuild with the restored group selections so child rows appear.
       reBuildItems();
@@ -745,7 +755,7 @@ function reGroupParentRowHTML(r, ni) {
   return `
     <div class="re-row re-data-row re-group-row${active ? ' re-active-row' : ''}"
          id="re-row-${ni}" data-ni="${ni}">
-      <div class="re-col-label">${reEsc(r.item.label)}${warn}</div>
+      <div class="re-col-label re-label-cmt" onclick="event.stopPropagation(); reOpenCommentsModal('${reEsc(iid)}')">${reEsc(r.item.label)}${warn}${reCommentBadgeHTML(iid)}</div>
       <div class="re-col-hist">—</div>
       <div class="re-col-hist">—</div>
       <div class="re-col-entry re-entry-cell">
@@ -755,6 +765,19 @@ function reGroupParentRowHTML(r, ni) {
         </select>
       </div>
     </div>`;
+}
+
+// Small clickable badge appended to every item label. Shows the comment count
+// when any exist; a quiet "+" affordance otherwise. Tapping it (or the label
+// text itself) opens the comments modal for that item. stopPropagation keeps
+// the row-click cursor handler from firing on top of the modal open.
+function reCommentBadgeHTML(iid) {
+  const n = (RE.comments[iid] || []).length;
+  const cls = n > 0 ? 're-cmt-badge re-cmt-has' : 're-cmt-badge';
+  const text = n > 0 ? String(n) : '+';
+  return ` <span class="${cls}" data-cmt-iid="${reEsc(iid)}"
+    onclick="event.stopPropagation(); reOpenCommentsModal('${reEsc(iid)}')"
+    title="Comments">${text}</span>`;
 }
 
 function reSectionTitleHTML(label) {
@@ -790,7 +813,7 @@ function reDataRowHTML(r, ni) {
   return `
     <div class="re-row re-data-row${active ? ' re-active-row' : ''}${done ? ' re-done' : ''}"
          id="re-row-${ni}" data-ni="${ni}">
-      <div class="re-col-label">${reEsc(r.item.label)}</div>
+      <div class="re-col-label re-label-cmt" onclick="event.stopPropagation(); reOpenCommentsModal('${reEsc(iid)}')">${reEsc(r.item.label)}${reCommentBadgeHTML(iid)}</div>
       <div class="re-col-hist">${reEsc(h1)}</div>
       <div class="re-col-hist">${reEsc(h2)}</div>
       ${reEntryCellHTML(r, ni, active, secd, val)}
@@ -813,7 +836,7 @@ function reLatLonRowHTML(r, ni) {
   return `
     <div class="re-row re-latlon-row${active ? ' re-active-row' : ''}${done ? ' re-done' : ''}"
          id="re-row-${ni}" data-ni="${ni}" data-iid-latlon="${reEsc(iid)}">
-      <div class="re-latlon-label">${reEsc(r.item.label)}</div>
+      <div class="re-latlon-label re-label-cmt" onclick="event.stopPropagation(); reOpenCommentsModal('${reEsc(iid)}')">${reEsc(r.item.label)}${reCommentBadgeHTML(iid)}</div>
       <div class="re-latlon-inputs">
         <div class="re-latlon-pair">
           <span class="re-latlon-tag">LAT</span>
@@ -879,7 +902,7 @@ function reSoundingRowHTML(r, ni) {
   return `
     <div class="re-row re-snd-row${active ? ' re-active-row' : ''}${done ? ' re-done' : ''}"
          id="re-row-${ni}" data-ni="${ni}">
-      <div class="re-snd-label">${reEsc(r.item.label)}</div>
+      <div class="re-snd-label re-label-cmt" onclick="event.stopPropagation(); reOpenCommentsModal('${reEsc(iid)}')">${reEsc(r.item.label)}${reCommentBadgeHTML(iid)}</div>
       <div class="re-snd-inputs">${inputsHTML}</div>
     </div>`;
 }
@@ -1584,7 +1607,11 @@ async function reConfirmSubmit() {
         parent_section_id:    item._parentSectionId ?? undefined,
         base_item_id:         item._baseItemId      ?? undefined,
         value,
-        secd
+        secd,
+        // §22 — per-item comment thread. Append-only across PWA submit and
+        // Console reviewer edits. Empty array (not omitted) so downstream
+        // consumers can rely on the field being present.
+        comments:             Array.isArray(RE.comments[iid]) ? RE.comments[iid] : []
       });
     }
 
@@ -1624,6 +1651,263 @@ async function reConfirmSubmit() {
         <button class="re-modal-btn re-modal-primary" onclick="reCloseModal();reHandleSubmit()">Retry</button>
       </div>`);
   }
+}
+
+// ── Comments ──────────────────────────────────────────────────────────────────
+
+function reItemLabelById(iid) {
+  const row = (RE.flatItems || []).find(r => r.item && r.item.item_id === iid);
+  return row ? row.item.label : iid;
+}
+
+function reFmtCommentStamp(iso) {
+  try {
+    const d = new Date(iso);
+    const yyyy = d.getFullYear();
+    const mm = rePad2(d.getMonth() + 1);
+    const dd = rePad2(d.getDate());
+    const hh = rePad2(d.getHours());
+    const mi = rePad2(d.getMinutes());
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+  } catch (e) { return iso || ''; }
+}
+
+// Pending photos staged in the open comments modal. Reset on every open so
+// switching between items doesn't carry uncommitted files over. Kept off RE
+// so it doesn't leak into the draft serialization.
+let _RE_CMT_PENDING_PHOTOS = [];
+
+function reAttachmentsHTML(atts) {
+  if (!Array.isArray(atts) || !atts.length) return '';
+  return `<div class="re-cmt-attachments">${atts.map(a => `
+    <img class="re-cmt-thumb"
+         data-thumb-path="${reEsc(a.thumbnail_path || a.path || '')}"
+         data-full-path="${reEsc(a.path || '')}"
+         alt="">
+  `).join('')}</div>`;
+}
+
+function reCommentsModalHTML(iid) {
+  const list = RE.comments[iid] || [];
+  const label = reItemLabelById(iid);
+  const rows = list.length
+    ? list.map(c => {
+        const author = reEsc(c.author || 'unknown');
+        const when = reEsc(reFmtCommentStamp(c.timestamp));
+        const text = reEsc(c.text || '');
+        return `<div class="re-cmt-entry">
+          ${text ? `<div class="re-cmt-text">${text}</div>` : ''}
+          ${reAttachmentsHTML(c.attachments)}
+          <div class="re-cmt-meta">— ${author}, ${when}</div>
+        </div>`;
+      }).join('')
+    : '<div class="re-cmt-empty">No comments yet.</div>';
+  // Reset pending state every time the modal renders. Staged photos do not
+  // survive a re-render or close; this is intentional — the user has not
+  // committed them yet, and silently carrying them over to a different item
+  // would be a worse failure than asking them to re-pick.
+  _RE_CMT_PENDING_PHOTOS = [];
+  return `
+    <h3 class="re-modal-title">Comments — ${reEsc(label)}</h3>
+    <div class="re-cmt-list" id="re-cmt-list">${rows}</div>
+    <textarea id="re-cmt-input" class="re-cmt-input" rows="3"
+              placeholder="Add a comment…"></textarea>
+    <div class="re-cmt-photo-row">
+      <label class="re-cmt-photo-btn" for="re-cmt-file">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <rect x="1.5" y="3" width="13" height="10" rx="1.5"/>
+          <circle cx="5.5" cy="6.5" r="1.2"/>
+          <path d="M2 12l3.5-3.5 3 3 2-2 3.5 3.5"/>
+        </svg>
+        Add photo
+      </label>
+      <input id="re-cmt-file" type="file" accept="image/*" multiple
+             style="display:none" onchange="reHandleCommentFiles(event)">
+    </div>
+    <div class="re-cmt-photo-preview" id="re-cmt-photo-preview"></div>
+    <div class="re-cmt-err" id="re-cmt-err" style="display:none"></div>
+    <div class="re-modal-actions">
+      <button class="re-modal-btn re-modal-secondary" onclick="reCloseModal()">Cancel</button>
+      <button class="re-modal-btn re-modal-primary" id="re-cmt-add-btn"
+              onclick="reSubmitCommentFromModal('${reEsc(iid)}')">OK</button>
+    </div>`;
+}
+
+function reOpenCommentsModal(iid) {
+  reShowModal(reCommentsModalHTML(iid));
+  // Focus textarea after render
+  setTimeout(() => {
+    const ta = document.getElementById('re-cmt-input');
+    if (ta) ta.focus();
+    // Stream thumbnails for any existing attachments into the list.
+    reLoadCommentThumbnails(document.getElementById('re-cmt-list'));
+  }, 0);
+}
+
+function reHandleCommentFiles(ev) {
+  const input = ev && ev.target;
+  if (!input || !input.files) return;
+  for (const f of Array.from(input.files)) {
+    if (f.type && f.type.indexOf('image/') === 0) _RE_CMT_PENDING_PHOTOS.push(f);
+  }
+  input.value = ''; // allow re-picking the same file
+  reRenderPhotoPreview();
+}
+
+function reRenderPhotoPreview() {
+  const el = document.getElementById('re-cmt-photo-preview');
+  if (!el) return;
+  if (!_RE_CMT_PENDING_PHOTOS.length) { el.innerHTML = ''; return; }
+  el.innerHTML = _RE_CMT_PENDING_PHOTOS.map((f, i) => `
+    <div class="re-cmt-pp">
+      <img src="${URL.createObjectURL(f)}" alt="">
+      <button type="button" class="re-cmt-pp-x"
+              onclick="reRemovePendingPhoto(${i})" title="Remove">×</button>
+    </div>`).join('');
+}
+
+function reRemovePendingPhoto(idx) {
+  if (idx < 0 || idx >= _RE_CMT_PENDING_PHOTOS.length) return;
+  _RE_CMT_PENDING_PHOTOS.splice(idx, 1);
+  reRenderPhotoPreview();
+}
+
+async function reSubmitCommentFromModal(iid) {
+  const ta    = document.getElementById('re-cmt-input');
+  const btn   = document.getElementById('re-cmt-add-btn');
+  const errEl = document.getElementById('re-cmt-err');
+  if (!ta) return;
+  const text = (ta.value || '').trim();
+  const photos = _RE_CMT_PENDING_PHOTOS.slice(0, 5); // cap matches Tasks
+  // Photo-only comments are allowed; text-only is allowed; nothing at all
+  // is treated as a Cancel.
+  if (!text && !photos.length) { reCloseModal(); return; }
+
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = photos.length ? 'Uploading…' : 'Saving…';
+  }
+
+  let attachments = [];
+  try {
+    if (photos.length) {
+      attachments = await reUploadCommentPhotos(iid, photos);
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'OK'; }
+    if (errEl) {
+      errEl.textContent = 'Photo upload failed: ' + (e && e.message ? e.message : e);
+      errEl.style.display = 'block';
+    }
+    // Keep the modal open so the user can retry — text + staged photos
+    // remain intact (we haven't touched _RE_CMT_PENDING_PHOTOS or the
+    // textarea here).
+    return;
+  }
+
+  if (!Array.isArray(RE.comments[iid])) RE.comments[iid] = [];
+  const newComment = {
+    text:      text || '',
+    author:    (currentUser && currentUser.username) || '_unknown',
+    timestamp: new Date().toISOString()
+  };
+  if (attachments.length) newComment.attachments = attachments;
+  RE.comments[iid].push(newComment);
+  reSaveDraft();
+  // Re-open the modal so the new comment is visible; also re-render the grid
+  // so the badge count updates.
+  reRenderGrid();
+  reOpenCommentsModal(iid);
+}
+
+// Upload each staged photo using the existing erTaskUploadImage helper
+// (resize 1080x1024 full + 240x180 thumb, JPEG, PUT to
+// data/assets/pictures/{itemId}/). Returns the attachment metadata array
+// ready to attach to the comment object. Throws on any failure so the
+// caller can keep the modal open for retry.
+async function reUploadCommentPhotos(itemId, files) {
+  if (typeof erTaskUploadImage !== 'function') {
+    throw new Error('Image upload helper unavailable');
+  }
+  // Upload sequentially so the user sees deterministic progress and so any
+  // failure aborts cleanly without leaving half-uploaded pairs (full
+  // succeeded, thumb failed) for the *next* photo in the batch.
+  const out = [];
+  for (const f of files) {
+    const att = await erTaskUploadImage(itemId, f);
+    out.push(att);
+  }
+  return out;
+}
+
+// Walk the comments list and stream each attachment thumbnail into its
+// <img> by fetching the OneDrive blob with the active Graph token. Failure
+// to load one image hides that thumbnail rather than breaking the modal.
+async function reLoadCommentThumbnails(rootEl) {
+  if (!rootEl || typeof graphToken === 'undefined' || !graphToken) return;
+  const imgs = rootEl.querySelectorAll('img[data-thumb-path]:not([data-loaded])');
+  for (const img of imgs) {
+    const relPath = img.getAttribute('data-thumb-path');
+    if (!relPath) continue;
+    img.setAttribute('data-loaded', '1');
+    try {
+      const url  = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+                   encodeURIComponent('Documents/IDMS/' + relPath).replace(/%2F/g, '/') +
+                   ':/content';
+      const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } });
+      if (!resp.ok) { img.style.display = 'none'; continue; }
+      const blob = await resp.blob();
+      img.src = URL.createObjectURL(blob);
+      img.style.opacity = '1';
+    } catch (e) {
+      img.style.display = 'none';
+    }
+  }
+  // Wire taps to open the full-size lightbox.
+  rootEl.querySelectorAll('img[data-full-path]:not([data-clickwired])').forEach(img => {
+    img.setAttribute('data-clickwired', '1');
+    img.addEventListener('click', () => {
+      const p = img.getAttribute('data-full-path');
+      if (p) reOpenLightbox(p);
+    });
+  });
+}
+
+// Minimal fullscreen viewer for a single attachment. Tap anywhere to close.
+function reOpenLightbox(relPath) {
+  if (!relPath) return;
+  const overlay = document.createElement('div');
+  overlay.className = 're-cmt-lightbox';
+  overlay.innerHTML = `
+    <div class="re-cmt-lightbox-inner">
+      <img id="re-cmt-lb-img" alt="">
+      <div id="re-cmt-lb-spin" class="re-cmt-lightbox-spin">Loading…</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const cleanup = () => {
+    const im = overlay.querySelector('#re-cmt-lb-img');
+    if (im && im.src && im.src.indexOf('blob:') === 0) URL.revokeObjectURL(im.src);
+    overlay.remove();
+  };
+  overlay.addEventListener('click', cleanup);
+  (async () => {
+    try {
+      const url  = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+                   encodeURIComponent('Documents/IDMS/' + relPath).replace(/%2F/g, '/') +
+                   ':/content';
+      const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } });
+      if (!resp.ok) throw new Error(String(resp.status));
+      const blob = await resp.blob();
+      const img  = overlay.querySelector('#re-cmt-lb-img');
+      const spin = overlay.querySelector('#re-cmt-lb-spin');
+      img.onload = () => { img.style.opacity = '1'; if (spin) spin.remove(); };
+      img.src = URL.createObjectURL(blob);
+    } catch (e) {
+      const spin = overlay.querySelector('#re-cmt-lb-spin');
+      if (spin) spin.textContent = 'Failed to load image.';
+    }
+  })();
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
@@ -1870,6 +2154,95 @@ function reStylesHTML() {
 }
 .re-checkbox.re-checked { background: var(--re-accent); border-color: var(--re-accent); }
 .re-checkbox.re-checked::after { content: '✓'; font-size: 15px; color: var(--re-bg0); font-weight: 700; }
+
+/* Comment badge + clickable label */
+.re-label-cmt { cursor: pointer; }
+.re-cmt-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px;
+  font-size: 11px; font-weight: 700; line-height: 1;
+  border-radius: 9px; color: var(--re-muted);
+  border: 1px solid var(--re-border); background: transparent;
+  vertical-align: middle;
+}
+.re-cmt-badge.re-cmt-has { color: var(--re-bg0); background: var(--re-accent); border-color: var(--re-accent); }
+.re-cmt-list { max-height: 240px; overflow-y: auto; margin: 8px 0; }
+.re-cmt-entry { padding: 6px 4px; border-bottom: 1px solid var(--re-border); }
+.re-cmt-entry:last-child { border-bottom: none; }
+.re-cmt-text { font-size: 13px; color: var(--re-text); white-space: pre-wrap; }
+.re-cmt-meta { font-size: 11px; color: var(--re-muted); margin-top: 2px; }
+.re-cmt-empty { font-size: 12px; color: var(--re-muted); padding: 8px 4px; font-style: italic; }
+.re-cmt-input {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  background: var(--re-bg0); color: var(--re-text);
+  border: 1px solid var(--re-border); border-radius: 4px;
+  padding: 6px 8px; font-size: 13px; font-family: inherit; margin-top: 4px;
+}
+
+/* Per-comment attachments grid (existing comments) */
+.re-cmt-attachments {
+  display: flex; flex-wrap: wrap; gap: 5px;
+  margin: 4px 0 0;
+}
+.re-cmt-thumb {
+  width: 72px; height: 54px; object-fit: cover; border-radius: 4px;
+  background: var(--re-bg0);
+  opacity: 0; transition: opacity 0.2s;
+  cursor: zoom-in;
+}
+
+/* "Add photo" picker row + preview tiles (new comment) */
+.re-cmt-photo-row {
+  display: flex; align-items: center; margin-top: 6px;
+}
+.re-cmt-photo-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px;
+  background: transparent; color: var(--re-text2);
+  border: 1px solid var(--re-border); border-radius: 4px;
+  font-size: 12px; cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.re-cmt-photo-btn:active { background: var(--re-bg0); }
+.re-cmt-photo-preview {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px;
+}
+.re-cmt-pp { position: relative; width: 60px; height: 46px; }
+.re-cmt-pp img {
+  width: 60px; height: 46px; object-fit: cover; border-radius: 3px;
+  background: var(--re-bg0);
+}
+.re-cmt-pp-x {
+  position: absolute; top: -5px; right: -5px;
+  background: rgba(239, 68, 68, 0.92); color: #fff;
+  border: none; border-radius: 50%;
+  width: 16px; height: 16px; font-size: 10px; line-height: 1;
+  cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.re-cmt-err {
+  font-size: 12px; color: #c53030; margin-top: 6px;
+}
+
+/* Fullscreen lightbox for opening a comment attachment */
+.re-cmt-lightbox {
+  position: fixed; inset: 0; z-index: 99999;
+  background: rgba(0,0,0,0.92);
+  display: flex; align-items: center; justify-content: center;
+  cursor: zoom-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.re-cmt-lightbox-inner { position: relative; max-width: 96vw; max-height: 96vh; }
+.re-cmt-lightbox-inner img {
+  max-width: 96vw; max-height: 96vh; border-radius: 4px;
+  opacity: 0; transition: opacity 0.2s;
+}
+.re-cmt-lightbox-spin {
+  color: #fff; font-size: 13px; padding: 24px; text-align: center;
+}
 
 /* Lat/Lon row */
 .re-latlon-row {
