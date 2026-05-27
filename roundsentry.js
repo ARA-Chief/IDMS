@@ -1558,6 +1558,238 @@ function reShowRoundsSubmitConfirm() {
     </div>`);
 }
 
+// US gallons per cubic meter (exact: 264.1720523581...).
+// The Fresh Water Generator meter reads in m³ on this vessel; the operator
+// thinks in USG for plant-health reasoning ("are we making enough fresh
+// water?"), so the auto-comment and post-submit modal both report in USG.
+// Stored entries remain in the meter's native unit (source of truth).
+const _PM_M3_TO_USG = 264.1720523581;
+
+function _pmConvertToUsg(val, unit) {
+  if (!Number.isFinite(val)) return null;
+  const u = String(unit || '').trim().toLowerCase();
+  if (u === 'usg' || u === 'gal' || u === 'us gal') return val;
+  // Treat m³ as the default — matches the Fresh Water Generator setup and
+  // the Console water-maker calc (which assumes m³ input).
+  return val * _PM_M3_TO_USG;
+}
+
+function _pmFmtUsg(n, decimals) {
+  if (!Number.isFinite(n)) return '—';
+  const d = (decimals == null) ? 0 : decimals;
+  return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+// Auto-comment for the Fresh Water Generator → Production by meter item.
+//
+// On every rounds submit, this looks up the current meter reading the user
+// just entered, scans RE.aggList for the most recent prior reading TODAY,
+// computes the delta + projected 24h production rate, and appends a single
+// comment to RE.comments[iid] so it lands inside the submitted rounds-log
+// file. The Console's Rounds Log viewer renders comments on tap, so the
+// crew member can re-open the round and read the auto-comment exactly the
+// same way as any user-typed comment.
+//
+// Item-matching convention matches Console main.js getDashboardData's water-
+// maker calc (LOWER(item_label) = 'production by meter' AND fresh-water
+// section). Keeping the two sites consistent means a config rename in one
+// place breaks both — preferable to silent drift.
+//
+// Side effect: stores a summary on RE._pmLastSummary so the post-submit
+// modal (in reConfirmSubmit) can surface the same numbers without
+// re-computing or re-parsing the comment text.
+function rePmAutoComment(now, dateStr) {
+  RE._pmLastSummary = null;
+  const target = (RE.flatItems || []).find(({ section, item }) => {
+    if (!item || !section) return false;
+    if ((item.label || '').trim().toLowerCase() !== 'production by meter') return false;
+    return /fresh\s*water/i.test(section.label || '');
+  });
+  if (!target) return;
+  const iid  = target.item.item_id;
+  if (RE.secd[iid]) return;
+  const raw  = RE.values[iid];
+  if (raw == null || raw === '') return;
+  const curVal = parseFloat(String(raw).replace(',', '.'));
+  if (!Number.isFinite(curVal)) return;
+  const unit = (target.item.unit || '').trim() || 'm³';
+  const curUsg = _pmConvertToUsg(curVal, unit);
+
+  // Collect ALL valid prior readings of this item across aggList. The previous
+  // implementation hard-filtered by `agg.date === dateStr`, which meant the
+  // first round of any new day always fell back to the "first reading today"
+  // branch and the operator lost the projected-rate readout. Two practical
+  // issues fixed here:
+  //   (a) Cross-day fallback: if there's no reading today (early-morning
+  //       round 1), use the most recent prior reading from ANY date. The
+  //       rate math is just delta/hours, so a 28-hour span still yields a
+  //       sensical USG/hr — averaged over a longer window, but informative.
+  //   (b) Defensive ordering: don't trust aggList's array position to mean
+  //       "newest first". The reporting user observed that Delta-1 / Delta-2
+  //       columns sometimes pick up out-of-order rounds, suggesting aggList
+  //       ordering isn't always strict. Sort candidates by their submitted
+  //       timestamp explicitly so we always anchor to the freshest one.
+  //   (c) Causality guard: ignore any candidate with a timestamp >= now,
+  //       which would otherwise produce a negative or zero deltaHrs.
+  const nowMs = now.getTime();
+  const candidates = [];
+  for (const agg of (RE.aggList || [])) {
+    if (!agg) continue;
+    const priorTs = agg.submitted || agg.timestamp || null;
+    if (!priorTs) continue;
+    const priorMs = new Date(priorTs).getTime();
+    if (!Number.isFinite(priorMs) || priorMs >= nowMs) continue;
+    let priorRaw;
+    if (agg.items && typeof agg.items === 'object') {
+      const slot = agg.items[iid] || {};
+      priorRaw = slot.value != null ? slot.value : slot.display_value;
+    } else if (Array.isArray(agg.entries)) {
+      const e = agg.entries.find(x => x.item_id === iid);
+      if (e) priorRaw = e.value != null ? e.value : e.display_value;
+    }
+    const priorVal = parseFloat(String(priorRaw ?? '').replace(',', '.'));
+    if (!Number.isFinite(priorVal)) continue;
+    candidates.push({
+      value:   priorVal,
+      ts:      priorTs,
+      ms:      priorMs,
+      date:    agg.date || (typeof priorTs === 'string' ? priorTs.slice(0, 10) : null),
+      round:   (typeof agg.round_number === 'number') ? agg.round_number : null,
+      sameDay: agg.date === dateStr
+    });
+  }
+  // Newest-first; prefer same-day match, otherwise the freshest of any date.
+  // Same-day wins UNCONDITIONALLY when present — round-to-round comparison
+  // within the day is the trustworthy signal for plant health; cross-day is
+  // a graceful fallback so the operator still sees a number on the first
+  // round of a new day, but it's never preferred over a same-day match.
+  candidates.sort((a, b) => b.ms - a.ms);
+  const prev = candidates.find(c => c.sameDay) || candidates[0] || null;
+
+  const fmtHM = d => rePad2(d.getUTCHours()) + ':' + rePad2(d.getUTCMinutes()) + 'Z';
+  const curRound = (typeof RE.roundNum === 'number') ? RE.roundNum : null;
+  const lines = [];
+  const curRoundTag = curRound != null ? ` (round ${curRound})` : '';
+  lines.push(`Production by meter (auto)${curRoundTag}: ${_pmFmtUsg(curUsg, 0)} USG at ${fmtHM(now)}`);
+  // Summary stash for the post-submit modal. proj24Usg stays null when we
+  // can't compute a rate (no prior reading at all, or anomalous timestamps).
+  // crossDay marks the fallback case so the modal can flag that the rate is
+  // averaged across multiple days.
+  const summary = {
+    curUsg,
+    curRound,
+    prevUsg:      null,
+    prevRound:    null,    // round number of the prior reading, if known
+    deltaUsg:     null,
+    ratePerHrUsg: null,
+    proj24Usg:    null,
+    deltaHrs:     null,
+    prevDate:     null,    // ISO date string of the prior reading (yyyy-mm-dd)
+    crossDay:     false,
+    noPrior:      !prev
+  };
+  if (prev) {
+    const prevDateObj = new Date(prev.ts);
+    const prevUsg     = _pmConvertToUsg(prev.value, unit);
+    const deltaUsg    = curUsg - prevUsg;
+    const deltaHrs    = (now - prevDateObj) / 3600000;
+    summary.prevUsg   = prevUsg;
+    summary.prevRound = prev.round;
+    summary.deltaUsg  = deltaUsg;
+    summary.deltaHrs  = deltaHrs;
+    summary.prevDate  = prev.date;
+    summary.crossDay  = !prev.sameDay;
+    if (deltaHrs > 0) {
+      const ratePerHrUsg = deltaUsg / deltaHrs;
+      const proj24Usg    = ratePerHrUsg * 24;
+      summary.ratePerHrUsg = ratePerHrUsg;
+      summary.proj24Usg    = proj24Usg;
+      const sign = deltaUsg >= 0 ? '+' : '';
+      const prevTag = prev.round != null
+        ? `round ${prev.round}${prev.sameDay ? '' : ' on ' + prev.date}`
+        : (prev.sameDay ? `earlier today` : `${prev.date}`);
+      const stamp = prev.sameDay
+        ? `${fmtHM(prevDateObj)}`
+        : `${prev.date} ${fmtHM(prevDateObj)}`;
+      const span = prev.sameDay
+        ? `${deltaHrs.toFixed(2)} h ago`
+        : `${deltaHrs.toFixed(1)} h ago — no earlier reading today, averaged across days`;
+      lines.push(`Since prior reading (${prevTag}, ${_pmFmtUsg(prevUsg, 0)} USG at ${stamp}, ${span}):`);
+      lines.push(`  ${sign}${_pmFmtUsg(deltaUsg, 0)} USG · ${_pmFmtUsg(ratePerHrUsg, 1)} USG/hr → projected 24-hr production: ${_pmFmtUsg(proj24Usg, 0)} USG`);
+    } else {
+      // Defensive: prior submitted-time isn't earlier than current submit
+      // (clock skew, manual edit, etc.). Skip the rate math so we don't emit
+      // a nonsense divide-by-zero or negative-time line.
+      lines.push(`Prior reading: ${_pmFmtUsg(prevUsg, 0)} USG at ${fmtHM(prevDateObj)} (timestamp anomaly — rate not computed)`);
+    }
+  } else {
+    lines.push('(no prior reading found in recent rounds)');
+  }
+
+  if (!Array.isArray(RE.comments[iid])) RE.comments[iid] = [];
+  RE.comments[iid].push({
+    text:      lines.join('\n'),
+    author:    (currentUser && currentUser.username) || '_auto',
+    timestamp: now.toISOString(),
+    auto:      true   // distinguishes from operator-typed comments downstream
+  });
+  RE._pmLastSummary = summary;
+}
+
+// Post-submit confirmation modal — surfaces the same numbers the auto-
+// comment recorded so the operator sees plant health (projected 24-hr USG)
+// the moment they finish rounds, while they still have a chance to act on
+// a dropping production trend (clean strainers, swap RO membrane, etc.).
+function rePmShowPostSubmitModal(summary) {
+  if (!summary) { reExit(); return; }
+  let bodyHtml;
+  if (summary.proj24Usg != null) {
+    const sign     = summary.deltaUsg >= 0 ? '+' : '−';
+    const absDelta = Math.abs(summary.deltaUsg);
+    // Cross-day fallback gets a tighter time-precision label ("28.4 h ago")
+    // and an explicit note so the operator knows the projection is averaged
+    // across more than one day. Same-day uses the tighter 2-decimal hours.
+    const hoursLabel = summary.crossDay
+      ? `${summary.deltaHrs.toFixed(1)} h ago`
+      : `${summary.deltaHrs.toFixed(2)} h ago`;
+    // Round-to-round header line — makes the comparison explicit. Falls
+    // back to "Fresh Water Generator" if round numbers aren't available.
+    const headerLine = (summary.prevRound != null && summary.curRound != null)
+      ? `Fresh Water &middot; Round ${summary.prevRound} → Round ${summary.curRound}${summary.crossDay ? ' (prior day)' : ''}`
+      : 'Fresh Water Generator';
+    const crossDayNote = summary.crossDay
+      ? `<p style="font-size:12px;color:#d4a017;text-align:center;margin:-4px 0 10px;font-style:italic">Averaged across multiple days &mdash; no earlier reading today found (prior: ${summary.prevDate || 'unknown date'}).</p>`
+      : '';
+    bodyHtml = `
+      <p class="re-modal-body" style="margin-bottom:6px;font-size:13px;color:var(--text-muted)">${headerLine}</p>
+      <p style="font-size:28px;font-weight:700;color:var(--text-primary);text-align:center;margin:8px 0">
+        ${_pmFmtUsg(summary.proj24Usg, 0)} <span style="font-size:14px;font-weight:500;color:var(--text-secondary)">USG / 24 hr (projected)</span>
+      </p>
+      <p style="font-size:13px;color:var(--text-secondary);text-align:center;margin-bottom:8px">
+        Rate ${_pmFmtUsg(summary.ratePerHrUsg, 1)} USG/hr &middot; ${sign}${_pmFmtUsg(absDelta, 0)} USG since prior reading ${hoursLabel}
+      </p>
+      ${crossDayNote}`;
+  } else if (summary.noPrior) {
+    bodyHtml = `
+      <p class="re-modal-body" style="margin-bottom:6px;font-size:13px;color:var(--text-muted)">Fresh Water Generator</p>
+      <p style="font-size:22px;font-weight:600;color:var(--text-primary);text-align:center;margin:8px 0">
+        ${_pmFmtUsg(summary.curUsg, 0)} USG
+      </p>
+      <p style="font-size:13px;color:var(--text-secondary);text-align:center;margin-bottom:12px">
+        No prior reading found in recent rounds &mdash; projection available after the next round.
+      </p>`;
+  } else {
+    bodyHtml = `
+      <p class="re-modal-body">Fresh water reading logged.</p>`;
+  }
+  reShowModal(`
+    <h3 class="re-modal-title">Rounds submitted</h3>
+    ${bodyHtml}
+    <div class="re-modal-actions">
+      <button class="re-modal-btn re-modal-primary" onclick="reCloseModal();reExit();">Done</button>
+    </div>`);
+}
+
 async function reConfirmSubmit() {
   reCloseModal();
   if (RE.submitting) return;
@@ -1572,6 +1804,11 @@ async function reConfirmSubmit() {
     const dateStr  = reToday();
     const hhmm     = rePad2(now.getUTCHours()) + rePad2(now.getUTCMinutes());
     const username = currentUser.username;
+
+    // Inject the Fresh Water Generator auto-comment BEFORE building entries —
+    // the entry-builder copies RE.comments[iid] into entries[i].comments, so
+    // the auto-comment rides along into the submitted payload automatically.
+    try { rePmAutoComment(now, dateStr); } catch (e) { console.warn('[rounds] auto-comment skipped:', e && e.message); }
 
     const entries = [];
     for (const { section, item } of RE.flatItems) {
@@ -1641,7 +1878,18 @@ async function reConfirmSubmit() {
     reClearDraft();
 
     RE.submitting = false;
-    reExit();
+    // If the Fresh Water Generator auto-comment generated a summary on this
+    // submit, show the operator a one-screen plant-health readout (projected
+    // 24-hr USG production + rate) before exiting. Tapping Done dismisses
+    // and calls reExit() as before. If no summary, exit immediately to
+    // preserve the previous behavior for non-FWG rounds.
+    const pmSummary = RE._pmLastSummary;
+    RE._pmLastSummary = null;
+    if (pmSummary) {
+      rePmShowPostSubmitModal(pmSummary);
+    } else {
+      reExit();
+    }
   } catch (err) {
     RE.submitting = false;
     if (btn) { btn.textContent = 'Submit Rounds'; btn.disabled = false; }
