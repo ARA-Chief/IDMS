@@ -9516,21 +9516,23 @@ async function addOilLoadLubeTanks() {
 // "Main Engine". Falls back to the rounds-config label when the asset isn't
 // in the assets.csv yet (e.g. cache cold or asset newly added).
 function addOilFormatDestLabel(assetCode, rawLabel, prefix, kind) {
+  // Resolve asset_code → Equipment Setup display name from assets.csv.
+  // When found, the user wants ONLY "Name (code)" — drop the rounds-config
+  // section/group prefix and the verbose item label entirely. This matches
+  // the user's stated rule: equipment name + asset number, nothing else.
   var equipName = null;
   if (assetCode && Array.isArray(ER_ASSETS_CACHE)) {
     var hit = ER_ASSETS_CACHE.find(function(a) { return a && a.code === assetCode; });
     if (hit && hit.name) equipName = hit.name;
   }
-  // Equipment name wins; rounds-config label is shown after it for context
-  // when both exist and differ (e.g. equipment is "Main Engine" but the
-  // rounds item is "Main Engine ME L.O. Tk." — both useful to the operator).
-  var head;
-  if (equipName && rawLabel && equipName !== rawLabel) {
-    head = equipName + ' — ' + rawLabel;
-  } else {
-    head = equipName || rawLabel || 'Unnamed';
+  if (equipName) {
+    return equipName + ' (' + assetCode + ')';
   }
-  var label = (prefix ? prefix + ' · ' : '') + head;
+  // Fallback when no asset match (cache cold, asset newly added, or item has
+  // no asset_code at all — e.g. a vesselconfig tank entry). Use the rounds-
+  // config label with whatever prefix we built, plus a [tank] tag for
+  // tank-level inspection rows so source vs destination stays unambiguous.
+  var label = (prefix ? prefix + ' · ' : '') + (rawLabel || 'Unnamed');
   if (assetCode) label += ' (' + assetCode + ')';
   if (kind === 'tk_percent') label += ' [tank]';
   return label;
@@ -9629,6 +9631,29 @@ async function addOilLoadComponents() {
         (secInGrp && secInGrp.items || []).forEach(function(it) {
           if (it && isDestType(it.type)) pushDest(it, prefix, it.type);
         });
+      });
+    });
+
+    // (3) Lube-oil tanks from vesselconfig.json. These don't appear in
+    // roundsconfig (lube tank levels are tracked via fuelstate.json, not
+    // rounds), but they ARE valid destinations — e.g. for tank-to-tank
+    // transfers or topping up an integral lube reservoir tracked as a tank.
+    // Loaded into ADDOIL.lubeTanks by addOilLoadLubeTanks() in parallel.
+    (ADDOIL.lubeTanks || []).forEach(function(t) {
+      if (!t || !t.tank_id) return;
+      var name = t.name || t.abbreviation || t.tank_id;
+      var key  = 'tank|' + t.tank_id;
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push({
+        label:           name + ' [lube oil tank]',
+        _rawLabel:       name,
+        _labelPrefix:    '',
+        asset_code:      null,
+        item_id:         null,
+        add_oil_tank_id: t.tank_id,
+        unit:            t.units || 'USG',
+        source_kind:     'lube_tank'
       });
     });
 
