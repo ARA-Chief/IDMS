@@ -9527,6 +9527,13 @@ async function addOilLoadLubeTanks() {
 // "Main Engine". Falls back to the rounds-config label when the asset isn't
 // in the assets.csv yet (e.g. cache cold or asset newly added).
 function addOilFormatDestLabel(assetCode, rawLabel, prefix, kind) {
+  // Exception to the asset-code transform: TANK LEVEL INSPECTION items
+  // render under their raw rounds-config label and nothing else. They have
+  // no asset_code anyway, but this short-circuits the formatter so a future
+  // accidental asset_code on an inspection item can't override the label.
+  if (kind === 'inspection_tank') {
+    return rawLabel || 'Unnamed';
+  }
   // Resolve asset_code → Equipment Setup display name from assets.csv.
   // When found, the user wants ONLY "Name (code)" — drop the rounds-config
   // section/group prefix and the verbose item label entirely. This matches
@@ -9679,7 +9686,41 @@ async function addOilLoadComponents() {
       });
     });
 
-    // (4) Waste-oil tanks from vesselconfig.json. Used as ORB Code C Item 12.2
+    // (4a) Rounds-config "TANK LEVEL INSPECTION" items. These are NOT in
+    // vesselconfig.tanks[] — they live only as round-check items, so the
+    // system has no volume to track. We still want them selectable on both
+    // sides of the form so the operator can record activity against them
+    // (e.g. a deck-mounted day tank that's tracked by sight glass during
+    // rounds, not via fuelstate.json). Volume updates SKIP this side; the
+    // OTHER side (if a real tank) still updates normally.
+    function _walkInspectionSection(secLike) {
+      if (!secLike || !/tank\s*level\s*inspection/i.test(secLike.label || secLike.section_label || '')) return;
+      (secLike.items || []).forEach(function(it) {
+        if (!it || it.type === 'heading' || it.type === 'group') return;
+        var name = it.label || it.item_id || 'Unnamed';
+        // Use a synthetic key so the SAME inspection item from a top-level
+        // section and a group template doesn't render twice.
+        var key = 'inspection|' + (it.item_id || name);
+        if (seen[key]) return;
+        seen[key] = true;
+        out.push({
+          label:           name,                                // exception to the asset-code transform — raw label only
+          _rawLabel:       name,
+          _labelPrefix:    '',
+          asset_code:      null,                                 // intentionally null so the formatter doesn't append (code)
+          item_id:         it.item_id || null,
+          add_oil_tank_id: null,                                 // no tracked tank
+          unit:            it.unit || 'USG',
+          source_kind:     'inspection_tank'
+        });
+      });
+    }
+    (cfg.sections || []).forEach(_walkInspectionSection);
+    (cfg.groups || []).forEach(function(g) {
+      (g && g.sections || []).forEach(_walkInspectionSection);
+    });
+
+    // (4b) Waste-oil tanks from vesselconfig.json. Used as ORB Code C Item 12.2
     // / 12.4 destinations: lube→waste (Rule 4), other→waste (Rule 5),
     // equipment→waste (Rule 1). Labeled the same as lube tanks (just the
     // tank name) — the operator can tell waste tanks by their name.
@@ -9881,11 +9922,15 @@ function _addOilResolveSlot(rawVal) {
   var c = ADDOIL.components[idx] || null;
   if (!c) return { kind: '', component: null };
   // ADDOIL.components items carry source_kind set by addOilLoadComponents:
-  //   'add_oil'    → equipment
-  //   'lube_tank'  → lube oil tank
-  //   'waste_tank' → waste oil tank
-  var kind = (c.source_kind === 'lube_tank')  ? 'lube_tank'
-           : (c.source_kind === 'waste_tank') ? 'waste_tank'
+  //   'add_oil'         → equipment
+  //   'lube_tank'       → lube oil tank        (vesselconfig 'lube_oil' category)
+  //   'waste_tank'      → waste oil tank       (vesselconfig 'waste_oil' category)
+  //   'inspection_tank' → "TANK LEVEL INSPECTION" section item — no tracked
+  //                       volume, treated like equipment for ORB purposes but
+  //                       skipped entirely by addOilApplyTankDeltas.
+  var kind = (c.source_kind === 'lube_tank')       ? 'lube_tank'
+           : (c.source_kind === 'waste_tank')      ? 'waste_tank'
+           : (c.source_kind === 'inspection_tank') ? 'inspection_tank'
            : 'equipment';
   return { kind: kind, component: c };
 }
@@ -9978,8 +10023,10 @@ async function addOilApplyTankDeltas(opts) {
   var sourceRetained = null;
   var destRetained   = null;
 
-  // Source deduction: only meaningful for lube/waste tank sources. Equipment
-  // and Other sources have no tracked volume.
+  // Source deduction: only meaningful for lube/waste tank sources. Equipment,
+  // Other, and inspection_tank sources have no tracked volume — the if/else
+  // chain below intentionally leaves them as no-ops on this side. The OTHER
+  // side (if a real tank) still updates normally below.
   if (opts.sourceKind === 'lube_tank' && opts.sourceTankId) {
     sourceRetained = updateVolume(opts.sourceTankId, -qty);
     data.lube_log.push({
@@ -10007,6 +10054,8 @@ async function addOilApplyTankDeltas(opts) {
   }
 
   // Destination addition: only meaningful for lube/waste tank destinations.
+  // Equipment, Other, and inspection_tank destinations are intentionally
+  // no-ops here — user request: "don't worry about adding any oil" for those.
   if (opts.destKind === 'lube_tank' && opts.destTankId) {
     destRetained = updateVolume(opts.destTankId, +qty);
     data.lube_log.push({
@@ -10080,10 +10129,13 @@ function _addOilBuildOrbPayload(f, retained, nowIso, qtyUsg) {
     };
   }
 
-  // Rule 5: other → waste. Code C Item 12 (from free text) + 12.2 (to waste
-  // tank, ret). No source ret since source is a write-in with no tracked
-  // volume.
-  if (f.fromKind === 'other' && f.destKind === 'waste_tank') {
+  // Rule 5: other → waste, OR inspection_tank → waste. Code C Item 12 (from
+  // free text or inspection-item label) + 12.2 (to waste tank, ret). No
+  // source ret since neither source has a tracked volume.
+  // inspection_tank items (from the "TANK LEVEL INSPECTION" rounds section)
+  // share the no-source-ret behavior with free-text Other, so they collapse
+  // into the same branch here. fromLabel was set upstream to the item label.
+  if ((f.fromKind === 'other' || f.fromKind === 'inspection_tank') && f.destKind === 'waste_tank') {
     return {
       template: '12_internal',
       narrative:
