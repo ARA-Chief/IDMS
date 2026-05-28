@@ -9378,7 +9378,32 @@ async function incinConfirmManual() {
 
 async function incinDeleteSession(sessionId) {
   if (!confirm('Delete this incinerator session? This cannot be undone.')) return;
+
+  // Belt-and-suspenders: if this session is still open (no stop_time), write
+  // a synthetic session_end BEFORE the deletion event. The deletion already
+  // hides the session from PWA/Console views via the `deleted` flag, but if
+  // the deletion event ever fails to replay on a downstream surface (network
+  // race, cursor drift, etc.) the session would linger as an open orphan
+  // and falsely show "Incinerator running" on the Console dashboard. Closing
+  // it first makes the orphan state unreachable.
+  //
+  // qty: preserve whatever's accumulated via session_addition so the audit
+  // trail still tells the truth about volume processed before the deletion.
+  // retained: null — we can't know without a fuelstate lookup, and this is
+  // a deletion path anyway. force_close marker tags the synthetic event so
+  // future diagnostics can distinguish it from a real STOP.
+  var open = (INCIN.byId && INCIN.byId[sessionId]) || null;
+  var needsClose = open && !open.stop_time;
   try {
+    if (needsClose) {
+      await pushIncinEvent('session_end', {
+        session_id:  sessionId,
+        stop_time:   new Date().toISOString(),
+        qty:         Number(open.qty || 0),
+        retained:    null,
+        force_close: true
+      });
+    }
     await pushIncinEvent('session_deletion', { session_id: sessionId });
   } catch (e) { alert('Failed to delete: ' + e.message); return; }
   await loadIncinerator();
