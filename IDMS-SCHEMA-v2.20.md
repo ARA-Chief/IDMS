@@ -1,5 +1,13 @@
 # IDMS Schema Specification
-**Version 2.29 — F/V Araho**
+**Version 2.30 — F/V Araho**
+
+v2.30 *(2026-05-27)* — **Release marker: IDMS Console v0.2.9; Standard-tier nav access for Rounds Setup.** Cuts a shipped release containing every schema delta since v2.23 (which shipped as v0.2.7). Entries v2.24 through v2.29 (rounds-entry comments, ORB C/11 walker recompute, Phase 4 + Phase 5 event-log subsystems, Maintenance & Tasks consolidation, rounds-comment photo attachments, password masking, Skill Tags edit gating) are all included in this release. Companion PWA release tag is v1.9 (`PWA-SCHEMA-v1.1.md`).
+
+**Standard-tier nav access expansion (no on-disk schema change).** `applyCrewNavVisibility` in `src/renderer/js/app.js` now shows the Config sidebar group to `permission_tier === 'standard'` users in addition to admin (purser tier still excluded). Within the Config group, the nav buttons for Vessel Setup (`data-screen="vessel"`), Crew Setup (`data-screen="crewsetup"`), and Settings (`data-screen="settings"`) are individually hidden for non-admin tiers — only Equipment Setup is visible to Standard. Inside `screen-equipment`, `renderEquipment` in `src/renderer/js/equipment.js` forces `EQ.activeTab = 'rounds'` for non-admin users and conditionally renders only the Rounds Setup tab button; the Group Assignment and Sub-Group Assignment tabs remain admin-only. Net effect for Standard tier: full access to Dashboard, Factory Production, Rough Log, Trip Analytics (view-only via existing `taIsAdmin` gating), Maintenance & Tasks, Tank Levels & Transfers, Oil Record Book, Bunker Pre-Load, Schedule, Training Matrix, User Profile, Factory Events, Report Generator, Rounds Log, and Equipment Setup → Rounds Setup. Crew List remains gated by `canSeeCrewList()` (admin OR operational role); Vessel Setup, Crew Setup, and Settings remain admin-only.
+
+Append further v2.30.x or v2.31 entries here as new work lands between releases.
+
+---
 
 v2.29 *(2026-05-25)* — **Architecture refactor Phases 4 & 5; Maintenance & Tasks UI consolidation; rounds-comment attachments; minor security/UX hardening.** Closes the OEE data-loss incident (silent multi-writer corruption of `data/factory/logs/report-{date}-{user}.json`) by moving factory observations onto an append-only OneDrive event log. Asset event history follows the same pattern as a clean cutover (the legacy `event_history[]` inline array was never populated by Console renderer code). Closed Tasks gains filter parity with Active. The Close-button flow consolidates into Task Creation; Manual Entry is retired. Rounds comments now carry photo attachments. Schema version of every existing on-disk file is unchanged; all changes are additive at the file-format level and additive-with-cutover at the folder level.
 

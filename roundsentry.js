@@ -533,7 +533,7 @@ async function initRoundsEntry(sourceScreen, opts) {
 
   RE.config   = cfg;
   RE.prefs    = prefs;
-  RE.vessel   = cfg.vessel || 'F/V Araho';
+  RE.vessel   = cfg.vessel || 'F/T Araho';
   RE.submitting = false;
 
   if (RE.forceRound != null) {
