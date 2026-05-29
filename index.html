@@ -9559,7 +9559,16 @@ function addOilFormatDestLabel(assetCode, rawLabel, prefix, kind) {
   // no asset_code anyway, but this short-circuits the formatter so a future
   // accidental asset_code on an inspection item can't override the label.
   if (kind === 'inspection_tank') {
-    return rawLabel || 'Unnamed';
+    if (rawLabel) return rawLabel;
+    // No rounds-config label set on this inspection item — fall back to the
+    // Equipment-Setup asset name (resolved from asset_code) rather than
+    // leaking the raw item_id UUID into the dropdown. Still no "(code)"
+    // suffix, matching the rest of the inspection-item styling.
+    if (assetCode && Array.isArray(ER_ASSETS_CACHE)) {
+      var insHit = ER_ASSETS_CACHE.find(function(a) { return a && a.code === assetCode; });
+      if (insHit && insHit.name) return insHit.name;
+    }
+    return assetCode || 'Unnamed';
   }
   // Resolve asset_code → Equipment Setup display name from assets.csv.
   // When found, the user wants ONLY "Name (code)" — drop the rounds-config
@@ -9724,17 +9733,20 @@ async function addOilLoadComponents() {
       if (!secLike || !/tank\s*level\s*inspection/i.test(secLike.label || secLike.section_label || '')) return;
       (secLike.items || []).forEach(function(it) {
         if (!it || it.type === 'heading' || it.type === 'group') return;
-        var name = it.label || it.item_id || 'Unnamed';
+        var rawLabel = it.label || '';
         // Use a synthetic key so the SAME inspection item from a top-level
         // section and a group template doesn't render twice.
-        var key = 'inspection|' + (it.item_id || name);
+        var key = 'inspection|' + (it.item_id || rawLabel || it.asset_code || '');
         if (seen[key]) return;
         seen[key] = true;
         out.push({
-          label:           name,                                // exception to the asset-code transform — raw label only
-          _rawLabel:       name,
+          // Raw rounds-config label when present; otherwise the formatter
+          // resolves the asset name from asset_code (never the item_id UUID).
+          label:           addOilFormatDestLabel(it.asset_code || null, rawLabel, '', 'inspection_tank'),
+          _rawLabel:       rawLabel,                             // may be blank — formatter falls back to the asset name
           _labelPrefix:    '',
-          asset_code:      null,                                 // intentionally null so the formatter doesn't append (code)
+          asset_code:      it.asset_code || null,                // kept ONLY for label resolution; destAsset ignores
+                                                                 // inspection_tank (only destKind==='equipment' reads it)
           item_id:         it.item_id || null,
           add_oil_tank_id: null,                                 // no tracked tank
           unit:            it.unit || 'USG',
