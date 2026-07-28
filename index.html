@@ -7324,24 +7324,47 @@ async function pushObservationToOneDrive(username, dateStr, observation) {
   logFile.schema_version = 2;
   // Avoid duplicate by obs_id
   var has = logFile.observations.some(function(o) { return o.obs_id === observation.obs_id; });
-  if (!has) logFile.observations.push(observation);
+  if (!has) logFile.observations.push(_obsWithoutEventTs(observation));
 
   await putLogToOneDrive(username, dateStr, logFile);
   try { localStorage.setItem(cacheKey, JSON.stringify(logFile)); } catch(e) {}
 }
 
+// `_event_ts` is transient local bookkeeping — it exists only to keep the
+// event filename stable across retries (see below) and must not leak into
+// stored data, neither the event payload nor the legacy observations[].
+function _obsWithoutEventTs(o) {
+  var c = {};
+  for (var k in o) if (k !== '_event_ts') c[k] = o[k];
+  return c;
+}
+
 // Phase 5 — append a factory observation as an immutable event file under
 // data/factory/observations/events/{iso}-{event_id}.json. Filename rules
 // follow architecture.md (Console: graph.js `_eventFilename`): strip ':',
-// '.', and '-' from the timestamp so lex-sort = chrono-sort. The obs_id
-// is reused as event_id so retries are idempotent — graphPut uses
-// If-None-Match: * and a 412 means "this event already landed" (no-op).
+// '.', and '-' from the timestamp so lex-sort = chrono-sort.
 async function pushObservationEventToOneDrive(username, observation) {
   await obsRefreshToken();
 
-  var nowIso = new Date().toISOString();
+  // The filename timestamp MUST be stable across retries. Previously this read
+  // the clock on every call, so a retry built a *different* path — meaning
+  // If-None-Match: '*' could never fire and the retry wrote a second file for
+  // the same event_id instead of a 412 no-op. That is reachable on a normal
+  // path: the event PUT succeeds, the legacy log RMW below fails, the caller
+  // throws, and flushObservationQueue retries the pair. Stamped in place on the
+  // first attempt so the copy held in the localStorage retry queue carries it.
+  //
+  // UTC deliberately, and this is NOT a display value — nothing renders it.
+  // It is the ingest cursor's sort key: graph.js `graphListEventsSince` filters
+  // `name > sinceFilename`, so any filename sorting below the stored cursor is
+  // skipped permanently. A local-naive key goes backwards across the AKDT→AKST
+  // fall-back and would silently strand an hour of observations below the
+  // cursor, once a year. Human-facing timestamps stay vessel-local via
+  // obs_timestamp and the Console's timezone setting.
+  if (!observation._event_ts) observation._event_ts = new Date().toISOString();
+
   var eventId = observation.obs_id; // stable id; allows idempotent retry
-  var tsForFn = nowIso.replace(/[:.\-]/g, '');
+  var tsForFn = observation._event_ts.replace(/[:.\-]/g, '');
   var filename = tsForFn + '-' + eventId + '.json';
   var path = 'Documents/IDMS/data/factory/observations/events/' + filename;
 
@@ -7350,8 +7373,8 @@ async function pushObservationEventToOneDrive(username, observation) {
     event_id:       eventId,
     event_type:     'observation',
     actor:          username,
-    timestamp:      nowIso,
-    payload:        observation
+    timestamp:      observation._event_ts,
+    payload:        _obsWithoutEventTs(observation)
   };
 
   var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
