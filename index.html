@@ -384,6 +384,12 @@
     .er-task-filter label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 3px; }
     .er-task-filter select { width: 100%; padding: 7px 8px; font-size: 13px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); }
     .er-task-filter-dept #er-task-filter-dept-label { padding: 7px 8px; font-size: 13px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); }
+    .er-task-scope { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-1); }
+    .er-task-scope-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 10px; font-size: 13px; font-weight: 600; font-family: inherit; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); cursor: pointer; }
+    .er-task-scope-btn:disabled { opacity: 0.45; cursor: default; }
+    .er-task-scope-active { background: rgba(0,170,255,0.14); border-color: var(--accent); color: var(--accent); }
+    .er-task-scope-count { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 9px; background: var(--bg-1); color: inherit; min-width: 18px; }
+    .er-task-scope-active .er-task-scope-count { background: rgba(0,170,255,0.22); }
     .er-task-row { display: flex; gap: 10px; align-items: stretch; padding: 12px 14px; border-bottom: 1px solid var(--border); }
     .er-task-row-body { flex: 1; min-width: 0; }
     .er-task-row-title { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.3; margin-bottom: 4px; }
@@ -397,6 +403,7 @@
     .er-task-status-waiting_opportunity { background: rgba(255,170,0,0.15);  color: var(--warning); }
     .er-task-status-shipyard            { background: rgba(180,140,255,0.15); color: #c4b5fd; }
     .er-task-status-other                { background: var(--bg-2); color: var(--text-secondary); }
+    .er-task-status-reported_complete   { background: rgba(0,200,100,0.10); color: #86efac; border: 1px dashed rgba(0,200,100,0.45); }
     .er-task-status-completed           { background: rgba(0,200,100,0.15); color: var(--success); }
     .er-task-status-cancelled           { background: var(--bg-2); color: var(--text-muted); }
     .er-task-update-btn { padding: 7px 12px; font-size: 12px; font-weight: 600; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); cursor: pointer; align-self: center; white-space: nowrap; }
@@ -1736,6 +1743,18 @@
         <div id="er-task-filter-dept-label">Engine Room</div>
       </div>
     </div>
+    <div class="er-task-scope" role="group" aria-label="Task scope">
+      <!-- Initial active state must match ER_TASKS_STATE.scope ('all'), or the
+           control flashes the wrong selection before the first render. -->
+      <button type="button" class="er-task-scope-btn" id="er-task-scope-mine"
+              aria-pressed="false" onclick="setErTaskScope('mine')">
+        My Tasks <span class="er-task-scope-count" id="er-task-scope-mine-count">—</span>
+      </button>
+      <button type="button" class="er-task-scope-btn er-task-scope-active" id="er-task-scope-all"
+              aria-pressed="true" onclick="setErTaskScope('all')">
+        Everyone <span class="er-task-scope-count" id="er-task-scope-all-count">—</span>
+      </button>
+    </div>
     <div id="er-task-count" style="padding:8px 14px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)">—</div>
     <div id="er-tasks-list" style="flex:1;overflow-y:auto"></div>
   </div>
@@ -1751,7 +1770,8 @@
 
       <div class="er-form-row">
         <label class="er-form-label">New Status</label>
-        <select id="er-task-update-status" class="er-form-input"></select>
+        <select id="er-task-update-status" class="er-form-input" onchange="erTaskUpdateStatusHint()"></select>
+        <div id="er-task-update-status-hint" style="display:none;font-size:11px;color:var(--text-muted);margin-top:5px;line-height:1.4"></div>
       </div>
 
       <div class="er-form-row">
@@ -1877,7 +1897,9 @@
         </div>
         <div class="er-form-row" style="margin-bottom:0">
           <label class="er-form-label">Assigned To</label>
-          <input type="text" id="er-create-assigned" class="er-form-input" placeholder="Username">
+          <select id="er-create-assigned" class="er-form-input">
+            <option value="">— None —</option>
+          </select>
         </div>
       </div>
 
@@ -3903,6 +3925,11 @@ var ER_TASKS_DETECTION_METHODS = [
   ['other',                 'Other']
 ];
 
+// Canonical status → label map. Labels here are the *dropdown* labels;
+// erTaskStatusLabel() overrides the two that read as actions rather than
+// states when they're rendered as a row pill.
+// MUST stay in sync with Console taskStatusLabel (tasks.js) and the
+// STATUS_OPTIONS list in the Console create/edit form (tasks.js).
 var ER_TASK_STATUSES = [
   ['open',                'Open'],
   ['investigating',       'Investigating'],
@@ -3910,10 +3937,24 @@ var ER_TASK_STATUSES = [
   ['waiting_opportunity', 'Waiting Opportunity'],
   ['shipyard',            'Shipyard'],
   ['other',               'Other'],
+  ['reported_complete',   'Report Complete'],
   ['completed',           'Close (Completed)'],
   ['cancelled',           'Cancelled']
 ];
-var ER_TASK_ACTIVE_STATUSES = ['open','investigating','waiting_parts','waiting_opportunity','shipyard','other'];
+// `reported_complete` is ACTIVE, not terminal — terminal is
+// ('completed','cancelled'). Get this wrong and crew reports read as closed
+// and drop out of the supervisor's Active Tasks queue.
+// MUST stay in sync with Console ACTIVE_STATUSES in BOTH main.js and tasks.js.
+var ER_TASK_ACTIVE_STATUSES = ['open','investigating','waiting_parts','waiting_opportunity','shipyard','other','reported_complete'];
+
+// What the phone's UPDATE modal offers. Deliberately contains no terminal
+// status: crew report completion, a supervisor performs real closure in the
+// Console (which writes the task_records row via db:closeTask). Locked
+// decision 2026-07-27, extended 2026-07-27 to drop 'cancelled' from the phone
+// for the same reason — it too removed work from the pool with no review.
+// The CREATE modal is untouched and still offers both terminal statuses; that
+// path already writes a completion record correctly.
+var ER_TASK_UPDATE_STATUSES = ['open','investigating','waiting_parts','waiting_opportunity','shipyard','other','reported_complete'];
 
 var ER_TASKS_STATE = {
   tasks:           [], // flattened {task, defFilename}
@@ -3922,6 +3963,15 @@ var ER_TASKS_STATE = {
   editing:         null, // task_id currently in modal
   eqCfg:           null, // cached equipmentconfig.json (for code_range calc on create)
   expanded:        null, // task_id currently expanded in the list
+  // List scope: 'mine' = only tasks assigned to the signed-in user, 'all' =
+  // the whole department pool. Defaults to 'all' on every entry to the screen
+  // (openEngineTasks); "My Tasks" is the opt-in.
+  //
+  // Why 'all' and not 'mine': the 2026-07-27 backfill audit found `assigned_to`
+  // null on 21 of 26 real tasks, so a 'mine' default would open this screen to
+  // an empty list for almost every user today. Revisit once assignment is
+  // habitual — the feature only pays off when tasks are actually assigned.
+  scope:           'all',
   // Closed-task records (separate file pool — data/tasks/records/{yyyy}/).
   // Lazily loaded the first time the user selects the "Closed" status filter
   // option. Refresh button re-fetches.
@@ -3937,6 +3987,52 @@ function deptKeyForCurrentUser() {
   if (d.indexOf('factory') !== -1) return 'factory';
   if (d.indexOf('deck') !== -1)    return 'deck';
   return '';
+}
+
+// ── "My Tasks" scope ─────────────────────────────────────────────────────
+// `assigned_to` holds a username taken from the same roster the login screen
+// matches against (erPopulateAssignedSelect uses u.username verbatim), so an
+// exact compare is correct. Trim + lowercase anyway so a casing drift in
+// crewconfig can't silently empty a crew member's task list.
+function erSameUser(a, b) {
+  a = String(a == null ? '' : a).trim().toLowerCase();
+  b = String(b == null ? '' : b).trim().toLowerCase();
+  return a !== '' && a === b;
+}
+
+// Effective scope. Falls back to 'all' when we have no username to compare
+// against (shouldn't happen post-login, but "mine" would render an empty list
+// with no explanation, which reads as a broken screen).
+function erTaskScope() {
+  if (!(currentUser && currentUser.username)) return 'all';
+  return ER_TASKS_STATE.scope === 'all' ? 'all' : 'mine';
+}
+
+function setErTaskScope(scope) {
+  ER_TASKS_STATE.scope = (scope === 'all') ? 'all' : 'mine';
+  renderEngineTasksList();
+}
+
+// Paint the segmented control: active styling, aria-pressed, and the two
+// counts. Called from renderEngineTasksList, which knows both totals.
+function erRenderTaskScopeControl(mineCount, allCount) {
+  var scope   = erTaskScope();
+  var mineBtn = document.getElementById('er-task-scope-mine');
+  var allBtn  = document.getElementById('er-task-scope-all');
+  var mineCe  = document.getElementById('er-task-scope-mine-count');
+  var allCe   = document.getElementById('er-task-scope-all-count');
+  if (mineCe) mineCe.textContent = String(mineCount);
+  if (allCe)  allCe.textContent  = String(allCount);
+  if (mineBtn) {
+    mineBtn.classList.toggle('er-task-scope-active', scope === 'mine');
+    mineBtn.setAttribute('aria-pressed', scope === 'mine' ? 'true' : 'false');
+    // No username = nothing to match on; keep the button visible but inert.
+    mineBtn.disabled = !(currentUser && currentUser.username);
+  }
+  if (allBtn) {
+    allBtn.classList.toggle('er-task-scope-active', scope === 'all');
+    allBtn.setAttribute('aria-pressed', scope === 'all' ? 'true' : 'false');
+  }
 }
 
 // Back-screen for the shared Maintenance & Tasks screen. Set by the hub
@@ -3955,6 +4051,9 @@ function openEngineTasks(backScreen) {
   var roleEl   = document.getElementById('er-task-filter-role');
   if (statusEl) statusEl.value = 'active';
   if (roleEl)   roleEl.value   = '';
+  // "Everyone" is the default view every time the screen is opened; "My Tasks"
+  // is an opt-in. See the `scope` comment in ER_TASKS_STATE for why.
+  ER_TASKS_STATE.scope = 'all';
 
   loadEngineTasks();
 }
@@ -4910,6 +5009,29 @@ function onErTaskFilterStatusChange() {
 // year range covering the past 90 days (so a switch-over near Jan 1 doesn't
 // drop December). Flatten records, sort by completed_at desc, keep only the
 // past 90 days. Mirrors the Console's default window.
+// True when equipment top-code `top` belongs to the current user's department.
+// Records carry no `department` field (task_records has no such column, see
+// main.js:343), so department scoping has to go through the equipment code —
+// exactly like the active-task path filters definition filenames by
+// code_range. Unknown config or an unparseable code falls through to visible,
+// matching how legacy tasks without a department are treated at render time.
+function erTopCodeInCurrentDept(top) {
+  var deptKey = deptKeyForCurrentUser();
+  if (!deptKey) return true;
+  var eqCfg = ER_TASKS_STATE.eqCfg;
+  var dept  = eqCfg && eqCfg.departments && eqCfg.departments[deptKey];
+  var ranges = dept && dept.ranges;
+  if (!Array.isArray(ranges) || ranges.length === 0) return true;
+  var n = parseInt(String(top || '').split('.')[0], 10);
+  if (isNaN(n)) return true; // 'misc' and friends
+  for (var i = 0; i < ranges.length; i++) {
+    var from = parseInt(ranges[i].from, 10);
+    var to   = parseInt(ranges[i].to,   10);
+    if (!isNaN(from) && !isNaN(to) && n >= from && n <= to) return true;
+  }
+  return false;
+}
+
 async function loadEngineClosedRecords() {
   if (!graphToken) return;
   ER_TASKS_STATE.closedRecordsLoading = true;
@@ -4934,8 +5056,14 @@ async function loadEngineClosedRecords() {
       if (!listResp || (!listResp.ok && listResp.status !== 404)) continue;
       if (listResp.status === 404) continue;
       var listData = await listResp.json();
+      // Filename pattern: {equipmentCodeTop}-{year}.json (erTaskWriteEquipmentRecord).
+      // Drop other departments' files before fetching them — this is the
+      // department filter the render step can't do, since records have no
+      // department field.
       var files = (listData.value || []).filter(function(f) {
-        return f.name && f.name.slice(-5) === '.json';
+        if (!f.name || f.name.slice(-5) !== '.json') return false;
+        var top = f.name.replace(/-\d{4}\.json$/, '');
+        return erTopCodeInCurrentDept(top);
       });
       for (var fi = 0; fi < files.length; fi++) {
         var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/records/'
@@ -4983,17 +5111,35 @@ function renderEngineClosedRecordsList(listEl, countEl) {
     return true;
   });
 
+  // Scope. A closed record has no `assigned_to` — the assignment lived on the
+  // task definition, which is deleted on close — so "mine" here means work the
+  // user completed or closed.
+  var mine = records.filter(function(r) {
+    var me = currentUser && currentUser.username;
+    return erSameUser(r.completed_by_user, me) || erSameUser(r.closed_by_user, me);
+  });
+  erRenderTaskScopeControl(mine.length, records.length);
+  var scope = erTaskScope();
+  if (scope === 'mine') records = mine;
+
   if (countEl) {
     countEl.textContent = records.length + (records.length === 1 ? ' closed task' : ' closed tasks')
+                        + (scope === 'mine' ? ' completed by you' : '')
                         + ' (past 90 days)';
   }
 
   if (records.length === 0) {
     var allCount = ER_TASKS_STATE.closedRecords.length;
-    var hint     = allCount > 0
-      ? 'No closed tasks match the role filter.'
-      : 'No tasks have been closed in the past 90 days.';
-    listEl.innerHTML = '<div style="padding:40px 16px;text-align:center;color:var(--text-muted);font-size:13px">' + hint + '</div>';
+    var hint;
+    if (scope === 'mine' && allCount > 0) {
+      hint = 'You haven\'t closed any tasks in the past 90 days.'
+           + '<br><span style="font-size:12px">Tap <strong>Everyone</strong> to see the whole department.</span>';
+    } else if (allCount > 0) {
+      hint = 'No closed tasks match the role filter.';
+    } else {
+      hint = 'No tasks have been closed in the past 90 days.';
+    }
+    listEl.innerHTML = '<div style="padding:40px 16px;text-align:center;color:var(--text-muted);font-size:13px;line-height:1.6">' + hint + '</div>';
     return;
   }
 
@@ -5089,9 +5235,22 @@ function renderEngineTasksList() {
     return true;
   });
 
+  // Scope split. Both counts feed the segmented control, so compute the
+  // "mine" subset even when the user is looking at everyone's work.
+  var mineRows = rows.filter(function(entry) {
+    return erSameUser(entry.task.assigned_to, currentUser && currentUser.username);
+  });
+  erRenderTaskScopeControl(mineRows.length, rows.length);
+  var scope = erTaskScope();
+  if (scope === 'mine') rows = mineRows;
+
   // Sort: priority then status then created_at
   var prioOrder = { 'Critical': 1, 'High': 2, 'Normal': 3, 'Low': 4 };
-  var statusOrder = { 'shipyard': 9, 'waiting_opportunity': 1, 'waiting_parts': 2, 'investigating': 3, 'open': 4, 'other': 5 };
+  // reported_complete sorts last among actives: from the crew's side the work
+  // is done and it's waiting on a supervisor, so it shouldn't sit above things
+  // they still have to do. (The Console sorts it the other way — to the top —
+  // because there it *is* the supervisor's outstanding work.)
+  var statusOrder = { 'shipyard': 9, 'waiting_opportunity': 1, 'waiting_parts': 2, 'investigating': 3, 'open': 4, 'other': 5, 'reported_complete': 6 };
   rows.sort(function(a, b) {
     var pa = prioOrder[a.task.priority] || 5;
     var pb = prioOrder[b.task.priority] || 5;
@@ -5102,10 +5261,21 @@ function renderEngineTasksList() {
     return (a.task.created_at || '').localeCompare(b.task.created_at || '');
   });
 
-  if (countEl) countEl.textContent = rows.length + (rows.length === 1 ? ' task' : ' tasks');
+  if (countEl) {
+    countEl.textContent = rows.length + (rows.length === 1 ? ' task' : ' tasks')
+                        + (scope === 'mine' ? ' assigned to you' : ' in this department');
+  }
 
   if (rows.length === 0) {
-    listEl.innerHTML = '<div style="padding:40px 16px;text-align:center;color:var(--text-muted);font-size:13px">No tasks match the current filters.</div>';
+    // In "mine" scope, say so and point at the escape hatch — otherwise an
+    // empty list looks like the tasks failed to load.
+    var emptyMsg = (scope === 'mine')
+      ? 'Nothing assigned to you matches the current filters.'
+        + (mineRows.length === 0 && ER_TASKS_STATE.tasks.length > 0
+            ? '<br><span style="font-size:12px">Tap <strong>Everyone</strong> to see the whole department.</span>'
+            : '')
+      : 'No tasks match the current filters.';
+    listEl.innerHTML = '<div style="padding:40px 16px;text-align:center;color:var(--text-muted);font-size:13px;line-height:1.6">' + emptyMsg + '</div>';
     return;
   }
 
@@ -5274,11 +5444,40 @@ function openErAttachmentLightbox(relPath) {
     });
 }
 
+// Explain that reporting isn't closure. Without this the crew member has no
+// way to know the task stays on the board until a supervisor signs it off,
+// and will reasonably assume "Report Complete" finished the job.
+function erTaskUpdateStatusHint() {
+  var sel  = document.getElementById('er-task-update-status');
+  var hint = document.getElementById('er-task-update-status-hint');
+  if (!sel || !hint) return;
+  if (sel.value === 'reported_complete') {
+    hint.textContent = 'This tells the engineer the work is done. The task stays open until they sign it off in the Console.';
+    hint.style.display = 'block';
+  } else {
+    hint.style.display = 'none';
+    hint.textContent = '';
+  }
+}
+
+// Dropdown label — the action phrasing ("Report Complete", "Close
+// (Completed)"). erTaskStatusLabel below is the row-pill counterpart and
+// returns the state instead.
+function erTaskStatusOptionLabel(s) {
+  for (var i = 0; i < ER_TASK_STATUSES.length; i++) {
+    if (ER_TASK_STATUSES[i][0] === s) return ER_TASK_STATUSES[i][1];
+  }
+  return s || 'Unknown';
+}
+
 function erTaskStatusLabel(s) {
   for (var i = 0; i < ER_TASK_STATUSES.length; i++) {
     if (ER_TASK_STATUSES[i][0] === s) {
-      // For the row pill we want the short label, not "Close (Completed)"
-      return s === 'completed' ? 'Completed' : ER_TASK_STATUSES[i][1];
+      // Row pills want the state, not the action verb the dropdown uses:
+      // "Close (Completed)" → "Completed", "Report Complete" → "Reported".
+      if (s === 'completed')         return 'Completed';
+      if (s === 'reported_complete') return 'Reported';
+      return ER_TASK_STATUSES[i][1];
     }
   }
   return s || 'Unknown';
@@ -5302,14 +5501,22 @@ function openErTaskUpdateModal(taskId) {
   if (ctxEl) ctxEl.innerHTML = '<strong>' + erEscapeHtml(t.title || '(untitled)') + '</strong>'
     + (t.code_range ? '<div style="font-size:11px;color:var(--text-muted);margin-top:3px">' + erEscapeHtml(t.code_range) + ' · current: ' + erEscapeHtml(erTaskStatusLabel(t.status || 'open')) + '</div>' : '');
 
-  // Populate status options (default to current status)
+  // Populate status options (default to current status). The phone offers no
+  // terminal status — see ER_TASK_UPDATE_STATUSES. A task that is *already*
+  // terminal (closed from the Console, or a legacy phone closure) still needs
+  // its own status present, or the dropdown would silently preselect "Open"
+  // and a save that only added a comment would quietly reopen it.
   var statusEl = document.getElementById('er-task-update-status');
   if (statusEl) {
-    statusEl.innerHTML = ER_TASK_STATUSES.map(function(s) {
-      var sel = (t.status || 'open') === s[0] ? ' selected' : '';
-      return '<option value="' + s[0] + '"' + sel + '>' + s[1] + '</option>';
+    var cur     = t.status || 'open';
+    var offered = ER_TASK_UPDATE_STATUSES.slice();
+    if (offered.indexOf(cur) === -1) offered.unshift(cur);
+    statusEl.innerHTML = offered.map(function(v) {
+      var sel = cur === v ? ' selected' : '';
+      return '<option value="' + erEscapeAttr(v) + '"' + sel + '>' + erEscapeHtml(erTaskStatusOptionLabel(v)) + '</option>';
     }).join('');
   }
+  erTaskUpdateStatusHint();
 
   // Populate failure mode options (default to current task.failure_mode)
   var fmEl = document.getElementById('er-task-update-fm');
@@ -5737,17 +5944,44 @@ function erCreateEquipHideSuggest() {
   if (sug) { sug.style.display = 'none'; sug.innerHTML = ''; }
 }
 
+// Fills the "Assigned To" dropdown from the config already loaded for login.
+// Mirrors populateUserSelect() in IDMS-Console (tasks.js) exactly — same
+// retired filter, same value (username) and label (name || username), same
+// leading "— None —" — so the two apps can't drift on assigned_to values.
+// Entries without a username are skipped: crewconfig carries non-PWA crew
+// (deckhands, processors) with username=null, and those can't be assigned to.
+function erPopulateAssignedSelect(currentVal) {
+  var sel = document.getElementById('er-create-assigned');
+  if (!sel) return;
+  loadConfig().then(function(cfg) {
+    // Login accepts either shape (crewconfig.crew or userconfig.users); so do we.
+    var roster = (cfg && (cfg.users || cfg.crew)) || [];
+    var users  = roster.filter(function(u) { return u && u.username && u.status !== 'retired'; });
+    var opts   = users.map(function(u) {
+      return '<option value="' + erEscapeAttr(u.username) + '"' +
+             (u.username === currentVal ? ' selected' : '') + '>' +
+             erEscapeHtml(u.name || u.username) + '</option>';
+    }).join('');
+    sel.innerHTML = '<option value="">— None —</option>' + opts;
+    if (currentVal) sel.value = currentVal;
+  }).catch(function(e) {
+    console.warn('[ER Tasks] User dropdown error:', e);
+  });
+}
+
 function openErTaskCreateModal() {
   ER_CREATE_ASSETS = [];
   // Preload asset list (fire-and-forget; first dropdown render will use whatever
   // is cached; subsequent keystrokes pick up the full list)
   erLoadAssets();
-  var ids = ['er-create-title','er-create-role','er-create-assigned','er-create-skill-tags','er-create-desc','er-create-notes','er-create-eq-hours'];
+  var ids = ['er-create-title','er-create-role','er-create-skill-tags','er-create-desc','er-create-notes','er-create-eq-hours'];
   ids.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
   var catEl  = document.getElementById('er-create-category');  if (catEl)  catEl.value  = 'CHK';
   var prioEl = document.getElementById('er-create-priority');  if (prioEl) prioEl.value = 'Normal';
   var statEl = document.getElementById('er-create-status');    if (statEl) statEl.value = 'open';
   var fmEl   = document.getElementById('er-create-fm');        if (fmEl)   fmEl.value   = '';
+  var asgEl  = document.getElementById('er-create-assigned');  if (asgEl)  asgEl.value  = '';
+  erPopulateAssignedSelect('');
   var recEl  = document.getElementById('er-create-recurring'); if (recEl)  recEl.checked = false;
   erCreateToggleRecurring(false);
   // Default department to current hub
