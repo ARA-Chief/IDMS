@@ -5728,24 +5728,42 @@ async function submitErTaskUpdate() {
 // Re-fetches the definitions file, applies the mutator to the matching task, PUTs it back.
 // Reading fresh on every save avoids clobbering edits made in the Console between loads.
 async function erTaskSaveDefinitionsFile(filename, taskId, mutate) {
-  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/definitions/' + encodeURIComponent(filename) + ':/content';
-  var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
-  if (!resp.ok) throw new Error('Definitions file fetch failed: ' + resp.status);
-  var data = await resp.json();
-  if (!data || !Array.isArray(data.tasks)) throw new Error('Definitions file malformed');
-  var ft = null;
-  for (var i = 0; i < data.tasks.length; i++) {
-    if (data.tasks[i].task_id === taskId) { ft = data.tasks[i]; break; }
-  }
-  if (!ft) throw new Error('Task no longer in definitions file');
-  mutate(ft);
+  var base = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/definitions/' + encodeURIComponent(filename);
+  var url  = base + ':/content';
+  // Phase 6 Stage 0: ETag-guarded write. Without If-Match, a write landing
+  // between our GET and PUT is silently clobbered; with it, we get a 412,
+  // re-read, re-apply, and only then fail loudly. Two attempts, no more.
+  for (var attempt = 0; attempt < 2; attempt++) {
+    // The content endpoint's ETag header may not be CORS-readable; the item
+    // metadata eTag always is. A stale eTag can only cause a 412, never a
+    // lost write, so the metadata round trip is safe.
+    var metaResp = await fetch(base + '?select=eTag', { headers: { Authorization: 'Bearer ' + graphToken }, cache: 'no-store' });
+    if (!metaResp.ok) throw new Error('Definitions file metadata fetch failed: ' + metaResp.status);
+    var etag = (await metaResp.json()).eTag || null;
 
-  var putResp = await fetch(url, {
-    method: 'PUT',
-    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data, null, 2)
-  });
-  if (!putResp.ok) throw new Error('Definitions file save failed: ' + putResp.status);
+    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken }, cache: 'no-store' });
+    if (!resp.ok) throw new Error('Definitions file fetch failed: ' + resp.status);
+    var data = await resp.json();
+    if (!data || !Array.isArray(data.tasks)) throw new Error('Definitions file malformed');
+    var ft = null;
+    for (var i = 0; i < data.tasks.length; i++) {
+      if (data.tasks[i].task_id === taskId) { ft = data.tasks[i]; break; }
+    }
+    if (!ft) throw new Error('Task no longer in definitions file');
+    mutate(ft);
+
+    var putHeaders = { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' };
+    if (etag) putHeaders['If-Match'] = etag;
+    var putResp = await fetch(url, {
+      method: 'PUT',
+      headers: putHeaders,
+      body: JSON.stringify(data, null, 2)
+    });
+    if (putResp.status === 412) continue; // someone else saved first — re-read and re-apply
+    if (!putResp.ok) throw new Error('Definitions file save failed: ' + putResp.status);
+    return;
+  }
+  throw new Error('Definitions file changed twice during save — please try again');
 }
 
 // Resize, sanitize, upload — returns attachment metadata in the same shape the Console writes.
@@ -6097,30 +6115,43 @@ async function erTaskWriteEquipmentRecord(record, primaryEqId, year) {
 }
 
 async function erTaskCreateInDefinitionsFile(filename, task) {
-  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/definitions/' + encodeURIComponent(filename) + ':/content';
-  var data;
-  try {
-    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
-    if (resp.ok) {
-      data = await resp.json();
-      if (!data || !Array.isArray(data.tasks)) data = { schema_version: 1, vessel: '', code_range: task.code_range, year: task.year, tasks: [] };
-    } else if (resp.status === 404) {
-      data = { schema_version: 1, vessel: '', code_range: task.code_range, year: task.year, tasks: [] };
-    } else {
-      throw new Error('Fetch failed: ' + resp.status);
+  var base = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/data/tasks/definitions/' + encodeURIComponent(filename);
+  var url  = base + ':/content';
+  // Phase 6 Stage 0: ETag-guarded, same pattern as erTaskSaveDefinitionsFile.
+  // etag === null means the file doesn't exist yet; the PUT then uses
+  // If-None-Match:* so two clients creating the same file can't clobber —
+  // the loser 412s, re-reads the winner's file, and appends into it.
+  for (var attempt = 0; attempt < 2; attempt++) {
+    var etag = null;
+    var data = null;
+    var metaResp = await fetch(base + '?select=eTag', { headers: { Authorization: 'Bearer ' + graphToken }, cache: 'no-store' });
+    if (metaResp.ok) {
+      etag = (await metaResp.json()).eTag || null;
+      var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken }, cache: 'no-store' });
+      if (!resp.ok) throw new Error('Fetch failed: ' + resp.status);
+      try { data = await resp.json(); } catch (e) { data = null; }
+      if (!data || !Array.isArray(data.tasks)) data = null; // malformed — rebuilt below, but only overwrites at THIS etag
+    } else if (metaResp.status !== 404) {
+      throw new Error('Fetch failed: ' + metaResp.status);
     }
-  } catch(e) {
-    if (e.message && e.message.indexOf('Fetch failed') === 0) throw e;
-    data = { schema_version: 1, vessel: '', code_range: task.code_range, year: task.year, tasks: [] };
+    if (!data) data = { schema_version: 1, vessel: '', code_range: task.code_range, year: task.year, tasks: [] };
+
+    data.tasks = (data.tasks || []).filter(function(t) { return t.task_id !== task.task_id; });
+    data.tasks.push(task);
+
+    var putHeaders = { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' };
+    if (etag) putHeaders['If-Match'] = etag;
+    else      putHeaders['If-None-Match'] = '*';
+    var putResp = await fetch(url, {
+      method: 'PUT',
+      headers: putHeaders,
+      body: JSON.stringify(data, null, 2)
+    });
+    if (putResp.status === 412) continue; // lost the race — re-read and re-apply
+    if (!putResp.ok) throw new Error('File save failed: ' + putResp.status);
+    return;
   }
-  data.tasks = (data.tasks || []).filter(function(t) { return t.task_id !== task.task_id; });
-  data.tasks.push(task);
-  var putResp = await fetch(url, {
-    method: 'PUT',
-    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data, null, 2)
-  });
-  if (!putResp.ok) throw new Error('File save failed: ' + putResp.status);
+  throw new Error('Definitions file changed twice during save — please try again');
 }
 
 async function submitErTaskCreate() {
