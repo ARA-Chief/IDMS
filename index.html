@@ -6071,8 +6071,10 @@ function erCreateRenderPhotoPreview() {
 // factory 492-493, deck 430-440...), "first match" meant almost everything
 // inside the broad range was bucketed under it: a factory conveyor at
 // 492.038.043 was stored as code_range 360. That both mis-filed the task and
-// collapsed most of the vessel into one enormous definitions file, which is the
-// worst possible shape given both apps blind read-modify-write it with no ETag.
+// collapsed most of the vessel into one enormous definitions file — the worst
+// possible shape for a file that is read-modify-written concurrently. The
+// Console's RMW paths are ETag-guarded (Phase 6 Stage 0); this app still writes
+// blind, so keeping the files small and disjoint is what limits collisions here.
 //
 // Bucketing by top code keeps files small and disjoint. Department *ownership*
 // is a separate question, resolved from the register when it's needed — the task
