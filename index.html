@@ -6061,20 +6061,27 @@ function erCreateRenderPhotoPreview() {
   }).join('');
 }
 
+// `code_range` is the definitions-file bucket, and nothing more: the file is
+// data/tasks/definitions/tasks-{code_range}-{year}.json. It is the equipment's
+// own top code — NOT the owning department's range start.
+//
+// It used to return the range start of the first department whose range
+// contained the code. Because the asset register gives one department a broad
+// range and lets others carve narrower slices out of it (engine 360-832,
+// factory 492-493, deck 430-440...), "first match" meant almost everything
+// inside the broad range was bucketed under it: a factory conveyor at
+// 492.038.043 was stored as code_range 360. That both mis-filed the task and
+// collapsed most of the vessel into one enormous definitions file, which is the
+// worst possible shape given both apps blind read-modify-write it with no ETag.
+//
+// Bucketing by top code keeps files small and disjoint. Department *ownership*
+// is a separate question, resolved from the register when it's needed — the task
+// carries its own `department` field for "whose work is this", which is not the
+// same thing (engineers work plenty of non-engine assets).
 function erTaskCodeRange(equipIds, eqCfg) {
   var first = (Array.isArray(equipIds) ? equipIds[0] : '') || '';
   var top = parseInt((first || '').split('.')[0], 10);
-  if (isNaN(top)) return '000';
-  try {
-    var depts = (eqCfg && eqCfg.departments) || {};
-    for (var dk in depts) {
-      var ranges = depts[dk].ranges || [];
-      for (var i = 0; i < ranges.length; i++) {
-        var r = ranges[i];
-        if (top >= parseInt(r.from, 10) && top <= parseInt(r.to, 10)) return r.from;
-      }
-    }
-  } catch(e) {}
+  if (isNaN(top)) return 'misc';
   return String(top);
 }
 
