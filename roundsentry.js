@@ -66,12 +66,59 @@ function reGraphChildrenUrl(path, query) {
          (query ? '?' + query : '');
 }
 
-async function reRefreshToken() {
-  if (graphToken) return graphToken;
-  if (!msalInstance || !msalAccount) throw new Error('Not signed in');
-  const r = await msalInstance.acquireTokenSilent({ scopes: MSAL_SCOPES, account: msalAccount });
-  graphToken = r.accessToken;
-  return graphToken;
+// Graph access tokens expire after about an hour. Never short-circuit on a
+// cached `graphToken` — a PWA can sit frozen in the background all watch and
+// resume holding a long-dead token, which is what made rounds submits fail
+// with a bare 401 until the operator force-closed the app. MSAL keeps its own
+// cache and only touches the network when the token is actually near expiry,
+// so calling every time is cheap.
+//
+// `force` discards MSAL's cached copy too — used after Graph has already told
+// us a token is bad, where MSAL's cache is by definition also stale.
+async function reRefreshToken(force) {
+  if (!msalInstance || !msalAccount) {
+    if (graphToken && !force) return graphToken;
+    throw new Error('Not signed in');
+  }
+  try {
+    const r = await msalInstance.acquireTokenSilent({
+      scopes: MSAL_SCOPES, account: msalAccount, forceRefresh: !!force
+    });
+    graphToken = r.accessToken;
+    return graphToken;
+  } catch (err) {
+    // Offline or a transient AAD failure. A token we already hold may still be
+    // valid, so fall back to it rather than failing before we've even tried;
+    // the fetch below will surface a real network error if it isn't.
+    if (graphToken && !force) return graphToken;
+    throw err;
+  }
+}
+
+// Fetch with a bearer token, replaying once on 401. Between the token check
+// and the request landing at Graph there's always a window where the token can
+// age out; a 401 is Graph telling us exactly that, so force a new token and
+// send the request again before giving up.
+async function reAuthFetch(url, init) {
+  const opts = init || {};
+  const withAuth = () => Object.assign({}, opts, {
+    headers: Object.assign({}, opts.headers, { 'Authorization': 'Bearer ' + graphToken })
+  });
+  await reRefreshToken();
+  let resp = await fetch(url, withAuth());
+  if (resp.status === 401) {
+    await reRefreshToken(true);
+    resp = await fetch(url, withAuth());
+  }
+  return resp;
+}
+
+// Errors carry the HTTP status so callers can explain the failure in the
+// operator's terms instead of showing a bare status code.
+function reHttpError(prefix, status) {
+  const err = new Error(prefix + ': ' + status);
+  err.status = status;
+  return err;
 }
 
 // Sync-pill gauge. beginNetworkOp/endNetworkOp live in index.html; guard so
@@ -80,15 +127,11 @@ const reNetBegin = () => { if (typeof beginNetworkOp === 'function') beginNetwor
 const reNetEnd   = ok => { if (typeof endNetworkOp === 'function') endNetworkOp(ok); };
 
 async function reGet(path) {
-  await reRefreshToken();
   reNetBegin();
   try {
-    const resp = await fetch(reGraphUrl(path), {
-      headers: { 'Authorization': 'Bearer ' + graphToken },
-      cache: 'no-store'
-    });
+    const resp = await reAuthFetch(reGraphUrl(path), { cache: 'no-store' });
     if (resp.status === 404) { reNetEnd(true); return null; }
-    if (!resp.ok) throw new Error('GET failed: ' + resp.status);
+    if (!resp.ok) throw reHttpError('GET failed', resp.status);
     const json = await resp.json();
     reNetEnd(true);
     return json;
@@ -99,15 +142,14 @@ async function reGet(path) {
 }
 
 async function rePut(path, data) {
-  await reRefreshToken();
   reNetBegin();
   try {
-    const resp = await fetch(reGraphUrl(path), {
+    const resp = await reAuthFetch(reGraphUrl(path), {
       method: 'PUT',
-      headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data, null, 2)
     });
-    if (!resp.ok) throw new Error('Save failed: ' + resp.status);
+    if (!resp.ok) throw reHttpError('Save failed', resp.status);
     reNetEnd(true);
   } catch (err) {
     reNetEnd(false);
@@ -121,16 +163,12 @@ async function rePut(path, data) {
 // that only need the newest N files should pass $orderby + $top so the server
 // trims the result before paginating.
 async function reListChildren(path, query) {
-  await reRefreshToken();
   reNetBegin();
   let url = reGraphChildrenUrl(path, query);
   const out = [];
   try {
     while (url) {
-      const resp = await fetch(url, {
-        headers: { 'Authorization': 'Bearer ' + graphToken },
-        cache: 'no-store'
-      });
+      const resp = await reAuthFetch(url, { cache: 'no-store' });
       if (!resp.ok) { reNetEnd(false); return out; }
       const json = await resp.json();
       if (Array.isArray(json.value)) out.push(...json.value);
@@ -1727,6 +1765,13 @@ function rePmAutoComment(now, dateStr) {
   }
 
   if (!Array.isArray(RE.comments[iid])) RE.comments[iid] = [];
+  // Drop any auto-comment left by an earlier attempt at this same round before
+  // adding the current one. RE.comments starts empty for each round entry and
+  // auto-comments are only generated here at submit time, so the only way one
+  // is already present is a failed submit the operator is now retrying — and
+  // the numbers below supersede it. Without this, every retry stacked another
+  // near-identical block into the item's comment thread.
+  RE.comments[iid] = RE.comments[iid].filter(c => !(c && c.auto));
   RE.comments[iid].push({
     text:      lines.join('\n'),
     author:    (currentUser && currentUser.username) || '_auto',
@@ -1896,14 +1941,84 @@ async function reConfirmSubmit() {
     // Force-save the draft immediately so the "preserved" claim is true even
     // if the user closes the tab right after seeing this modal.
     reSaveDraft();
-    reShowModal(`
-      <h3 class="re-modal-title re-danger-text">Submit failed</h3>
-      <p class="re-modal-body">${reEsc(err.message)}<br><br>Your entries are saved on this device and will be offered for resume next time you open rounds. You can retry now, or close the app and retry later.</p>
-      <div class="re-modal-actions">
-        <button class="re-modal-btn re-modal-secondary" onclick="reCloseModal()">Close</button>
-        <button class="re-modal-btn re-modal-primary" onclick="reCloseModal();reHandleSubmit()">Retry</button>
-      </div>`);
+    reShowSubmitFailed(err);
   }
+}
+
+// Translates a submit failure into something an operator on deck can act on.
+// The raw text was a bare status code ("Save failed: 401"), which told the
+// crew nothing and gave the office nothing to go on either. The status stays
+// in the modal as a small trailing detail so it can still be reported.
+function reSubmitFailReason(err) {
+  const status = err && err.status;
+  const msg    = (err && err.message) || '';
+  if (status === 401 || status === 403) {
+    return 'Your Microsoft sign-in expired while you were entering this round. Retry will renew it automatically.';
+  }
+  if (status === 429 || status === 503) {
+    return 'OneDrive is busy and asked us to slow down. Wait a moment, then retry.';
+  }
+  if (status === 507) {
+    return 'The OneDrive account is out of storage space. Notify the office — retrying will not help.';
+  }
+  if (status >= 500) {
+    return 'OneDrive had a server error. This is usually temporary — retry in a moment.';
+  }
+  if (status === 404) {
+    return 'The rounds log folder could not be found on OneDrive. Notify the office.';
+  }
+  if (/Not signed in/i.test(msg)) {
+    return 'You are no longer signed in to Microsoft. Retry will attempt to sign you back in.';
+  }
+  if (err instanceof TypeError || /failed to fetch|networkerror|load failed|network request/i.test(msg)) {
+    return 'No connection to OneDrive. Check the vessel network or wait until you are back in coverage, then retry.';
+  }
+  return msg || 'An unexpected error stopped the submit.';
+}
+
+function reShowSubmitFailed(err) {
+  const reason = reSubmitFailReason(err);
+  const detail = (err && err.message) ? `<br><br><span class="re-modal-detail">Details: ${reEsc(err.message)}</span>` : '';
+  reShowModal(`
+    <h3 class="re-modal-title re-danger-text">Rounds could not be submitted</h3>
+    <p class="re-modal-body">${reEsc(reason)}<br><br>Your entries are saved on this device and will be offered for resume next time you open rounds. You can retry now, or close the app and retry later.${detail}</p>
+    <div class="re-modal-actions">
+      <button class="re-modal-btn re-modal-secondary" onclick="reCloseModal()">Close</button>
+      <button class="re-modal-btn re-modal-primary" onclick="reRetrySubmit()">Retry</button>
+    </div>`);
+}
+
+// Retry path. The operator has already confirmed the submit once, so this goes
+// straight back to the write rather than re-asking through reHandleSubmit.
+// Renewing the token first is the whole point: the common failure is an
+// expired sign-in, and forcing a fresh token here means the retry the operator
+// takes by hand does what force-closing the app used to do for them.
+async function reRetrySubmit() {
+  reCloseModal();
+  const btn = document.getElementById('re-submit-btn');
+  if (btn) { btn.textContent = 'Reconnecting…'; btn.disabled = true; }
+  try {
+    await reRefreshToken(true);
+  } catch (err) {
+    if (btn) { btn.textContent = 'Submit Rounds'; btn.disabled = false; }
+    // Renewal can fail two very different ways. If we still hold a token, the
+    // likely cause is the vessel network being down rather than the sign-in
+    // being dead — so attempt the submit anyway and let it report the real
+    // reason, instead of telling the operator to restart over a dropped link.
+    if (graphToken) { reConfirmSubmit(); return; }
+    // No token at all: the refresh token itself has aged out, which needs an
+    // interactive sign-in we can't do without navigating away and losing the
+    // round. The draft is already saved, so tell the operator plainly.
+    reShowModal(`
+      <h3 class="re-modal-title re-danger-text">Could not renew sign-in</h3>
+      <p class="re-modal-body">Your entries are saved on this device. Close the app completely and re-open it — you will be offered this round for resume, and can submit it then.<br><br><span class="re-modal-detail">Details: ${reEsc((err && err.message) || 'sign-in renewal failed')}</span></p>
+      <div class="re-modal-actions">
+        <button class="re-modal-btn re-modal-primary" onclick="reCloseModal()">OK</button>
+      </div>`);
+    return;
+  }
+  if (btn) { btn.textContent = 'Submit Rounds'; btn.disabled = false; }
+  reConfirmSubmit();
 }
 
 // ── Comments ──────────────────────────────────────────────────────────────────
@@ -2098,7 +2213,7 @@ async function reUploadCommentPhotos(itemId, files) {
 // <img> by fetching the OneDrive blob with the active Graph token. Failure
 // to load one image hides that thumbnail rather than breaking the modal.
 async function reLoadCommentThumbnails(rootEl) {
-  if (!rootEl || typeof graphToken === 'undefined' || !graphToken) return;
+  if (!rootEl || typeof graphToken === 'undefined') return;
   const imgs = rootEl.querySelectorAll('img[data-thumb-path]:not([data-loaded])');
   for (const img of imgs) {
     const relPath = img.getAttribute('data-thumb-path');
@@ -2108,7 +2223,7 @@ async function reLoadCommentThumbnails(rootEl) {
       const url  = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
                    encodeURIComponent('Documents/IDMS/' + relPath).replace(/%2F/g, '/') +
                    ':/content';
-      const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } });
+      const resp = await reAuthFetch(url);
       if (!resp.ok) { img.style.display = 'none'; continue; }
       const blob = await resp.blob();
       img.src = URL.createObjectURL(blob);
@@ -2149,7 +2264,7 @@ function reOpenLightbox(relPath) {
       const url  = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
                    encodeURIComponent('Documents/IDMS/' + relPath).replace(/%2F/g, '/') +
                    ':/content';
-      const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } });
+      const resp = await reAuthFetch(url);
       if (!resp.ok) throw new Error(String(resp.status));
       const blob = await resp.blob();
       const img  = overlay.querySelector('#re-cmt-lb-img');
@@ -2663,5 +2778,8 @@ function reStylesHTML() {
 .re-modal-primary  { background: var(--re-accent); color: var(--re-bg0); }
 .re-modal-secondary{ background: var(--re-bg2); color: var(--re-text2); border: 1px solid var(--re-border); }
 .re-danger-text    { color: var(--re-danger); }
+/* Raw status text kept available for reporting to the office, de-emphasised
+   so it doesn't compete with the plain-language explanation above it. */
+.re-modal-detail   { font-size: 12px; color: var(--re-text3, var(--re-text2)); opacity: 0.75; }
 </style>`;
 }

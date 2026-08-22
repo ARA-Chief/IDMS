@@ -7867,29 +7867,56 @@ function obsGraphUrl(username, dateStr) {
          encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
 }
 
-async function obsRefreshToken() {
-  if (graphToken) return graphToken;
-  if (!msalInstance || !msalAccount) throw new Error('Not signed in');
-  var result = await msalInstance.acquireTokenSilent({ scopes: MSAL_SCOPES, account: msalAccount });
-  graphToken = result.accessToken;
-  return graphToken;
+// See reRefreshToken in roundsentry.js — same rule: never short-circuit on a
+// cached graphToken, because a backgrounded PWA resumes holding a dead one and
+// every write then fails with an unexplained 401. MSAL caches internally, so
+// asking each time only hits the network when the token is genuinely stale.
+async function obsRefreshToken(force) {
+  if (!msalInstance || !msalAccount) {
+    if (graphToken && !force) return graphToken;
+    throw new Error('Not signed in');
+  }
+  try {
+    var result = await msalInstance.acquireTokenSilent({
+      scopes: MSAL_SCOPES, account: msalAccount, forceRefresh: !!force
+    });
+    graphToken = result.accessToken;
+    return graphToken;
+  } catch (err) {
+    if (graphToken && !force) return graphToken;
+    throw err;
+  }
+}
+
+// Bearer fetch that replays once on 401, for the same reason as reAuthFetch:
+// a token can age out between the check and the request reaching Graph.
+async function obsAuthFetch(url, init) {
+  var opts = init || {};
+  function withAuth() {
+    return Object.assign({}, opts, {
+      headers: Object.assign({}, opts.headers, { 'Authorization': 'Bearer ' + graphToken })
+    });
+  }
+  await obsRefreshToken();
+  var resp = await fetch(url, withAuth());
+  if (resp.status === 401) {
+    await obsRefreshToken(true);
+    resp = await fetch(url, withAuth());
+  }
+  return resp;
 }
 
 async function loadLogFromOneDrive(username, dateStr) {
-  await obsRefreshToken();
-  var resp = await fetch(obsGraphUrl(username, dateStr), {
-    headers: { 'Authorization': 'Bearer ' + graphToken }
-  });
+  var resp = await obsAuthFetch(obsGraphUrl(username, dateStr));
   if (resp.status === 404) return null;
   if (!resp.ok) throw new Error('Graph GET failed: ' + resp.status);
   return resp.json();
 }
 
 async function putLogToOneDrive(username, dateStr, data) {
-  await obsRefreshToken();
-  var resp = await fetch(obsGraphUrl(username, dateStr), {
+  var resp = await obsAuthFetch(obsGraphUrl(username, dateStr), {
     method: 'PUT',
-    headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data, null, 2)
   });
   if (!resp.ok) throw new Error('Graph PUT failed: ' + resp.status);
@@ -8841,10 +8868,37 @@ function erlGraphUrl(year) {
     + ONEDRIVE_BASE + '/data/roughlog/roughlog-' + year + '.json:/content';
 }
 
-async function erlRefreshToken() {
-  if (graphToken) return;
-  var r = await msalInstance.acquireTokenSilent({ scopes: MSAL_SCOPES, account: msalAccount });
-  graphToken = r.accessToken;
+// Same stale-token rule as obsRefreshToken / reRefreshToken — see those.
+async function erlRefreshToken(force) {
+  if (!msalInstance || !msalAccount) {
+    if (graphToken && !force) return;
+    throw new Error('Not signed in');
+  }
+  try {
+    var r = await msalInstance.acquireTokenSilent({
+      scopes: MSAL_SCOPES, account: msalAccount, forceRefresh: !!force
+    });
+    graphToken = r.accessToken;
+  } catch (err) {
+    if (graphToken && !force) return;
+    throw err;
+  }
+}
+
+async function erlAuthFetch(url, init) {
+  var opts = init || {};
+  function withAuth() {
+    return Object.assign({}, opts, {
+      headers: Object.assign({}, opts.headers, { 'Authorization': 'Bearer ' + graphToken })
+    });
+  }
+  await erlRefreshToken();
+  var resp = await fetch(url, withAuth());
+  if (resp.status === 401) {
+    await erlRefreshToken(true);
+    resp = await fetch(url, withAuth());
+  }
+  return resp;
 }
 
 async function initEngineRoughLog(backScreen) {
@@ -8909,8 +8963,7 @@ async function erlLoadData() {
   if (!listEl) return;
   listEl.innerHTML = '<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">Loading…</div>';
   try {
-    await erlRefreshToken();
-    var resp = await fetch(erlGraphUrl(ERL.year), { headers: { 'Authorization': 'Bearer ' + graphToken } });
+    var resp = await erlAuthFetch(erlGraphUrl(ERL.year));
     if (resp.status === 404) {
       ERL.data = { schema_version: 1, vessel: 'F/T Araho', year: ERL.year, entries: [] };
     } else if (!resp.ok) {
@@ -9019,9 +9072,8 @@ async function erlSubmitEntry() {
     // Ensure local data structure exists
     if (!ERL.data) ERL.data = { schema_version: 1, vessel: 'F/T Araho', year: ERL.year, entries: [] };
     // Read-merge-write: fetch remote to avoid clobbering concurrent writes
-    await erlRefreshToken();
     var url = erlGraphUrl(ERL.year);
-    var getResp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken } });
+    var getResp = await erlAuthFetch(url);
     if (getResp.ok) {
       var remote = await getResp.json();
       var localIds = new Set((ERL.data.entries || []).map(function(e) { return e.id; }));
@@ -9029,9 +9081,9 @@ async function erlSubmitEntry() {
     }
     ERL.data.entries.push(entry);
     ERL.data.entries.sort(function(a, b) { return a.timestamp.localeCompare(b.timestamp); });
-    var putResp = await fetch(url, {
+    var putResp = await erlAuthFetch(url, {
       method: 'PUT',
-      headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ERL.data, null, 2)
     });
     if (!putResp.ok) throw new Error('Save failed: HTTP ' + putResp.status);
