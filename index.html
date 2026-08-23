@@ -5095,7 +5095,7 @@ async function loadEngineClosedRecords() {
 }
 
 // Render the closed-tasks list. Records have a different schema than active
-// task definitions (completed_at, closed_by_*, description_work, close_notes,
+// task definitions (completed_at, signed_by_*, service_report, remark,
 // equipment_ids as JSON string). Roles/department filters still apply.
 function renderEngineClosedRecordsList(listEl, countEl) {
   var roleFilter = (document.getElementById('er-task-filter-role') || {}).value || '';
@@ -5116,7 +5116,7 @@ function renderEngineClosedRecordsList(listEl, countEl) {
   // user completed or closed.
   var mine = records.filter(function(r) {
     var me = currentUser && currentUser.username;
-    return erSameUser(r.completed_by_user, me) || erSameUser(r.closed_by_user, me);
+    return erSameUser(r.done_by_user, me) || erSameUser(r.signed_by_user, me);
   });
   erRenderTaskScopeControl(mine.length, records.length);
   var scope = erTaskScope();
@@ -5149,17 +5149,17 @@ function renderEngineClosedRecordsList(listEl, countEl) {
     try { equipIds = typeof r.equipment_ids === 'string' ? JSON.parse(r.equipment_ids) : (r.equipment_ids || []); } catch(e) { equipIds = []; }
     var equipStr   = equipIds.length ? equipIds.join(', ') : '';
     var dateStr    = r.completed_at ? r.completed_at.slice(0, 10) : '';
-    var closedBy   = r.closed_by_name || r.completed_by_name || r.closed_by_user || r.completed_by_user || '';
+    var closedBy   = r.signed_by || r.done_by || r.signed_by_user || r.done_by_user || '';
     var isExpanded = ER_TASKS_STATE.closedExpanded === r.record_id;
 
     html += '<div class="er-task-row' + (isExpanded ? ' er-task-row-expanded' : '')
       +    '" onclick="toggleErClosedExpand(\'' + erEscapeAttr(r.record_id) + '\')">'
       + '<div class="er-task-row-body">'
-      +   '<div class="er-task-row-title">' + erEscapeHtml(r.title || '(untitled)') + '</div>'
+      +   '<div class="er-task-row-title">' + erEscapeHtml(r.job_name || '(untitled)') + '</div>'
       +   '<div class="er-task-row-meta">'
       +     (dateStr ? '<span>' + erEscapeHtml(dateStr) + '</span>' : '')
       +     (r.priority ? '<span>' + erEscapeHtml(r.priority) + '</span>' : '')
-      +     (r.category ? '<span class="er-task-cat-pill">' + erEscapeHtml(r.category) + '</span>' : '')
+      +     (r.job_type ? '<span class="er-task-cat-pill">' + erEscapeHtml(r.job_type) + '</span>' : '')
       +     (equipStr ? '<span class="er-task-row-equip">' + erEscapeHtml(equipStr) + '</span>' : '')
       +     (closedBy ? '<span>by ' + erEscapeHtml(closedBy) + '</span>' : '')
       +   '</div>'
@@ -5169,21 +5169,21 @@ function renderEngineClosedRecordsList(listEl, countEl) {
 
     if (isExpanded) {
       html += '<div class="er-task-detail" onclick="event.stopPropagation()">';
-      if (r.description_work) {
+      if (r.service_report) {
         html += '<div class="er-task-detail-section">Work done</div>'
-              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.description_work) + '</div>';
+              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.service_report) + '</div>';
       }
-      if (r.close_notes) {
+      if (r.remark) {
         html += '<div class="er-task-detail-section">Notes</div>'
-              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.close_notes) + '</div>';
+              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.remark) + '</div>';
       }
       // Compact metadata grid — same look as active-task detail panel.
       var meta = [];
       if (r.failure_mode)       meta.push(['Failure mode', r.failure_mode]);
       if (r.failure_mechanism)  meta.push(['Failure mechanism', r.failure_mechanism]);
       if (r.detection_method)   meta.push(['Detection method', r.detection_method]);
-      if (r.equipment_hours != null && r.equipment_hours !== '') {
-        meta.push(['Equipment hours', String(r.equipment_hours)]);
+      if (r.hrs_done != null && r.hrs_done !== '') {
+        meta.push(['Equipment hours', String(r.hrs_done)]);
       }
       if (r.role)               meta.push(['Role', r.role]);
       if (r.completed_at)       meta.push(['Completed at', r.completed_at.slice(0, 16).replace('T', ' ')]);
@@ -6164,12 +6164,12 @@ async function erTaskCreateInDefinitionsFile(filename, task) {
 }
 
 async function submitErTaskCreate() {
-  var title   = ((document.getElementById('er-create-title') || {}).value || '').trim();
+  var job_name   = ((document.getElementById('er-create-title') || {}).value || '').trim();
   var errEl   = document.getElementById('er-task-create-error');
   var saveBtn = document.getElementById('er-task-create-save');
 
   var dept = ((document.getElementById('er-create-dept') || {}).value || '').trim();
-  if (!title) {
+  if (!job_name) {
     if (errEl) { errEl.textContent = 'Task name is required.'; errEl.style.display = 'block'; }
     return;
   }
@@ -6183,7 +6183,7 @@ async function submitErTaskCreate() {
   }
   if (errEl) errEl.style.display = 'none';
 
-  var category  = (document.getElementById('er-create-category')   || {}).value || 'CHK';
+  var job_type  = (document.getElementById('er-create-category')   || {}).value || 'CHK';
   var priority  = (document.getElementById('er-create-priority')   || {}).value || 'Normal';
   var status    = (document.getElementById('er-create-status')     || {}).value || 'open';
   var role      = ((document.getElementById('er-create-role')      || {}).value || '').trim();
@@ -6252,10 +6252,10 @@ async function submitErTaskCreate() {
 
     var task = {
       task_id:        taskId,
-      title:          title,
+      job_name:          job_name,
       department:     dept,
       equipment_ids:  JSON.stringify(ER_CREATE_ASSETS),
-      category:       category,
+      job_type:       job_type,
       priority:       priority,
       role:           role || null,
       assigned_to:    assigned || null,
@@ -6281,23 +6281,23 @@ async function submitErTaskCreate() {
     // records file so the Console picks up a real task_records row on its next
     // poll. Mirrors the Console Quick Close payload exactly. Fields that the
     // Console captures via its own form map onto what we already have in the
-    // create form (description → description_work, notes → close_notes, etc.).
+    // create form (description → service_report, notes → remark, etc.).
     // Cancelled doesn't generate a record — Console's Cancelled path doesn't either.
     if (status === 'completed') {
       var record = {
         record_id:         erUuid(),
         task_id:           taskId,
-        title:             title,
+        job_name:             job_name,
         equipment_ids:     JSON.stringify(ER_CREATE_ASSETS),
-        category:          category,
+        job_type:          job_type,
         priority:          priority,
         role:              role || null,
-        completed_by_user: currentUser.username || 'unknown',
-        completed_by_name: currentUser.name || currentUser.username || 'Unknown',
+        done_by_user: currentUser.username || 'unknown',
+        done_by: currentUser.name || currentUser.username || 'Unknown',
         started_at:        now,
         completed_at:      now,
-        equipment_hours:   eqHours,
-        description_work:  desc || null,
+        hrs_done:   eqHours,
+        service_report:  desc || null,
         items_used:        null,
         follow_up:         0,
         follow_up_notes:   null,
@@ -6305,9 +6305,9 @@ async function submitErTaskCreate() {
         failure_mode:      fmCode || null,
         failure_mechanism: null,
         detection_method:  null,
-        closed_by_user:    currentUser.username || 'unknown',
-        closed_by_name:    currentUser.name || currentUser.username || 'Unknown',
-        close_notes:       notes || null
+        signed_by_user:    currentUser.username || 'unknown',
+        signed_by:    currentUser.name || currentUser.username || 'Unknown',
+        remark:       notes || null
       };
       try {
         await erTaskWriteEquipmentRecord(record, primaryEqId, year);
