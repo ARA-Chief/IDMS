@@ -7272,7 +7272,7 @@ Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 
 | `note_assigned` / `note_unassigned` | `{note_id, assignee_username}` | Assigner is the envelope `actor`. Assignment is what puts a note on the Assigned Tasks board and in alerts — creation alone never does. |
 | `comment_added` | `{note_id, comment_id, text?, attachments?}` | Photo-only comments (empty text, 1+ photos) allowed, matching rounds comments. |
 | `note_promoted` | `{note_id, task_id}` | Written after the task definition create succeeds (§41.6). Converts the note into a task mirror. |
-| `task_imported` | `{note_id, task_id, title}` | Department-level only: creates a mirror wrapper for an existing task (§41.6). |
+| `task_imported` | `{note_id, task_id, title, scope, folder?}` | Department-level only: creates a mirror wrapper for an existing task (§41.6). `scope` is carried explicitly — the reducer is context-free. |
 | `note_archived` | `{note_id}` | Hidden from default views, retained in stream and Completed/Archive views. |
 | `note_deleted` | `{note_id}` | Tombstone. Authors may delete their own notes; department heads any note. UI offers **Archive** as the default when the note carries other people's comments. |
 | `note_merged` | `{from_note_id, into_note_id, template_id}` | Console-emitted reconciliation only (§41.8). Viewers fold the `from` stream into the `into` note. |
@@ -7359,16 +7359,16 @@ Edited in Console → Config (department-head or admin tier). ETag-guarded RMW l
 
 ### 41.12 Console ingest and SQLite
 
-New `sync-notes.js` lane in the standard 2-minute poll, cursor-driven (`ingest_cursors` subsystem `notes`, `scope_key` = year). Derived tables (cache only, OneDrive is truth):
+New `sync-notes.js` lane in the standard 2-minute poll, cursor-driven (`ingest_cursors` subsystem `notes`, `scope_key` = year). The lane mirrors raw events first, then re-derives the whole cache through the **shared reducer** (`notes-reduce.js`, canonical copy in the IDMS repo at `utils/notes-reduce.js`, mirrored byte-identical like `crew-display.js`) — deliberately whole-table on change, so there is no incremental application logic to drift from the page's. Tables (cache only, OneDrive is truth):
 
 | Table | Purpose |
 |---|---|
-| `notes` | One row per note: current title/body/scope/folder/status/assignee/equipment_code, `origin`, `template_id`, `task_id` (mirrors), completed/archived/deleted flags, created/updated stamps |
-| `note_steps` | Per-step state incl. all strike events (json) |
-| `note_comments` | Comments with attachments json |
-| `note_alert_acks` | Per-user acked ids |
+| `notes_events` | Raw event mirror: `event_file` (PK, the filename = sort key), `event_id`, `event_type`, `note_id`, `actor`, `timestamp`, `year`, `payload_json` |
+| `notes` | One derived row per note: title/body/scope/folder/assignee/equipment_code, `origin`, `template_id`, `task_id` (mirrors), completed/archived/deleted/group_alert flags, `steps_json`, `attachments_json`, `completions_json`, `comment_count` |
+| `note_comments` | Derived comments with `attachments_json` |
+| `note_alert_acks` | Per-user acked ids, derived from `alert_acked` events |
 
-Rebuild/verify registered in `DIAG_REGISTRY` (`notes`) like every other subsystem.
+Rebuild/verify registered in `DIAG_REGISTRY` (`notes`) like every other subsystem; rebuild clears events + derived + cursors and replays from OneDrive.
 
 ### 41.13 Open items
 

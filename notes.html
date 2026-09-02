@@ -227,6 +227,7 @@
 <input type="file" id="photo-input" accept="image/*" style="display:none">
 
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="utils/notes-reduce.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════
 // IDMS Notes — standalone page, schema §41 (Notes Hub), slice 1.
@@ -509,84 +510,15 @@ function ntUuid() {
 }
 
 // ── Derive note state from the stream ───────────────────────
+// The reducer itself lives in utils/notes-reduce.js — the canonical copy
+// shared with the Console's ingest lane. Nothing derives state any other way.
 
 function ntReduce() {
-  var notes = {};
-  NT.events.forEach(function (ev) {
-    var p = ev.payload || {};
-    var n = p.note_id ? notes[p.note_id] : null;
-    switch (ev.event_type) {
-      case 'note_created':
-        notes[p.note_id] = {
-          note_id: p.note_id, title: p.title || '(untitled)', body: p.body || '',
-          scope: p.scope || {}, folder: p.folder || null,
-          equipment_code: p.equipment_code || null,
-          steps: (p.steps || []).map(function (s) { return { step_id: s.step_id, text: s.text, equipment_code: s.equipment_code || null, strikes: [] }; }),
-          template_id: p.template_id || null, origin: p.origin || 'manual',
-          group_alert: !!p.group_alert,
-          attachments: (p.attachments || []).slice(),
-          author: ev.actor, created: ev.timestamp, updated: ev.timestamp,
-          completed: false, completions: [], assignee: null,
-          comments: [], archived: false, deleted: false,
-          task_id: null, merged_into: null
-        };
-        break;
-      case 'note_edited':
-        if (n) { Object.assign(n, p.patch || {}); n.updated = ev.timestamp; }
-        break;
-      case 'note_completed':
-        if (n) { n.completed = true; n.completions.push({ actor: ev.actor, timestamp: ev.timestamp }); n.updated = ev.timestamp; }
-        break;
-      case 'note_uncompleted':
-        if (n) { n.completed = false; n.completions.push({ actor: ev.actor, timestamp: ev.timestamp, undone: true }); n.updated = ev.timestamp; }
-        break;
-      case 'step_struck':
-      case 'step_unstruck':
-        if (n) {
-          var st = n.steps.find(function (s) { return s.step_id === p.step_id; });
-          if (st) st.strikes.push({ actor: ev.actor, timestamp: ev.timestamp, struck: ev.event_type === 'step_struck' });
-          n.updated = ev.timestamp;
-        }
-        break;
-      case 'note_assigned':
-        if (n) { n.assignee = p.assignee_username; n.assigned_by = ev.actor; n.updated = ev.timestamp; }
-        break;
-      case 'note_unassigned':
-        if (n) { n.assignee = null; n.updated = ev.timestamp; }
-        break;
-      case 'comment_added':
-        if (n) { n.comments.push({ comment_id: p.comment_id, text: p.text || '', attachments: p.attachments || [], actor: ev.actor, timestamp: ev.timestamp }); n.updated = ev.timestamp; }
-        break;
-      case 'note_promoted':
-        if (n) { n.task_id = p.task_id; n.updated = ev.timestamp; }
-        break;
-      case 'task_imported':
-        notes[p.note_id] = {
-          note_id: p.note_id, title: p.title || ('Task ' + p.task_id), body: '',
-          scope: p.scope || { level: 'department', department: NT.dept },
-          folder: p.folder || null, equipment_code: null, steps: [],
-          template_id: null, origin: 'task_import', group_alert: false,
-          attachments: [], author: ev.actor, created: ev.timestamp, updated: ev.timestamp,
-          completed: false, completions: [], assignee: null, comments: [],
-          archived: false, deleted: false, task_id: p.task_id, merged_into: null
-        };
-        break;
-      case 'note_archived':
-        if (n) { n.archived = true; n.updated = ev.timestamp; }
-        break;
-      case 'note_deleted':
-        if (n) { n.deleted = true; n.updated = ev.timestamp; }
-        break;
-      case 'note_merged':
-        if (notes[p.from_note_id]) notes[p.from_note_id].merged_into = p.into_note_id;
-        break;
-    }
-  });
-  NT.notes = notes;
+  NT.notes = notesReduce.reduce(NT.events);
 }
 
 function ntStepStruck(step) {
-  return step.strikes.length ? step.strikes[step.strikes.length - 1].struck : false;
+  return notesReduce.stepStruck(step);
 }
 
 function ntIsDeptHead(deptKey) {
