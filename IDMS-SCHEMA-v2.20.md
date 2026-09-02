@@ -7265,7 +7265,7 @@ Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 
 
 | `event_type` | Payload | Notes |
 |---|---|---|
-| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, steps?, template_id?, origin, group_alert?}` | `scope` = `{level: "department"\|"personnel"\|"crew", department, owner_username?}`. `origin` = `manual` \| `template` \| `emergency_offline`. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). |
+| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "department"\|"personnel"\|"crew", department, owner_username?}`. `origin` = `manual` \| `template` \| `emergency_offline`. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). |
 | `note_edited` | `{note_id, patch, before}` | Same correction pattern as `observation_correction`. |
 | `note_completed` / `note_uncompleted` | `{note_id}` | First `note_completed` sets state; subsequent ones from other actors are preserved and rendered as confirmations, never dropped. |
 | `step_struck` / `step_unstruck` | `{note_id, step_id}` | Multiple strikes of the same step by different actors are all preserved — "struck by A 03:12, confirmed by B 03:14". This is the emergency-checklist timeline. |

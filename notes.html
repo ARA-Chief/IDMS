@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>IDMS Notes</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-0: #0a1628;
+    --bg-1: #0f1e38;
+    --bg-2: #162440;
+    --bg-3: #1e2f4d;
+    --bg-card: #162440;
+    --bg-input: #0f1e38;
+    --accent: #00c2ff;
+    --accent-dim: #0090c0;
+    --accent-glow: rgba(0, 194, 255, 0.15);
+    --danger: #ff4d4d;
+    --warning: #ffaa00;
+    --success: #00ff99;
+    --text-primary: #e8f0fe;
+    --text-secondary: #7a90b0;
+    --text-muted: #4a5c78;
+    --border: rgba(255,255,255,0.08);
+    --border-accent: rgba(0, 194, 255, 0.3);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --font: 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+  }
+
+  html, body { height: 100%; background: var(--bg-0); color: var(--text-primary); font-family: var(--font); font-size: 15px; -webkit-font-smoothing: antialiased; }
+
+  .screen { display: none; height: 100%; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* ── Auth / login screens ─────────────────────────────── */
+  .center-card { margin: auto; width: min(360px, 92vw); background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px 28px; text-align: center; }
+  .center-card h1 { font-size: 22px; margin-bottom: 6px; }
+  .center-card .sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 22px; }
+  .btn { display: inline-block; width: 100%; padding: 12px 16px; border: none; border-radius: var(--radius-md); background: var(--accent); color: #04263a; font-weight: 600; font-size: 15px; cursor: pointer; font-family: var(--font); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.ghost { background: var(--bg-3); color: var(--text-primary); }
+  .btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .field { width: 100%; padding: 11px 12px; margin-bottom: 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-size: 15px; font-family: var(--font); }
+  .field:focus { outline: none; border-color: var(--border-accent); }
+  .err { color: var(--danger); font-size: 13px; min-height: 18px; margin-top: 8px; }
+  .hint { color: var(--text-muted); font-size: 12px; margin-top: 14px; line-height: 1.5; }
+  .hint a { color: var(--accent-dim); }
+
+  /* ── App shell ────────────────────────────────────────── */
+  #screen-app { flex-direction: row; }
+  .sidebar { width: 250px; flex-shrink: 0; background: var(--bg-1); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .brand { padding: 16px 16px 10px; display: flex; align-items: baseline; gap: 8px; }
+  .brand b { font-size: 17px; letter-spacing: .3px; }
+  .brand span { color: var(--text-muted); font-size: 11px; }
+  .sync-pill { margin-left: auto; width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); align-self: center; }
+  .sync-pill.ok { background: var(--success); }
+  .sync-pill.warn { background: var(--warning); }
+  .sync-pill.err { background: var(--danger); }
+
+  .dept-tabs { display: flex; gap: 6px; padding: 6px 12px 12px; flex-wrap: wrap; }
+  .dept-tab { padding: 5px 11px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text-secondary); font-size: 12.5px; cursor: pointer; }
+  .dept-tab.active { background: var(--accent-glow); border-color: var(--border-accent); color: var(--accent); }
+
+  .tree { flex: 1; padding: 4px 8px 16px; }
+  .tree-head { padding: 10px 8px 4px; color: var(--text-muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+  .tree-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary); font-size: 14px; }
+  .tree-item:hover { background: var(--bg-2); }
+  .tree-item.active { background: var(--bg-3); color: var(--text-primary); }
+  .tree-item .count { margin-left: auto; color: var(--text-muted); font-size: 12px; }
+  .tree-item .count.alert { color: var(--warning); font-weight: 600; }
+  .tree-item.sub { padding-left: 26px; font-size: 13.5px; }
+  .me-chip { font-size: 10px; color: var(--accent); border: 1px solid var(--border-accent); border-radius: 4px; padding: 0 4px; }
+
+  .sidebar-foot { padding: 12px 16px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  .sidebar-foot .who { color: var(--text-secondary); }
+  .sidebar-foot button { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; }
+
+  /* ── Main pane ────────────────────────────────────────── */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .main-head { padding: 14px 20px 10px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); }
+  .main-head h2 { font-size: 17px; font-weight: 600; }
+  .main-head .loc { color: var(--text-muted); font-size: 12.5px; }
+  .main-head .spacer { flex: 1; }
+  .icon-btn { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); padding: 6px 10px; font-size: 12.5px; cursor: pointer; }
+
+  .list-wrap { flex: 1; overflow-y: auto; padding: 12px 20px 40px; }
+
+  .quick-add { display: flex; gap: 8px; margin-bottom: 14px; }
+  .quick-add input { flex: 1; }
+  .quick-add .field { margin-bottom: 0; }
+  .quick-add .btn { width: auto; padding: 10px 18px; }
+
+  .note-row { display: flex; align-items: flex-start; gap: 11px; padding: 11px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 8px; cursor: pointer; }
+  .note-row:hover { border-color: var(--border-accent); }
+  .note-row.done .note-title { text-decoration: line-through; color: var(--text-muted); }
+  .tick { width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; border: 2px solid var(--text-muted); border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; color: transparent; }
+  .tick:hover { border-color: var(--accent); }
+  .tick.on { border-color: var(--success); color: var(--success); }
+  .note-body-col { flex: 1; min-width: 0; }
+  .note-title { font-size: 14.5px; line-height: 1.35; word-break: break-word; }
+  .note-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 3px; color: var(--text-muted); font-size: 11.5px; }
+  .note-meta .assignee { color: var(--warning); }
+  .note-meta .alertflag { color: var(--danger); font-weight: 600; }
+  .note-meta .eq { color: var(--accent-dim); }
+  .note-meta .mirror { color: var(--accent); }
+  .glyphs { display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+
+  .group-head { display: flex; align-items: center; gap: 8px; margin: 18px 2px 8px; color: var(--text-secondary); font-size: 13px; cursor: pointer; user-select: none; }
+  .group-head .n { color: var(--text-muted); }
+  .group-head .chev { transition: transform .15s; }
+  .group-head.open .chev { transform: rotate(90deg); }
+
+  .empty { color: var(--text-muted); font-size: 13.5px; padding: 24px 4px; text-align: center; }
+
+  /* ── Detail panel ─────────────────────────────────────── */
+  .detail { width: 380px; flex-shrink: 0; background: var(--bg-1); border-left: 1px solid var(--border); display: none; flex-direction: column; overflow-y: auto; }
+  .detail.open { display: flex; }
+  .detail-head { padding: 14px 16px 10px; display: flex; gap: 10px; align-items: flex-start; border-bottom: 1px solid var(--border); }
+  .detail-head .note-title { font-size: 16px; font-weight: 600; flex: 1; }
+  .detail-head .close-x { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 0 2px; }
+  .detail-sec { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .detail-sec h4 { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+  .detail-sec .body-text { font-size: 14px; line-height: 1.5; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; }
+  .kv { font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; }
+  .kv b { color: var(--text-primary); font-weight: 500; }
+
+  .step-row { display: flex; gap: 9px; align-items: flex-start; padding: 6px 0; font-size: 14px; }
+  .step-row .tick { width: 17px; height: 17px; font-size: 10px; }
+  .step-row.done .step-text { text-decoration: line-through; color: var(--text-muted); }
+  .step-strikes { display: block; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+
+  .thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .thumbs img { width: 74px; height: 56px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border); cursor: pointer; background: var(--bg-2); }
+
+  .comment { padding: 8px 0; border-top: 1px solid var(--border); }
+  .comment:first-child { border-top: none; }
+  .comment .c-meta { color: var(--text-muted); font-size: 11.5px; margin-bottom: 3px; }
+  .comment .c-text { font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  .comment-box textarea { resize: vertical; min-height: 56px; }
+  .comment-actions { display: flex; gap: 8px; align-items: center; }
+  .comment-actions .btn { width: auto; padding: 8px 14px; font-size: 13px; }
+  .photo-stage { color: var(--text-secondary); font-size: 12px; }
+  .photo-stage button { background: none; border: none; color: var(--danger); cursor: pointer; }
+
+  .detail-actions { padding: 12px 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+  select.field { appearance: auto; }
+
+  /* ── Lightbox ─────────────────────────────────────────── */
+  #lightbox { display: none; position: fixed; inset: 0; background: rgba(4,10,20,.92); z-index: 60; align-items: center; justify-content: center; cursor: zoom-out; }
+  #lightbox.open { display: flex; }
+  #lightbox img { max-width: 94vw; max-height: 92vh; border-radius: var(--radius-sm); }
+
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--border-accent); color: var(--text-primary); padding: 9px 16px; border-radius: var(--radius-md); font-size: 13px; display: none; z-index: 70; max-width: 90vw; }
+
+  /* ── Responsive ───────────────────────────────────────── */
+  @media (max-width: 900px) { .detail { position: fixed; right: 0; top: 0; bottom: 0; z-index: 40; box-shadow: -20px 0 40px rgba(0,0,0,.5); width: min(380px, 94vw); } }
+  @media (max-width: 700px) {
+    #screen-app { flex-direction: column; }
+    .sidebar { width: 100%; max-height: 42vh; border-right: none; border-bottom: 1px solid var(--border); }
+    .sidebar.collapsed .tree, .sidebar.collapsed .tree-head { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Microsoft auth ─────────────────────────────────────── -->
+<div class="screen active" id="screen-auth">
+  <div class="center-card">
+    <h1>IDMS Notes</h1>
+    <div class="sub">F/T Araho — shared notes &amp; handover</div>
+    <button class="btn" id="btn-msauth" onclick="ntMsSignIn()">Sign in with Microsoft</button>
+    <div class="err" id="auth-err"></div>
+    <div class="hint">Uses the same Microsoft session as IDMS. If sign-in fails here, open <a href="./index.html">IDMS</a>, sign in there, then return.</div>
+  </div>
+</div>
+
+<!-- ── IDMS identity (only when no PWA session is cached) ─── -->
+<div class="screen" id="screen-login">
+  <div class="center-card">
+    <h1>Who is this?</h1>
+    <div class="sub">Notes are shared and signed — pick yourself, not the tablet.</div>
+    <select class="field" id="login-user"></select>
+    <input class="field" type="password" id="login-pass" placeholder="IDMS password" autocomplete="current-password">
+    <button class="btn" onclick="ntIdmsLogin()">Continue</button>
+    <div class="err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- ── App ────────────────────────────────────────────────── -->
+<div class="screen" id="screen-app">
+  <div class="sidebar" id="sidebar">
+    <div class="brand"><b>Notes</b><span>IDMS</span><div class="sync-pill" id="sync-pill" title="Sync status"></div></div>
+    <div class="dept-tabs" id="dept-tabs"></div>
+    <div class="tree" id="tree"></div>
+    <div class="sidebar-foot">
+      <span class="who" id="foot-who"></span>
+      <button onclick="ntToggleArchived()" id="btn-archived">Show archived</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="main-head">
+      <h2 id="loc-title"></h2>
+      <span class="loc" id="loc-sub"></span>
+      <span class="spacer"></span>
+      <button class="icon-btn" onclick="ntSyncNow()" title="Refresh from OneDrive">↻ Sync</button>
+    </div>
+    <div class="list-wrap">
+      <div class="quick-add">
+        <input class="field" id="qa-title" placeholder="Add a note — single-line title" maxlength="200"
+               onkeydown="if(event.key==='Enter')ntQuickAdd()">
+        <button class="btn" onclick="ntQuickAdd()">Add</button>
+      </div>
+      <div id="note-list"></div>
+    </div>
+  </div>
+
+  <div class="detail" id="detail"></div>
+</div>
+
+<div id="lightbox" onclick="this.classList.remove('open')"><img id="lightbox-img" alt=""></div>
+<div id="toast"></div>
+<input type="file" id="photo-input" accept="image/*" style="display:none">
+
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════
+// IDMS Notes — standalone page, schema §41 (Notes Hub), slice 1.
+// Same origin, MSAL registration, and Graph conventions as index.html.
+// Storage contract: append-only events under
+//   Documents/IDMS/data/notes/events/{YYYY}/{iso-compact}-{event_id}.json
+// This page never mutates a shared file; every action is a new event.
+// ════════════════════════════════════════════════════════════
+
+var ONEDRIVE_BASE = 'Documents/IDMS';
+
+var MSAL_CONFIG = {
+  auth: {
+    clientId:    '5f7c6099-c379-4cfa-ab6a-92bf33b812aa',
+    authority:   'https://login.microsoftonline.com/816c3d02-39d9-4940-9b6f-08b4cf0321ce',
+    redirectUri: 'https://ara-chief.github.io/IDMS/'
+  },
+  cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+};
+var MSAL_SCOPES = ['User.Read', 'Files.ReadWrite', 'offline_access'];
+
+// Department display-name ↔ path-key mapping (schema §1).
+var DEPT_KEYS = { 'Factory': 'factory', 'Engine Room': 'engine', 'Deck': 'deck' };
+
+var NT = {
+  msal: null, account: null,
+  user: null,              // { username, name, role, permission_tier }
+  crew: [],                // active crew, from crewconfig.json
+  notesConfig: { department_heads: {}, department_folders: {}, templates: [] },
+  events: [],              // raw events, ascending
+  loadedNames: {},         // event filename → true (fetch dedupe)
+  notes: {},               // note_id → derived state
+  dept: null,              // active department key
+  view: { kind: 'crew', owner: null, folder: null },  // or kind:'department'
+  openNote: null,
+  showArchived: false,
+  showCompleted: false,
+  stagedPhoto: null,       // File staged on the comment box
+  syncTimer: null,
+  syncState: 'idle'
+};
+
+// ── Auth ────────────────────────────────────────────────────
+
+function ntSetPill(state) {
+  NT.syncState = state;
+  var p = document.getElementById('sync-pill');
+  p.className = 'sync-pill ' + (state === 'ok' ? 'ok' : state === 'busy' ? 'warn' : state === 'err' ? 'err' : '');
+  p.title = state === 'ok' ? 'Synced' : state === 'busy' ? 'Syncing…' : state === 'err' ? 'Last sync failed — will retry' : 'Idle';
+}
+
+async function ntToken(forceRefresh) {
+  // Always ask MSAL rather than caching a token ourselves — the PWA's
+  // 401-after-background bug (fixed in 9c52913) came from doing otherwise.
+  var res = await NT.msal.acquireTokenSilent({
+    scopes: MSAL_SCOPES, account: NT.account, forceRefresh: !!forceRefresh
+  });
+  return res.accessToken;
+}
+
+async function ntFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers['Authorization'] = 'Bearer ' + await ntToken(false);
+  var resp = await fetch(url, opts);
+  if (resp.status === 401) {                       // replay once with a forced refresh
+    opts.headers['Authorization'] = 'Bearer ' + await ntToken(true);
+    resp = await fetch(url, opts);
+  }
+  return resp;
+}
+
+function ntGraphUrl(path) {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+         encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+}
+
+async function ntGetJson(path) {
+  var resp = await ntFetch(ntGraphUrl(path), { method: 'GET' });
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error('GET ' + path + ' → ' + resp.status);
+  return resp.json();
+}
+
+function ntInit() {
+  try {
+    NT.msal = new msal.PublicClientApplication(MSAL_CONFIG);
+    NT.msal.handleRedirectPromise().then(function () {
+      var accounts = NT.msal.getAllAccounts();
+      if (accounts.length > 0) { NT.account = accounts[0]; ntAfterMsAuth(); }
+      // else: stay on the sign-in screen
+    }).catch(function (e) { ntAuthError(e); });
+  } catch (e) { ntAuthError(e); }
+}
+
+function ntAuthError(e) {
+  document.getElementById('auth-err').textContent = 'Sign-in problem: ' + (e && e.message ? e.message : e);
+}
+
+function ntMsSignIn() {
+  document.getElementById('auth-err').textContent = '';
+  NT.msal.loginPopup({ scopes: MSAL_SCOPES })
+    .then(function (r) { NT.account = r.account; ntAfterMsAuth(); })
+    .catch(function (e) { ntAuthError(e); });
+}
+
+async function ntAfterMsAuth() {
+  try {
+    await ntToken(false);   // proves Graph access before proceeding
+  } catch (e) { ntAuthError(e); return; }
+
+  // Identity: reuse the PWA's session when this browser has one.
+  var saved = null;
+  try { saved = JSON.parse(localStorage.getItem('fw_user') || localStorage.getItem('nt_user') || 'null'); } catch (e) {}
+  if (saved && saved.username) { NT.user = saved; ntEnterApp(); return; }
+
+  // No PWA session — offer the same userconfig-backed login the PWA runs.
+  var cfg = await ntGetJson(ONEDRIVE_BASE + '/config/userconfig.json');
+  if (!cfg || !cfg.users) { ntAuthError(new Error('userconfig.json unavailable')); return; }
+  NT._users = cfg.users.filter(function (u) { return u.status !== 'retired'; });
+  var sel = document.getElementById('login-user');
+  sel.innerHTML = NT._users.map(function (u, i) {
+    return '<option value="' + i + '">' + ntEsc(u.name || u.username) + '</option>';
+  }).join('');
+  ntShow('screen-login');
+}
+
+function ntIdmsLogin() {
+  var u = NT._users[Number(document.getElementById('login-user').value)];
+  var pass = document.getElementById('login-pass').value;
+  if (!u || u.password !== pass) {
+    document.getElementById('login-err').textContent = 'Wrong password.';
+    return;
+  }
+  NT.user = { username: u.username, name: u.name, role: u.role, permission_tier: u.permission_tier };
+  try { localStorage.setItem('nt_user', JSON.stringify(NT.user)); } catch (e) {}
+  ntEnterApp();
+}
+
+// ── Boot ────────────────────────────────────────────────────
+
+async function ntEnterApp() {
+  ntShow('screen-app');
+  document.getElementById('foot-who').textContent = NT.user.name || NT.user.username;
+  ntSetPill('busy');
+
+  var crewCfg = await ntGetJson(ONEDRIVE_BASE + '/config/crewconfig.json').catch(function () { return null; });
+  NT.crew = (crewCfg && crewCfg.crew ? crewCfg.crew : []).filter(function (c) { return c.status === 'active'; });
+
+  var nCfg = await ntGetJson(ONEDRIVE_BASE + '/config/notesconfig.json').catch(function () { return null; });
+  if (nCfg) NT.notesConfig = Object.assign(NT.notesConfig, nCfg);
+
+  // Default department: the user's own, else first known.
+  var mine = NT.crew.find(function (c) { return c.username === NT.user.username; });
+  NT.dept = ntDeptKey(mine ? mine.department : null) || 'engine';
+  NT.view = { kind: 'crew', owner: NT.user.username, folder: null };
+
+  ntLoadCache();
+  ntRenderAll();
+  await ntSyncNow();
+  if (NT.syncTimer) clearInterval(NT.syncTimer);
+  NT.syncTimer = setInterval(ntSyncNow, 60000);
+  window.addEventListener('focus', ntSyncNow);
+}
+
+function ntDeptKey(name) {
+  if (!name) return null;
+  if (DEPT_KEYS[name]) return DEPT_KEYS[name];
+  var low = String(name).toLowerCase();
+  if (low.indexOf('engine') >= 0) return 'engine';
+  if (low.indexOf('factory') >= 0) return 'factory';
+  if (low.indexOf('deck') >= 0) return 'deck';
+  return low.replace(/[^a-z]/g, '');
+}
+
+// ── Event sync (replay + poll) ──────────────────────────────
+
+function ntCacheKey(year) { return 'nt_events_cache_' + year; }
+
+function ntLoadCache() {
+  var year = String(new Date().getFullYear());
+  try {
+    var raw = localStorage.getItem(ntCacheKey(year));
+    if (!raw) return;
+    var cached = JSON.parse(raw);
+    NT.events = cached.events || [];
+    NT.events.forEach(function (ev) { if (ev._fn) NT.loadedNames[ev._fn] = true; });
+    ntReduce();
+  } catch (e) { NT.events = []; NT.loadedNames = {}; }
+}
+
+function ntSaveCache() {
+  var year = String(new Date().getFullYear());
+  try {
+    var raw = JSON.stringify({ events: NT.events });
+    if (raw.length > 3500000) return;   // near the localStorage ceiling — replay stays authoritative
+    localStorage.setItem(ntCacheKey(year), raw);
+  } catch (e) {}
+}
+
+async function ntSyncNow() {
+  if (NT._syncing) return;
+  NT._syncing = true;
+  ntSetPill('busy');
+  try {
+    var year = String(new Date().getFullYear());
+    var folder = ONEDRIVE_BASE + '/data/notes/events/' + year;
+    var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+              encodeURIComponent(folder).replace(/%2F/g, '/') +
+              ':/children?$select=name&$top=200';
+    var names = [];
+    while (url) {
+      var resp = await ntFetch(url, { method: 'GET' });
+      if (resp.status === 404) break;   // no events yet this year
+      if (!resp.ok) throw new Error('Event list → ' + resp.status);
+      var page = await resp.json();
+      (page.value || []).forEach(function (it) { if (/\.json$/i.test(it.name)) names.push(it.name); });
+      url = page['@odata.nextLink'] || null;
+    }
+    names.sort();
+    var fresh = names.filter(function (n) { return !NT.loadedNames[n]; });
+    for (var i = 0; i < fresh.length; i++) {
+      var ev = await ntGetJson(folder + '/' + fresh[i]);
+      if (ev && ev.event_id) { ev._fn = fresh[i]; NT.events.push(ev); NT.loadedNames[fresh[i]] = true; }
+    }
+    if (fresh.length) {
+      NT.events.sort(function (a, b) { return (a._fn || '') < (b._fn || '') ? -1 : 1; });
+      ntSaveCache();
+      ntReduce();
+      ntRenderAll();
+    }
+    ntSetPill('ok');
+  } catch (e) {
+    ntSetPill('err');
+  } finally {
+    NT._syncing = false;
+  }
+}
+
+async function ntAppendEvent(eventType, payload) {
+  // Stamp once so a retry rebuilds the identical path and 412s into a no-op.
+  var nowIso  = new Date().toISOString();
+  var eventId = ntUuid();
+  var tsForFn = nowIso.replace(/[:.\-]/g, '');
+  var filename = tsForFn + '-' + eventId + '.json';
+  var year = nowIso.slice(0, 4);
+  var path = ONEDRIVE_BASE + '/data/notes/events/' + year + '/' + filename;
+
+  var eventObj = {
+    schema_version: 1,
+    event_id:   eventId,
+    event_type: eventType,
+    actor:      NT.user.username,
+    timestamp:  nowIso,
+    payload:    payload
+  };
+
+  var resp = await ntFetch(ntGraphUrl(path), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
+    body: JSON.stringify(eventObj, null, 2)
+  });
+  if (resp.status !== 412 && !resp.ok) throw new Error('Event PUT → ' + resp.status);
+
+  eventObj._fn = filename;
+  NT.events.push(eventObj);
+  NT.loadedNames[filename] = true;
+  ntSaveCache();
+  ntReduce();
+  ntRenderAll();
+  return eventObj;
+}
+
+function ntUuid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    var r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+// ── Derive note state from the stream ───────────────────────
+
+function ntReduce() {
+  var notes = {};
+  NT.events.forEach(function (ev) {
+    var p = ev.payload || {};
+    var n = p.note_id ? notes[p.note_id] : null;
+    switch (ev.event_type) {
+      case 'note_created':
+        notes[p.note_id] = {
+          note_id: p.note_id, title: p.title || '(untitled)', body: p.body || '',
+          scope: p.scope || {}, folder: p.folder || null,
+          equipment_code: p.equipment_code || null,
+          steps: (p.steps || []).map(function (s) { return { step_id: s.step_id, text: s.text, equipment_code: s.equipment_code || null, strikes: [] }; }),
+          template_id: p.template_id || null, origin: p.origin || 'manual',
+          group_alert: !!p.group_alert,
+          attachments: (p.attachments || []).slice(),
+          author: ev.actor, created: ev.timestamp, updated: ev.timestamp,
+          completed: false, completions: [], assignee: null,
+          comments: [], archived: false, deleted: false,
+          task_id: null, merged_into: null
+        };
+        break;
+      case 'note_edited':
+        if (n) { Object.assign(n, p.patch || {}); n.updated = ev.timestamp; }
+        break;
+      case 'note_completed':
+        if (n) { n.completed = true; n.completions.push({ actor: ev.actor, timestamp: ev.timestamp }); n.updated = ev.timestamp; }
+        break;
+      case 'note_uncompleted':
+        if (n) { n.completed = false; n.completions.push({ actor: ev.actor, timestamp: ev.timestamp, undone: true }); n.updated = ev.timestamp; }
+        break;
+      case 'step_struck':
+      case 'step_unstruck':
+        if (n) {
+          var st = n.steps.find(function (s) { return s.step_id === p.step_id; });
+          if (st) st.strikes.push({ actor: ev.actor, timestamp: ev.timestamp, struck: ev.event_type === 'step_struck' });
+          n.updated = ev.timestamp;
+        }
+        break;
+      case 'note_assigned':
+        if (n) { n.assignee = p.assignee_username; n.assigned_by = ev.actor; n.updated = ev.timestamp; }
+        break;
+      case 'note_unassigned':
+        if (n) { n.assignee = null; n.updated = ev.timestamp; }
+        break;
+      case 'comment_added':
+        if (n) { n.comments.push({ comment_id: p.comment_id, text: p.text || '', attachments: p.attachments || [], actor: ev.actor, timestamp: ev.timestamp }); n.updated = ev.timestamp; }
+        break;
+      case 'note_promoted':
+        if (n) { n.task_id = p.task_id; n.updated = ev.timestamp; }
+        break;
+      case 'task_imported':
+        notes[p.note_id] = {
+          note_id: p.note_id, title: p.title || ('Task ' + p.task_id), body: '',
+          scope: p.scope || { level: 'department', department: NT.dept },
+          folder: p.folder || null, equipment_code: null, steps: [],
+          template_id: null, origin: 'task_import', group_alert: false,
+          attachments: [], author: ev.actor, created: ev.timestamp, updated: ev.timestamp,
+          completed: false, completions: [], assignee: null, comments: [],
+          archived: false, deleted: false, task_id: p.task_id, merged_into: null
+        };
+        break;
+      case 'note_archived':
+        if (n) { n.archived = true; n.updated = ev.timestamp; }
+        break;
+      case 'note_deleted':
+        if (n) { n.deleted = true; n.updated = ev.timestamp; }
+        break;
+      case 'note_merged':
+        if (notes[p.from_note_id]) notes[p.from_note_id].merged_into = p.into_note_id;
+        break;
+    }
+  });
+  NT.notes = notes;
+}
+
+function ntStepStruck(step) {
+  return step.strikes.length ? step.strikes[step.strikes.length - 1].struck : false;
+}
+
+function ntIsDeptHead(deptKey) {
+  if (NT.user.permission_tier === 'admin') return true;
+  var heads = (NT.notesConfig.department_heads || {})[deptKey] || [];
+  return heads.indexOf(NT.user.username) >= 0;
+}
+
+function ntVisibleNotes() {
+  var out = [];
+  for (var id in NT.notes) {
+    var n = NT.notes[id];
+    if (n.deleted || n.merged_into) continue;
+    if (n.archived && !NT.showArchived) continue;
+    if ((n.scope.department || null) !== NT.dept) continue;
+    if (NT.view.kind === 'department') {
+      if (n.scope.level !== 'department') continue;
+    } else {
+      if (n.scope.level !== 'crew' || n.scope.owner_username !== NT.view.owner) continue;
+    }
+    if (NT.view.folder && n.folder !== NT.view.folder) continue;
+    if (!NT.view.folder && NT.view.kind === 'department' && n.folder) continue;
+    out.push(n);
+  }
+  out.sort(function (a, b) { return a.created < b.created ? 1 : -1; });
+  return out;
+}
+
+// ── Rendering ───────────────────────────────────────────────
+
+function ntEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function ntWhen(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
+         d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function ntCrewName(username) {
+  var c = NT.crew.find(function (x) { return x.username === username; });
+  if (!c) return username;
+  if (c.nickname) return c.nickname;
+  return (c.name || username).split(/\s+/)[0];
+}
+
+function ntRenderAll() { ntRenderTabs(); ntRenderTree(); ntRenderList(); ntRenderDetail(); }
+
+function ntRenderTabs() {
+  var keys = [], seen = {};
+  NT.crew.forEach(function (c) {
+    var k = ntDeptKey(c.department);
+    if (k && !seen[k]) { seen[k] = true; keys.push({ key: k, label: c.department }); }
+  });
+  if (!keys.length) keys = [{ key: 'engine', label: 'Engine Room' }];
+  document.getElementById('dept-tabs').innerHTML = keys.map(function (d) {
+    return '<div class="dept-tab' + (d.key === NT.dept ? ' active' : '') + '" onclick="ntSetDept(\'' + d.key + '\')">' + ntEsc(d.label) + '</div>';
+  }).join('');
+}
+
+function ntSetDept(key) {
+  NT.dept = key;
+  NT.view = { kind: 'department', owner: null, folder: null };
+  NT.openNote = null;
+  ntRenderAll();
+}
+
+function ntCounts(kind, owner, folder) {
+  var open = 0, mine = 0;
+  for (var id in NT.notes) {
+    var n = NT.notes[id];
+    if (n.deleted || n.merged_into || n.archived || n.completed) continue;
+    if ((n.scope.department || null) !== NT.dept) continue;
+    if (kind === 'department' && n.scope.level !== 'department') continue;
+    if (kind === 'crew' && (n.scope.level !== 'crew' || n.scope.owner_username !== owner)) continue;
+    if (folder !== undefined && (n.folder || null) !== folder) continue;
+    open++;
+    if (n.assignee === NT.user.username) mine++;
+  }
+  return { open: open, mine: mine };
+}
+
+function ntRenderTree() {
+  var h = '';
+  var deptFolders = (NT.notesConfig.department_folders || {})[NT.dept] || [];
+
+  h += '<div class="tree-head">Department</div>';
+  var dc = ntCounts('department', null, null);
+  h += ntTreeItem('department', null, null, '📋 ' + (NT.dept === 'engine' ? 'Engine Room' : NT.dept.charAt(0).toUpperCase() + NT.dept.slice(1)) + ' notes', dc);
+  deptFolders.forEach(function (f) {
+    h += ntTreeItem('department', null, f, '📁 ' + ntEsc(f), ntCounts('department', null, f), true);
+  });
+
+  h += '<div class="tree-head">Personnel</div>';
+  var deptCrew = NT.crew.filter(function (c) { return ntDeptKey(c.department) === NT.dept; });
+  deptCrew.sort(function (a, b) {
+    if (a.username === NT.user.username) return -1;
+    if (b.username === NT.user.username) return 1;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+  deptCrew.forEach(function (c) {
+    var cc = ntCounts('crew', c.username);
+    var label = '👤 ' + ntEsc(ntCrewName(c.username));
+    if (c.username === NT.user.username) label += ' <span class="me-chip">me</span>';
+    h += ntTreeItem('crew', c.username, null, label, cc);
+  });
+
+  document.getElementById('tree').innerHTML = h;
+}
+
+function ntTreeItem(kind, owner, folder, label, counts, sub) {
+  var active = NT.view.kind === kind && NT.view.owner === owner && (NT.view.folder || null) === (folder || null);
+  var countHtml = counts.open
+    ? '<span class="count' + (counts.mine ? ' alert' : '') + '">' + counts.open + '</span>' : '';
+  return '<div class="tree-item' + (active ? ' active' : '') + (sub ? ' sub' : '') + '" ' +
+         'onclick="ntSetView(\'' + kind + '\',' + (owner ? '\'' + owner + '\'' : 'null') + ',' + (folder ? '\'' + ntEsc(folder).replace(/'/g, "\\'") + '\'' : 'null') + ')">' +
+         label + countHtml + '</div>';
+}
+
+function ntSetView(kind, owner, folder) {
+  NT.view = { kind: kind, owner: owner, folder: folder };
+  NT.openNote = null;
+  ntRenderAll();
+}
+
+function ntRenderList() {
+  var notes = ntVisibleNotes();
+  var open = notes.filter(function (n) { return !n.completed; });
+  var done = notes.filter(function (n) { return n.completed; });
+
+  var locTitle, locSub;
+  if (NT.view.kind === 'department') {
+    locTitle = NT.view.folder || 'Department notes';
+    locSub = 'visible to everyone';
+  } else {
+    locTitle = ntCrewName(NT.view.owner) + (NT.view.owner === NT.user.username ? ' (my notes)' : '');
+    locSub = 'shared — notes are never private';
+  }
+  document.getElementById('loc-title').textContent = locTitle;
+  document.getElementById('loc-sub').textContent = locSub;
+
+  var canQuickAdd = NT.view.kind === 'department' || NT.view.owner === NT.user.username;
+  document.querySelector('.quick-add').style.display = canQuickAdd ? 'flex' : 'none';
+
+  var h = open.map(ntNoteRow).join('');
+  if (!open.length) h += '<div class="empty">Nothing open here.</div>';
+
+  if (done.length) {
+    h += '<div class="group-head' + (NT.showCompleted ? ' open' : '') + '" onclick="NT.showCompleted=!NT.showCompleted;ntRenderList()">' +
+         '<span class="chev">▸</span> Completed <span class="n">' + done.length + '</span></div>';
+    if (NT.showCompleted) h += done.map(ntNoteRow).join('');
+  }
+  document.getElementById('note-list').innerHTML = h;
+}
+
+function ntNoteRow(n) {
+  var glyphs = '';
+  if (n.attachments.length || n.comments.some(function (c) { return c.attachments.length; })) glyphs += '<span title="Has photos">📷</span>';
+  if (n.comments.length) glyphs += '<span title="Comments">💬' + n.comments.length + '</span>';
+  if (n.steps.length) {
+    var doneSteps = n.steps.filter(ntStepStruck).length;
+    glyphs += '<span title="Checklist">☑ ' + doneSteps + '/' + n.steps.length + '</span>';
+  }
+  var meta = '<span>' + ntEsc(ntCrewName(n.author)) + ' · ' + ntWhen(n.created) + '</span>';
+  if (n.group_alert) meta += '<span class="alertflag">⚠ group alert</span>';
+  if (n.assignee) meta += '<span class="assignee">→ ' + ntEsc(ntCrewName(n.assignee)) + '</span>';
+  if (n.equipment_code) meta += '<span class="eq">' + ntEsc(n.equipment_code) + '</span>';
+  if (n.task_id) meta += '<span class="mirror">task ' + ntEsc(n.task_id) + '</span>';
+  if (n.archived) meta += '<span>archived</span>';
+
+  return '<div class="note-row' + (n.completed ? ' done' : '') + '" onclick="ntOpenNote(\'' + n.note_id + '\')">' +
+    '<div class="tick' + (n.completed ? ' on' : '') + '" onclick="event.stopPropagation();ntToggleComplete(\'' + n.note_id + '\')">✓</div>' +
+    '<div class="note-body-col"><div class="note-title">' + ntEsc(n.title) + '</div>' +
+    '<div class="note-meta">' + meta + '</div></div>' +
+    '<div class="glyphs">' + glyphs + '</div></div>';
+}
+
+// ── Detail panel ────────────────────────────────────────────
+
+function ntOpenNote(id) { NT.openNote = id; NT.stagedPhoto = null; ntRenderDetail(); }
+function ntCloseDetail() { NT.openNote = null; ntRenderDetail(); }
+
+function ntRenderDetail() {
+  var el = document.getElementById('detail');
+  var n = NT.openNote ? NT.notes[NT.openNote] : null;
+  if (!n) { el.className = 'detail'; el.innerHTML = ''; return; }
+  el.className = 'detail open';
+
+  var isDeptHead = ntIsDeptHead(NT.dept);
+  var canDelete = n.author === NT.user.username || isDeptHead;
+  var othersCommented = n.comments.some(function (c) { return c.actor !== n.author; });
+
+  var h = '<div class="detail-head">' +
+    '<div class="note-title' + (n.completed ? '" style="text-decoration:line-through;color:var(--text-muted)' : '') + '">' + ntEsc(n.title) + '</div>' +
+    '<button class="close-x" onclick="ntCloseDetail()">✕</button></div>';
+
+  h += '<div class="detail-sec kv">' +
+    '<b>' + ntEsc(ntCrewName(n.author)) + '</b> · ' + ntWhen(n.created) +
+    (n.assignee ? '<br>Assigned to <b>' + ntEsc(ntCrewName(n.assignee)) + '</b> by ' + ntEsc(ntCrewName(n.assigned_by || '')) : '') +
+    (n.equipment_code ? '<br>Equipment <b>' + ntEsc(n.equipment_code) + '</b>' : '') +
+    (n.task_id ? '<br>Promoted → task <b>' + ntEsc(n.task_id) + '</b> (mirror — status arrives in the task-integration slice)' : '') +
+    (n.completed && n.completions.length ? '<br>Completed by <b>' + ntEsc(ntCrewName(n.completions[n.completions.length - 1].actor)) + '</b> ' + ntWhen(n.completions[n.completions.length - 1].timestamp) : '') +
+    '</div>';
+
+  if (n.body) h += '<div class="detail-sec"><div class="body-text">' + ntEsc(n.body) + '</div></div>';
+
+  if (n.steps.length) {
+    h += '<div class="detail-sec"><h4>Checklist</h4>' + n.steps.map(function (s) {
+      var struck = ntStepStruck(s);
+      var strikeLine = s.strikes.filter(function (k) { return k.struck; }).map(function (k, i) {
+        return (i === 0 ? '' : ' · confirmed ') + ntEsc(ntCrewName(k.actor)) + ' ' + ntWhen(k.timestamp);
+      }).join('');
+      return '<div class="step-row' + (struck ? ' done' : '') + '">' +
+        '<div class="tick' + (struck ? ' on' : '') + '" onclick="ntToggleStep(\'' + n.note_id + '\',\'' + s.step_id + '\')">✓</div>' +
+        '<div><span class="step-text">' + ntEsc(s.text) + '</span>' +
+        (strikeLine ? '<span class="step-strikes">' + strikeLine + '</span>' : '') + '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  if (n.attachments.length) {
+    h += '<div class="detail-sec"><h4>Photos</h4><div class="thumbs">' + n.attachments.map(function (a) {
+      return '<img data-thumb="' + ntEsc(a.thumbnail_path) + '" data-full="' + ntEsc(a.path) + '" alt="">';
+    }).join('') + '</div></div>';
+  }
+
+  h += '<div class="detail-sec"><h4>Comments</h4>';
+  h += n.comments.map(function (c) {
+    var imgs = c.attachments.length
+      ? '<div class="thumbs" style="margin-top:5px">' + c.attachments.map(function (a) {
+          return '<img data-thumb="' + ntEsc(a.thumbnail_path) + '" data-full="' + ntEsc(a.path) + '" alt="">';
+        }).join('') + '</div>' : '';
+    return '<div class="comment"><div class="c-meta">' + ntEsc(ntCrewName(c.actor)) + ' · ' + ntWhen(c.timestamp) + '</div>' +
+           '<div class="c-text">' + ntEsc(c.text) + '</div>' + imgs + '</div>';
+  }).join('') || '<div class="kv" style="padding:2px 0 8px">No comments yet.</div>';
+
+  h += '<div class="comment-box">' +
+    '<textarea class="field" id="cmt-text" placeholder="Add a comment…"></textarea>' +
+    '<div class="comment-actions">' +
+    '<button class="btn ghost" style="width:auto;padding:8px 12px;font-size:13px" onclick="ntPickPhoto()">📷 Photo</button>' +
+    '<span class="photo-stage" id="photo-stage"></span>' +
+    '<span style="flex:1"></span>' +
+    '<button class="btn" onclick="ntAddComment()">Add</button>' +
+    '</div></div></div>';
+
+  h += '<div class="detail-actions">';
+  h += '<select class="field" id="assign-sel" onchange="ntAssign(\'' + n.note_id + '\')" style="margin-bottom:0">' +
+       '<option value="">' + (n.assignee ? 'Unassign' : 'Assign to…') + '</option>' +
+       NT.crew.filter(function (c) { return ntDeptKey(c.department) === NT.dept; }).map(function (c) {
+         return '<option value="' + ntEsc(c.username) + '"' + (c.username === n.assignee ? ' selected' : '') + '>' + ntEsc(c.name || c.username) + '</option>';
+       }).join('') + '</select>';
+  h += '<button class="btn ghost" onclick="ntAddNotePhoto(\'' + n.note_id + '\')">📷 Add photo to note</button>';
+  h += '<button class="btn ghost" disabled title="Arrives with the task-integration slice">Promote to Task</button>';
+  if (!n.archived) h += '<button class="btn ghost" onclick="ntArchive(\'' + n.note_id + '\')">Archive</button>';
+  if (canDelete) {
+    if (othersCommented && !isDeptHead) {
+      h += '<button class="btn ghost" disabled title="Others have commented — Archive instead, or a department head can delete">Delete</button>';
+    } else {
+      h += '<button class="btn danger" onclick="ntDelete(\'' + n.note_id + '\')">Delete note</button>';
+    }
+  }
+  h += '</div>';
+
+  el.innerHTML = h;
+  el.querySelectorAll('img[data-thumb]').forEach(ntHydrateImg);
+}
+
+// Graph content requires an Authorization header, so <img src> can't load it
+// directly — fetch to a blob URL instead.
+async function ntHydrateImg(img) {
+  try {
+    var resp = await ntFetch(ntGraphUrl(ONEDRIVE_BASE + '/' + img.dataset.thumb), { method: 'GET' });
+    if (!resp.ok) return;
+    img.src = URL.createObjectURL(await resp.blob());
+    img.onclick = async function () {
+      var full = await ntFetch(ntGraphUrl(ONEDRIVE_BASE + '/' + img.dataset.full), { method: 'GET' });
+      if (!full.ok) return;
+      document.getElementById('lightbox-img').src = URL.createObjectURL(await full.blob());
+      document.getElementById('lightbox').classList.add('open');
+    };
+  } catch (e) {}
+}
+
+// ── Actions ─────────────────────────────────────────────────
+
+async function ntQuickAdd() {
+  var input = document.getElementById('qa-title');
+  var title = input.value.trim();
+  if (!title) return;
+  var scope = NT.view.kind === 'department'
+    ? { level: 'department', department: NT.dept }
+    : { level: 'crew', department: NT.dept, owner_username: NT.user.username };
+  input.value = '';
+  try {
+    await ntAppendEvent('note_created', {
+      note_id: 'note-' + ntUuid(),
+      title: title, scope: scope,
+      folder: NT.view.folder || null,
+      origin: 'manual'
+    });
+  } catch (e) { ntToast('Could not save — ' + e.message); input.value = title; }
+}
+
+async function ntToggleComplete(id) {
+  var n = NT.notes[id];
+  if (!n) return;
+  try {
+    await ntAppendEvent(n.completed ? 'note_uncompleted' : 'note_completed', { note_id: id });
+  } catch (e) { ntToast('Could not save — ' + e.message); }
+}
+
+async function ntToggleStep(noteId, stepId) {
+  var n = NT.notes[noteId];
+  var s = n && n.steps.find(function (x) { return x.step_id === stepId; });
+  if (!s) return;
+  try {
+    await ntAppendEvent(ntStepStruck(s) ? 'step_unstruck' : 'step_struck', { note_id: noteId, step_id: stepId });
+  } catch (e) { ntToast('Could not save — ' + e.message); }
+}
+
+async function ntAssign(id) {
+  var v = document.getElementById('assign-sel').value;
+  try {
+    if (v) await ntAppendEvent('note_assigned', { note_id: id, assignee_username: v });
+    else   await ntAppendEvent('note_unassigned', { note_id: id });
+  } catch (e) { ntToast('Could not save — ' + e.message); }
+}
+
+async function ntArchive(id) {
+  try { await ntAppendEvent('note_archived', { note_id: id }); ntCloseDetail(); }
+  catch (e) { ntToast('Could not save — ' + e.message); }
+}
+
+async function ntDelete(id) {
+  if (!confirm('Delete this note? It disappears from every view (the event stream keeps a tombstone).')) return;
+  try { await ntAppendEvent('note_deleted', { note_id: id }); ntCloseDetail(); }
+  catch (e) { ntToast('Could not save — ' + e.message); }
+}
+
+function ntPickPhoto() {
+  var inp = document.getElementById('photo-input');
+  inp.onchange = function () {
+    NT.stagedPhoto = inp.files[0] || null;
+    document.getElementById('photo-stage').innerHTML = NT.stagedPhoto
+      ? ntEsc(NT.stagedPhoto.name) + ' <button onclick="NT.stagedPhoto=null;document.getElementById(\'photo-stage\').innerHTML=\'\'">✕</button>'
+      : '';
+    inp.value = '';
+  };
+  inp.click();
+}
+
+async function ntAddComment() {
+  var n = NT.notes[NT.openNote];
+  if (!n) return;
+  var text = document.getElementById('cmt-text').value.trim();
+  if (!text && !NT.stagedPhoto) return;
+  var commentId = 'cmt-' + ntUuid();
+  try {
+    var attachments = [];
+    if (NT.stagedPhoto) attachments.push(await ntUploadImage(commentId, NT.stagedPhoto));
+    await ntAppendEvent('comment_added', {
+      note_id: n.note_id, comment_id: commentId,
+      text: text, attachments: attachments
+    });
+    NT.stagedPhoto = null;
+  } catch (e) { ntToast('Could not save comment — ' + e.message); }
+}
+
+async function ntAddNotePhoto(id) {
+  var inp = document.getElementById('photo-input');
+  inp.onchange = async function () {
+    var file = inp.files[0];
+    inp.value = '';
+    if (!file) return;
+    try {
+      var meta = await ntUploadImage(id, file);
+      var n = NT.notes[id];
+      var next = (n.attachments || []).concat([meta]);
+      await ntAppendEvent('note_edited', { note_id: id, patch: { attachments: next }, before: { attachments: n.attachments } });
+    } catch (e) { ntToast('Photo failed — ' + e.message); }
+  };
+  inp.click();
+}
+
+// Resize + upload, matching the task/rounds-comment attachment conventions
+// exactly: 1080×1024 full + 240×180 thumb @ 0.85 JPEG, under
+// data/assets/pictures/{item_id}/. Client-side resize keeps every PUT under
+// Graph's 4 MB simple-upload cap.
+async function ntUploadImage(itemId, file) {
+  var safeName  = ntSanitizeFilename(file.name);
+  var fullBlob  = await ntResizeImage(file, 1080, 1024, 0.85);
+  var thumbBlob = await ntResizeImage(file, 240, 180, 0.85);
+  var basePath  = ONEDRIVE_BASE + '/data/assets/pictures/' + itemId + '/';
+  await ntPutBlob(basePath + safeName, fullBlob);
+  await ntPutBlob(basePath + 'thumb-' + safeName, thumbBlob);
+  return {
+    filename: safeName,
+    path: 'data/assets/pictures/' + itemId + '/' + safeName,
+    thumbnail_path: 'data/assets/pictures/' + itemId + '/thumb-' + safeName
+  };
+}
+
+async function ntPutBlob(path, blob) {
+  var resp = await ntFetch(ntGraphUrl(path), {
+    method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob
+  });
+  if (!resp.ok) throw new Error('Image upload → ' + resp.status);
+}
+
+function ntSanitizeFilename(name) {
+  var dot = name.lastIndexOf('.');
+  var ext = dot > 0 ? name.slice(dot).toLowerCase() : '.jpg';
+  var base = name.slice(0, dot > 0 ? dot : name.length)
+    .replace(/[^a-zA-Z0-9\-]/g, '-').replace(/-+/g, '-').toLowerCase();
+  return (base || 'image') + ext;
+}
+
+function ntResizeImage(file, maxW, maxH, quality) {
+  return new Promise(function (resolve, reject) {
+    var img = new Image();
+    var url = URL.createObjectURL(file);
+    img.onload = function () {
+      URL.revokeObjectURL(url);
+      var w = img.width, h = img.height;
+      if (w > maxW || h > maxH) {
+        var r = Math.min(maxW / w, maxH / h);
+        w = Math.round(w * r); h = Math.round(h * r);
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(function (b) { b ? resolve(b) : reject(new Error('Canvas toBlob failed')); }, 'image/jpeg', quality || 0.85);
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+    img.src = url;
+  });
+}
+
+// ── Misc ────────────────────────────────────────────────────
+
+function ntShow(id) {
+  document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+}
+
+function ntToggleArchived() {
+  NT.showArchived = !NT.showArchived;
+  document.getElementById('btn-archived').textContent = NT.showArchived ? 'Hide archived' : 'Show archived';
+  ntRenderList();
+}
+
+function ntToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(t._h);
+  t._h = setTimeout(function () { t.style.display = 'none'; }, 4200);
+}
+
+ntInit();
+</script>
+</body>
+</html>
