@@ -68,8 +68,14 @@
 
   .tree { flex: 1; padding: 4px 8px 16px; }
   .tree-head { padding: 12px 8px 4px; color: var(--text-muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
-  .tree-head .add-sec { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; }
-  .tree-head .add-sec:hover { color: var(--accent); }
+  .dept-tabs { padding: 2px 2px 8px; }
+  .tree-item.folder .grip { color: var(--text-muted); font-size: 9px; letter-spacing: -1.5px; cursor: grab; opacity: 0; }
+  .tree-item.folder:hover .grip { opacity: 1; }
+  .tree-item.folder .folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tree-item.folder.dragging { opacity: .4; }
+  .tree-item.folder.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  .tree-item.add-folder { color: var(--text-muted); font-size: 12.5px; }
+  .tree-item.add-folder:hover { color: var(--accent); }
   .tree-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary); font-size: 14px; }
   .tree-item:hover { background: var(--bg-2); }
   .tree-item.active { background: var(--bg-3); color: var(--text-primary); }
@@ -229,7 +235,6 @@
 <div class="screen" id="screen-app">
   <div class="sidebar" id="sidebar">
     <div class="brand"><b>Notes</b><span>IDMS</span><div class="sync-pill" id="sync-pill" title="Sync status"></div></div>
-    <div class="dept-tabs" id="dept-tabs"></div>
     <div class="tree" id="tree"></div>
     <div class="sidebar-foot">
       <span class="who" id="foot-who"></span>
@@ -313,6 +318,7 @@ var NT = {
   stagedPhoto: null,       // File staged on the comment box
   stagedNew: [],           // Files staged on the add bar
   dragNoteId: null,
+  dragFolder: null,
   syncTimer: null
 };
 
@@ -534,7 +540,7 @@ function ntSections(deptKey) {
 }
 
 async function ntAddSection() {
-  var name = (prompt('New section name (this department only):') || '').trim();
+  var name = (prompt('New folder name (this department only):') || '').trim();
   if (!name) return;
   try {
     await ntSaveConfig(function (cfg) {
@@ -549,7 +555,7 @@ async function ntAddSection() {
 }
 
 async function ntRenameSection(oldName) {
-  var name = (prompt('Rename section:', oldName) || '').trim();
+  var name = (prompt('Rename folder:', oldName) || '').trim();
   if (!name || name === oldName) return;
   try {
     await ntSaveConfig(function (cfg) {
@@ -577,7 +583,7 @@ async function ntRemoveSection(name) {
     var n = NT.notes[id];
     if (!n.deleted && n.folder === name && (n.scope.department || null) === NT.dept) inSection.push(id);
   }
-  if (!confirm('Remove the section "' + name + '"?' +
+  if (!confirm('Remove the folder "' + name + '"?' +
       (inSection.length ? '\n\n' + inSection.length + ' note(s) move back to Department notes — nothing is deleted.' : ''))) return;
   try {
     await ntSaveConfig(function (cfg) {
@@ -819,19 +825,16 @@ function ntFullName(c) {
   return c.name || c.username || c.crew_id;
 }
 
-function ntRenderAll() { ntRenderTabs(); ntRenderTree(); ntRenderList(); ntRenderDetail(); }
+function ntRenderAll() { ntRenderTree(); ntRenderList(); ntRenderDetail(); }
 
-function ntRenderTabs() {
+function ntDeptList() {
   var keys = [], seen = {};
   NT.crew.forEach(function (c) {
     var k = ntDeptKey(c.department);
     if (k && !seen[k]) { seen[k] = true; keys.push({ key: k, label: c.department }); }
   });
   if (!keys.length) keys = [{ key: 'engine', label: 'Engine Room' }];
-  document.getElementById('dept-tabs').innerHTML = keys.map(function (d) {
-    return '<div class="dept-tab' + (d.key === NT.dept ? ' active' : '') +
-           '" onclick="ntSetDept(\'' + ntAttr(d.key) + '\')">' + ntEsc(d.label) + '</div>';
-  }).join('');
+  return keys;
 }
 
 function ntSetDept(key) {
@@ -844,25 +847,25 @@ function ntSetDept(key) {
 function ntRenderTree() {
   var h = '';
 
-  // General — above the departments, for anything interdepartmental.
-  h += '<div class="tree-head">General</div>';
+  // Reading order, top to bottom: what is global, then which department, then
+  // that department's own notes and folders, then its people. The pills sit
+  // under the Department heading because that heading names them.
+  h += '<div class="tree-head">Global</div>';
   h += ntTreeItem({ kind: 'general', owner: null, folder: null }, '🌐 General notes');
 
   h += '<div class="tree-head">Department</div>';
+  h += '<div class="dept-tabs">' + ntDeptList().map(function (d) {
+    return '<div class="dept-tab' + (d.key === NT.dept ? ' active' : '') +
+           '" onclick="ntSetDept(\'' + ntAttr(d.key) + '\')">' + ntEsc(d.label) + '</div>';
+  }).join('') + '</div>';
   h += ntTreeItem({ kind: 'department', owner: null, folder: null },
                   '📋 ' + ntEsc(ntDeptLabel(NT.dept)) + ' notes');
 
-  // Custom sections: department-scoped headers the department head adds,
-  // sitting between Department and Personnel.
-  var sections = ntSections(NT.dept);
-  h += '<div class="tree-head">Sections' +
-       '<button class="add-sec" onclick="ntAddSection()" title="Add a section">＋</button></div>';
-  if (!sections.length) {
-    h += '<div class="tree-item" style="color:var(--text-muted);cursor:default;font-size:12.5px">None yet — use ＋</div>';
-  }
-  sections.forEach(function (f) {
-    h += ntTreeItem({ kind: 'department', owner: null, folder: f }, '▸ ' + ntEsc(f), f);
-  });
+  // Folders, per department. They live strictly between Department notes and
+  // the Personnel heading — those are the hard stops, and reordering happens
+  // inside that band only.
+  h += '<div id="folder-band">' + ntSections(NT.dept).map(ntFolderItem).join('') + '</div>';
+  h += '<div class="tree-item add-folder" onclick="ntAddSection()">＋ Add folder</div>';
 
   h += '<div class="tree-head">Personnel</div>';
   var deptCrew = NT.crew.filter(function (c) { return ntDeptKey(c.department) === NT.dept; });
@@ -893,6 +896,79 @@ function ntRenderTree() {
   }
 
   document.getElementById('tree').innerHTML = h;
+}
+
+// A folder row: a drop target for notes like any other view, plus rename,
+// remove, and a grip for reordering within the band.
+function ntFolderItem(name) {
+  var counts = ntCounts({ kind: 'department', owner: null, folder: name });
+  var active = NT.view.kind === 'department' && NT.view.folder === name;
+  var count = counts.open
+    ? '<span class="count' + (counts.mine ? ' alert' : '') + '">' + counts.open + '</span>' : '';
+  var view = { kind: 'department', owner: null, folder: name };
+  return '<div class="tree-item folder' + (active ? ' active' : '') + '" draggable="true"' +
+    ' data-folder="' + ntAttr(name) + '"' +
+    ' data-view=\'' + ntAttr(JSON.stringify(view)) + '\'' +
+    ' onclick=\'ntSetView(' + ntAttr(JSON.stringify(view)) + ')\'' +
+    ' ondragstart="ntFolderDragStart(event,this)" ondragend="ntFolderDragEnd(this)"' +
+    ' ondragover="ntFolderDragOver(event,this)"' +
+    ' ondragleave="this.classList.remove(\'drop-before\',\'drop-target\')"' +
+    ' ondrop="ntFolderDrop(event,this)">' +
+    '<span class="grip" title="Drag to reorder">⋮⋮</span>' +
+    '<span class="folder-name">' + ntEsc(name) + '</span>' + count +
+    '<span class="sec-edit" title="Rename" onclick="event.stopPropagation();ntRenameSection(\'' + ntAttr(name).replace(/'/g, "\\'") + '\')">✎</span>' +
+    '<span class="sec-edit" title="Remove" onclick="event.stopPropagation();ntRemoveSection(\'' + ntAttr(name).replace(/'/g, "\\'") + '\')">✕</span>' +
+    '</div>';
+}
+
+function ntFolderDragStart(ev, el) {
+  NT.dragFolder = el.dataset.folder;
+  el.classList.add('dragging');
+  try { ev.dataTransfer.setData('text/plain', NT.dragFolder); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {}
+  ev.stopPropagation();
+}
+
+function ntFolderDragEnd(el) {
+  NT.dragFolder = null;
+  el.classList.remove('dragging');
+  document.querySelectorAll('.drop-before,.drop-target').forEach(function (x) {
+    x.classList.remove('drop-before'); x.classList.remove('drop-target');
+  });
+}
+
+// Two different drags land on a folder: another folder being reordered, or a
+// note being re-filed into it. The state says which.
+function ntFolderDragOver(ev, el) {
+  if (NT.dragFolder && NT.dragFolder !== el.dataset.folder) {
+    ev.preventDefault();
+    el.classList.add('drop-before');
+    return;
+  }
+  ntTreeDragOver(ev, el);
+}
+
+async function ntFolderDrop(ev, el) {
+  el.classList.remove('drop-before');
+  if (NT.dragFolder && NT.dragFolder !== el.dataset.folder) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    var moved = NT.dragFolder, target = el.dataset.folder;
+    NT.dragFolder = null;
+    try {
+      // Insert immediately before the row it was dropped on.
+      await ntSaveConfig(function (cfg) {
+        var list = (cfg.department_folders || {})[NT.dept] || [];
+        var next = list.filter(function (f) { return f !== moved; });
+        var at = next.indexOf(target);
+        if (at < 0) return false;
+        next.splice(at, 0, moved);
+        cfg.department_folders[NT.dept] = next;
+      });
+      ntRenderAll();
+    } catch (e) { ntToast('Could not reorder — ' + e.message); }
+    return;
+  }
+  ntTreeDrop(ev, el);
 }
 
 // Every tree item is a drop target: dragging a note onto it re-files the note
