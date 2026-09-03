@@ -10812,7 +10812,11 @@ function ntaComputeAlerts() {
     var n = notes[id];
     if (n.deleted || n.merged_into || n.archived || n.completed) continue;
     if (acked[n.note_id]) continue;
-    if (n.assignee === me) {
+    // Assignment is keyed on crew_id (most of the roster has username null),
+    // with assignee_username riding along whenever the assignee is also an
+    // IDMS login — which is the only case that can produce an alert here,
+    // since this page knows the signed-in user by username alone.
+    if (n.assignee_username === me || n.assignee === me) {
       items.push({ note: n, why: 'Assigned to you by ' + (n.assigned_by || n.author) });
     } else if (n.group_alert && n.scope.level === 'department' && myDeptKeys[n.scope.department]) {
       items.push({ note: n, why: 'Group alert from ' + n.author });

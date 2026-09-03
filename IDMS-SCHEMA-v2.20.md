@@ -9,6 +9,8 @@ v2.30 *(2026-05-27)* — **Release marker: IDMS Console v0.2.9; Standard-tier na
 
 **Standard-tier nav access expansion (no on-disk schema change).** `applyCrewNavVisibility` in `src/renderer/js/app.js` now shows the Config sidebar group to `permission_tier === 'standard'` users in addition to admin (purser tier still excluded). Within the Config group, the nav buttons for Vessel Setup (`data-screen="vessel"`), Crew Setup (`data-screen="crewsetup"`), and Settings (`data-screen="settings"`) are individually hidden for non-admin tiers — only Equipment Setup is visible to Standard. Inside `screen-equipment`, `renderEquipment` in `src/renderer/js/equipment.js` forces `EQ.activeTab = 'rounds'` for non-admin users and conditionally renders only the Rounds Setup tab button; the Group Assignment and Sub-Group Assignment tabs remain admin-only. Net effect for Standard tier: full access to Dashboard, Factory Production, Rough Log, Trip Analytics (view-only via existing `taIsAdmin` gating), Maintenance & Tasks, Tank Levels & Transfers, Oil Record Book, Bunker Pre-Load, Schedule, Training Matrix, User Profile, Factory Events, Report Generator, Rounds Log, and Equipment Setup → Rounds Setup. Crew List remains gated by `canSeeCrewList()` (admin OR operational role); Vessel Setup, Crew Setup, and Settings remain admin-only.
 
+v2.31.1 *(2026-09-02)* — **Notes Hub: crew_id identity, General scope, sections, stars, documents, retention.** First round of live-use corrections and additions. **crew_id replaces username as the Notes Hub identity key** (§41.4a) — 97 of 112 `crewconfig.json` records carry `username: null`, so the roster collapsed onto the first null-username record and every personnel row rendered as the same person; `assignee_username` still rides along on assignment for the PWA alert check. Personnel lists now show active crew only, with inactive behind a collapsed header. Assignment is constrained to active crew of the note's own department and its placeholder stays "Assign to…" — most notes never need an assignee. New **General** scope above the departments for interdepartmental notes. **Sections** (the former department folders) become their own headers between Department and Personnel, added / renamed / removed from the Notes page under an ETag-guarded `notesconfig.json` write; removing one re-files its notes rather than deleting them. Notes are **dragged between any of those places** (one `note_edited`), can be **starred** (shared, sorts above everything, `note_starred`/`note_unstarred`), and starred notes accept a **manual order** (`note_reordered`, float `sort_index` so an insert is one event). Attachments gained **documents alongside photos** (§41.4b) — the `＋` on the add bar or a file dropped onto it, at creation time as well as after — stored byte-for-byte under `data/notes/files/{item_id}/` with a 4 MB refusal rather than a raw 413. New **attachment retention** (§41.14): 30 days after delete or completion, 10 after promotion, never for archived, earliest clock wins; eligibility is computed by the shared reducer and shown on the note, but **nothing deletes on a timer** — the purge is an officer action in the Console, per architecture.md, and that screen is the next slice. Also new: `note_unarchived`. Two §41.13 open items are closed.
+
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
@@ -7263,13 +7265,18 @@ config/notesconfig.json          ← department heads, department folders, check
 
 Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 1, event_id, event_type, timestamp, actor, payload}`. `actor` is the IDMS username. Events are immutable; edits append, never mutate.
 
+**Replay order.** The event filename is the sort key (lex = chrono), but the reducer applies **creations first, then every other event in stream order**. Filenames carry each writing device's own UTC clock, so a comment or a struck step can legitimately sort *ahead* of the note it belongs to — two devices seconds apart, or offline devices reconnecting (§41.9). A single pass would find no note and drop that event permanently. Mutations still apply to one another in stream order, which is where last-writer-wins actually matters.
+
 | `event_type` | Payload | Notes |
 |---|---|---|
-| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "department"\|"personnel"\|"crew", department, owner_username?}`. `origin` = `manual` \| `template` \| `emergency_offline`. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). |
+| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "general"\|"department"\|"crew", department?, owner_crew_id?}` — see §41.4a. `origin` = `manual` \| `template` \| `emergency_offline`. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). `attachments[]` = §41.4b. |
 | `note_edited` | `{note_id, patch, before}` | Same correction pattern as `observation_correction`. |
 | `note_completed` / `note_uncompleted` | `{note_id}` | First `note_completed` sets state; subsequent ones from other actors are preserved and rendered as confirmations, never dropped. |
 | `step_struck` / `step_unstruck` | `{note_id, step_id}` | Multiple strikes of the same step by different actors are all preserved — "struck by A 03:12, confirmed by B 03:14". This is the emergency-checklist timeline. |
-| `note_assigned` / `note_unassigned` | `{note_id, assignee_username}` | Assigner is the envelope `actor`. Assignment is what puts a note on the Assigned Tasks board and in alerts — creation alone never does. |
+| `note_assigned` / `note_unassigned` | `{note_id, assignee_crew_id, assignee_username?}` | Assigner is the envelope `actor`. Assignment is what puts a note on the Assigned Tasks board and in alerts — creation alone never does. `assignee_crew_id` is authoritative (§41.4a); `assignee_username` rides along only when the assignee is also an IDMS login, and is what the PWA's alert check matches on. |
+| `note_starred` / `note_unstarred` | `{note_id}` | Shared, not per-user: a star marks a note important for everyone, matching the hub's non-private premise. Starred notes sort above the rest in every view. |
+| `note_reordered` | `{note_id, sort_index}` | Manual ordering, **starred notes only** — everything else stays newest-first. `sort_index` is a float so inserting between two neighbours costs one event instead of reindexing the list. |
+| `note_unarchived` | `{note_id}` | Returns an archived note to its list, and restarts any attachment retention clock (§41.14). |
 | `comment_added` | `{note_id, comment_id, text?, attachments?}` | Photo-only comments (empty text, 1+ photos) allowed, matching rounds comments. |
 | `note_promoted` | `{note_id, task_id}` | Written after the task definition create succeeds (§41.6). Converts the note into a task mirror. |
 | `task_imported` | `{note_id, task_id, title, scope, folder?}` | Department-level only: creates a mirror wrapper for an existing task (§41.6). `scope` is carried explicitly — the reducer is context-free. |
@@ -7278,7 +7285,40 @@ Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 
 | `note_merged` | `{from_note_id, into_note_id, template_id}` | Console-emitted reconciliation only (§41.8). Viewers fold the `from` stream into the `into` note. |
 | `alert_acked` | `{targets: [note_id \| task_id, …]}` | Per-user acknowledgement; the acking user is the envelope `actor` (§41.7). |
 
-Folder model: a note's `folder` is a path string. Personal folders are implicit — a folder exists if a note references it (plus a lightweight `folder` patch via `note_edited` to move notes). Department-level folders are declared in `notesconfig.json` by the department head. **[OPEN]** Exact placement of department-head folders relative to the department personnel folder — settle before UI build.
+### 41.4a Scope, and why crew_id is the identity key
+
+```
+scope = { level: "general" }                                      ← interdepartmental
+scope = { level: "department", department: "engine" }             ← one department
+scope = { level: "crew", department: "engine", owner_crew_id: … } ← one crew member
+```
+
+**General** sits above the departments and is the repository for interdepartmental communication — anything that is not one department's business. It has no `department`, so it is the same list whichever department tab is selected.
+
+**`crew_id` is the identity key throughout — never `username`.** 97 of the 112 records in `crewconfig.json` carry `username: null`, because most of the crew have no IDMS login; a username can therefore neither address nor distinguish a crew member, and a lookup keyed on one silently collapses the whole roster onto the first null-username record. Event `actor` remains a username (only people who can log in write events), and `assignee_username` rides along on assignment when it exists, so the PWA's alert check — which knows the signed-in user by username alone — keeps working. Notes written before this rule carry `scope.owner_username`, which readers still honour.
+
+**Sections** are the named headers between Department and Personnel, one set per department, stored in `notesconfig.json` under `department_folders[{dept}]` and carried on a note as `folder`. They are added, renamed, and removed from the Notes page itself (§41.11), and both writes are ETag-guarded. Removing a section moves its notes back to Department notes — one `note_edited` each; nothing is deleted. A note is re-filed between any of these places by dragging it onto the target in the sidebar, which emits a single `note_edited` carrying the new `scope` and `folder`.
+
+### 41.4b Attachment object
+
+```jsonc
+{
+  "kind": "image" | "file",
+  "filename": "seal-datasheet.pdf",
+  "path": "data/notes/files/{item_id}/seal-datasheet.pdf",
+  "thumbnail_path": "data/assets/pictures/{item_id}/thumb-x.jpg",  // images only, else null
+  "size": 20480,
+  "content_type": "application/pdf"                                // files only
+}
+```
+
+Images keep the task/rounds-comment convention exactly (1080×1024 full + 240×180 thumb @ 0.85 JPEG under `data/assets/pictures/{item_id}/`), so the Console's existing thumbnail and lightbox helpers render note photos unchanged. Everything else is stored byte-for-byte under `data/notes/files/{item_id}/`. `item_id` is the `note_id` for note attachments and the `comment_id` for comment attachments.
+
+A document cannot be downscaled the way a photo can, so files over Graph's 4 MB simple-upload ceiling are refused with a plain-English reason rather than a raw 413; the upload-session path is future work. Attachments may be added when the note is created — the `＋` on the add bar, or dropping a file onto it — as well as afterwards.
+
+### 41.4c Ordering
+
+Within any view: **starred first**, then newest first. Among starred notes a manual order is honoured when set (`sort_index`, dragged), and starred notes without one fall back to newest-first behind those that have one. Unstarred notes are always chronological — dragging one onto another is a no-op, and the UI does not pretend otherwise.
 
 ### 41.5 Comments
 
@@ -7355,7 +7395,7 @@ One synthesized line per department per day summarizing assigned notes completed
 }
 ```
 
-Edited in Console → Config (department-head or admin tier). ETag-guarded RMW like every config write. `department_heads` drives the `group_alert` and delete-any-note permissions; it is authorization *within the hub only* and grants nothing elsewhere.
+Edited in Console → Config (department-head or admin tier) **and from the Notes page itself** — the `＋` beside the Sections header adds one, and each section row carries rename and remove. Both writers take the ETag-guarded RMW (read with ETag → mutate → `If-Match`, retry once on 412, `If-None-Match: *` when the file does not exist yet); neither ever writes blind. `department_heads` drives the `group_alert` and delete-any-note permissions; it is authorization *within the hub only* and grants nothing elsewhere.
 
 ### 41.12 Console ingest and SQLite
 
@@ -7370,10 +7410,27 @@ New `sync-notes.js` lane in the standard 2-minute poll, cursor-driven (`ingest_c
 
 Rebuild/verify registered in `DIAG_REGISTRY` (`notes`) like every other subsystem; rebuild clears events + derived + cursors and replays from OneDrive.
 
+### 41.14 Attachment retention
+
+Attachments outlive their note by a grace period, then become **eligible for purge**. The clock depends on how the note left circulation:
+
+| Note state | Grace | Why |
+|---|---|---|
+| Deleted | 30 days | Recovery window for a mistaken delete. |
+| Completed | 30 days | The work is done; the evidence is not needed indefinitely. |
+| Promoted to task | 10 days | The documents are copied onto the task at promote time (§41.6), so this is purely insurance against a failed sync. |
+| **Archived** | **never** | Archiving is the deliberate "keep this" action. An archived note keeps its files indefinitely, whatever else is true of it. |
+
+When more than one clock applies, the **earliest** due date wins. Un-completing or un-archiving clears the corresponding stamp, so the clock restarts rather than carrying a stale deadline. Both clients show the remaining time on the note (`files kept 5d (completed)`), and the delete confirmation says how long attachments survive.
+
+**Eligibility is not deletion.** `docs/architecture.md` reserves deletion for a human action, and a background timer quietly destroying evidence is exactly what that rule exists to prevent. The reducer computes *what is due*; a Console screen lists it and an officer purges — one click, with the list in front of them. No timer deletes anything on its own.
+
 ### 41.13 Open items
 
-- **[OPEN]** Placement of department-head folders relative to the department personnel folder (41.4).
+- ~~**[OPEN]** Placement of department-head folders relative to the department personnel folder.~~ **Settled (v2.31.1):** they are *sections*, their own headers between Department and Personnel, per §41.4a.
+- ~~**[OPEN]** Who may author notes at department level.~~ **Settled (v2.31.1):** anyone, deliberately — mostly-global rules keep the first release clean, and an authorship setup page stays a future option rather than a commitment.
 - **[OPEN]** Whether aggregates ship in the first release or replay-only suffices at initial volumes (41.3).
+- **[NEXT SLICE]** The Console-side attachment purge screen required by §41.14 — the reducer already computes eligibility; nothing purges yet.
 - Emergency mode (41.9) is staged after the hub's first online-only release; the service worker work is tracked with PWA-SCHEMA §19.
 
 ---
