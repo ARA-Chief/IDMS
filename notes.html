@@ -369,7 +369,23 @@ function ntIdmsLogin() {
 
 // ── Boot ────────────────────────────────────────────────────
 
+// Rollout gate — chief-only until the live end-to-end pass is proven; the
+// PWA's tile and alerts carry the same gate (ntaHasNotesAccess in
+// index.html). Not a permission model: remove both to open it to the crew.
+function ntHasAccess() {
+  var r = (NT.user && NT.user.role) || '';
+  return r === 'Chief Engineer' || r === 'Admin';
+}
+
 async function ntEnterApp() {
+  if (!ntHasAccess()) {
+    document.querySelector('#screen-auth .center-card').innerHTML =
+      '<h1>Notes</h1>' +
+      '<div class="sub">Not open to the crew yet — the Notes Hub is being proven live. Check back soon.</div>' +
+      '<a class="btn ghost" style="text-decoration:none" href="./index.html">Back to IDMS</a>';
+    ntShow('screen-auth');
+    return;
+  }
   ntShow('screen-app');
   document.getElementById('foot-who').textContent = NT.user.name || NT.user.username;
   ntSetPill('busy');
