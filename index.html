@@ -12,6 +12,8 @@
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
   <!-- Shared crew name display helpers (mirror at IDMS-Console/src/renderer/js/crew-display.js) -->
   <script src="utils/crew-display.js"></script>
+  <!-- Shared Notes Hub reducer (mirror at IDMS-Console/src/renderer/js/notes-reduce.js) -->
+  <script src="utils/notes-reduce.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1535,6 +1537,20 @@
         <div class="er-hub-tile-label">Profile</div>
         <div class="er-hub-tile-sub">Your crew record</div>
       </button>
+      <!-- Rollout gate: hidden except for the chief while the Notes Hub is
+           being proven live — remove the gate (ntaHasNotesAccess) to open it
+           to the crew. -->
+      <button class="er-hub-tile" id="er-notes-tile" style="display:none" onclick="window.location.href='notes.html'">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M6 4h13l5 5v15a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M19 4v5h5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M9 14h10M9 19h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Notes</div>
+        <div class="er-hub-tile-sub" id="er-notes-tile-sub">Shared scratch pad</div>
+      </button>
     </div>
   </div>
 
@@ -2490,6 +2506,17 @@ function routeAfterLogin() {
     showLoginError('No departments assigned. Contact admin.');
     return;
   }
+  // Notes Hub alerts (schema §41.7): fire before the routing branch so the
+  // popup lands regardless of whether the department picker is shown —
+  // single-department users skip that screen entirely. Gated with the tile
+  // while the hub is chief-only (rollout gate, not a permission model).
+  try {
+    if (ntaHasNotesAccess()) {
+      var ntaTile = document.getElementById('er-notes-tile');
+      if (ntaTile) ntaTile.style.display = '';
+      ntaCheckAlerts(true);
+    }
+  } catch (e) {}
   depts.length === 1 ? enterDepartment(depts[0]) : showDeptPicker();
 }
 
@@ -5095,7 +5122,7 @@ async function loadEngineClosedRecords() {
 }
 
 // Render the closed-tasks list. Records have a different schema than active
-// task definitions (completed_at, closed_by_*, description_work, close_notes,
+// task definitions (completed_at, signed_by_*, service_report, remark,
 // equipment_ids as JSON string). Roles/department filters still apply.
 function renderEngineClosedRecordsList(listEl, countEl) {
   var roleFilter = (document.getElementById('er-task-filter-role') || {}).value || '';
@@ -5116,7 +5143,7 @@ function renderEngineClosedRecordsList(listEl, countEl) {
   // user completed or closed.
   var mine = records.filter(function(r) {
     var me = currentUser && currentUser.username;
-    return erSameUser(r.completed_by_user, me) || erSameUser(r.closed_by_user, me);
+    return erSameUser(r.done_by_user, me) || erSameUser(r.signed_by_user, me);
   });
   erRenderTaskScopeControl(mine.length, records.length);
   var scope = erTaskScope();
@@ -5149,17 +5176,17 @@ function renderEngineClosedRecordsList(listEl, countEl) {
     try { equipIds = typeof r.equipment_ids === 'string' ? JSON.parse(r.equipment_ids) : (r.equipment_ids || []); } catch(e) { equipIds = []; }
     var equipStr   = equipIds.length ? equipIds.join(', ') : '';
     var dateStr    = r.completed_at ? r.completed_at.slice(0, 10) : '';
-    var closedBy   = r.closed_by_name || r.completed_by_name || r.closed_by_user || r.completed_by_user || '';
+    var closedBy   = r.signed_by || r.done_by || r.signed_by_user || r.done_by_user || '';
     var isExpanded = ER_TASKS_STATE.closedExpanded === r.record_id;
 
     html += '<div class="er-task-row' + (isExpanded ? ' er-task-row-expanded' : '')
       +    '" onclick="toggleErClosedExpand(\'' + erEscapeAttr(r.record_id) + '\')">'
       + '<div class="er-task-row-body">'
-      +   '<div class="er-task-row-title">' + erEscapeHtml(r.title || '(untitled)') + '</div>'
+      +   '<div class="er-task-row-title">' + erEscapeHtml(r.job_name || '(untitled)') + '</div>'
       +   '<div class="er-task-row-meta">'
       +     (dateStr ? '<span>' + erEscapeHtml(dateStr) + '</span>' : '')
       +     (r.priority ? '<span>' + erEscapeHtml(r.priority) + '</span>' : '')
-      +     (r.category ? '<span class="er-task-cat-pill">' + erEscapeHtml(r.category) + '</span>' : '')
+      +     (r.job_type ? '<span class="er-task-cat-pill">' + erEscapeHtml(r.job_type) + '</span>' : '')
       +     (equipStr ? '<span class="er-task-row-equip">' + erEscapeHtml(equipStr) + '</span>' : '')
       +     (closedBy ? '<span>by ' + erEscapeHtml(closedBy) + '</span>' : '')
       +   '</div>'
@@ -5169,21 +5196,21 @@ function renderEngineClosedRecordsList(listEl, countEl) {
 
     if (isExpanded) {
       html += '<div class="er-task-detail" onclick="event.stopPropagation()">';
-      if (r.description_work) {
+      if (r.service_report) {
         html += '<div class="er-task-detail-section">Work done</div>'
-              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.description_work) + '</div>';
+              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.service_report) + '</div>';
       }
-      if (r.close_notes) {
+      if (r.remark) {
         html += '<div class="er-task-detail-section">Notes</div>'
-              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.close_notes) + '</div>';
+              + '<div class="er-task-detail-desc">' + erEscapeHtml(r.remark) + '</div>';
       }
       // Compact metadata grid — same look as active-task detail panel.
       var meta = [];
       if (r.failure_mode)       meta.push(['Failure mode', r.failure_mode]);
       if (r.failure_mechanism)  meta.push(['Failure mechanism', r.failure_mechanism]);
       if (r.detection_method)   meta.push(['Detection method', r.detection_method]);
-      if (r.equipment_hours != null && r.equipment_hours !== '') {
-        meta.push(['Equipment hours', String(r.equipment_hours)]);
+      if (r.hrs_done != null && r.hrs_done !== '') {
+        meta.push(['Equipment hours', String(r.hrs_done)]);
       }
       if (r.role)               meta.push(['Role', r.role]);
       if (r.completed_at)       meta.push(['Completed at', r.completed_at.slice(0, 16).replace('T', ' ')]);
@@ -6164,12 +6191,12 @@ async function erTaskCreateInDefinitionsFile(filename, task) {
 }
 
 async function submitErTaskCreate() {
-  var title   = ((document.getElementById('er-create-title') || {}).value || '').trim();
+  var job_name   = ((document.getElementById('er-create-title') || {}).value || '').trim();
   var errEl   = document.getElementById('er-task-create-error');
   var saveBtn = document.getElementById('er-task-create-save');
 
   var dept = ((document.getElementById('er-create-dept') || {}).value || '').trim();
-  if (!title) {
+  if (!job_name) {
     if (errEl) { errEl.textContent = 'Task name is required.'; errEl.style.display = 'block'; }
     return;
   }
@@ -6183,7 +6210,7 @@ async function submitErTaskCreate() {
   }
   if (errEl) errEl.style.display = 'none';
 
-  var category  = (document.getElementById('er-create-category')   || {}).value || 'CHK';
+  var job_type  = (document.getElementById('er-create-category')   || {}).value || 'CHK';
   var priority  = (document.getElementById('er-create-priority')   || {}).value || 'Normal';
   var status    = (document.getElementById('er-create-status')     || {}).value || 'open';
   var role      = ((document.getElementById('er-create-role')      || {}).value || '').trim();
@@ -6252,10 +6279,10 @@ async function submitErTaskCreate() {
 
     var task = {
       task_id:        taskId,
-      title:          title,
+      job_name:          job_name,
       department:     dept,
       equipment_ids:  JSON.stringify(ER_CREATE_ASSETS),
-      category:       category,
+      job_type:       job_type,
       priority:       priority,
       role:           role || null,
       assigned_to:    assigned || null,
@@ -6281,23 +6308,23 @@ async function submitErTaskCreate() {
     // records file so the Console picks up a real task_records row on its next
     // poll. Mirrors the Console Quick Close payload exactly. Fields that the
     // Console captures via its own form map onto what we already have in the
-    // create form (description → description_work, notes → close_notes, etc.).
+    // create form (description → service_report, notes → remark, etc.).
     // Cancelled doesn't generate a record — Console's Cancelled path doesn't either.
     if (status === 'completed') {
       var record = {
         record_id:         erUuid(),
         task_id:           taskId,
-        title:             title,
+        job_name:             job_name,
         equipment_ids:     JSON.stringify(ER_CREATE_ASSETS),
-        category:          category,
+        job_type:          job_type,
         priority:          priority,
         role:              role || null,
-        completed_by_user: currentUser.username || 'unknown',
-        completed_by_name: currentUser.name || currentUser.username || 'Unknown',
+        done_by_user: currentUser.username || 'unknown',
+        done_by: currentUser.name || currentUser.username || 'Unknown',
         started_at:        now,
         completed_at:      now,
-        equipment_hours:   eqHours,
-        description_work:  desc || null,
+        hrs_done:   eqHours,
+        service_report:  desc || null,
         items_used:        null,
         follow_up:         0,
         follow_up_notes:   null,
@@ -6305,9 +6332,9 @@ async function submitErTaskCreate() {
         failure_mode:      fmCode || null,
         failure_mechanism: null,
         detection_method:  null,
-        closed_by_user:    currentUser.username || 'unknown',
-        closed_by_name:    currentUser.name || currentUser.username || 'Unknown',
-        close_notes:       notes || null
+        signed_by_user:    currentUser.username || 'unknown',
+        signed_by:    currentUser.name || currentUser.username || 'Unknown',
+        remark:       notes || null
       };
       try {
         await erTaskWriteEquipmentRecord(record, primaryEqId, year);
@@ -8243,6 +8270,7 @@ function syncToOneDrive() {
   }).then(function(result) {
     graphToken = result.accessToken;
     writeLogFile();
+    try { ntaCheckAlerts(false); } catch (e) {}
   }).catch(function(err) {
     console.warn('Token refresh failed:', err);
     updateSyncIndicator('offline');
@@ -10683,6 +10711,218 @@ async function addOilCommit() {
     // already alerted on the tank-delta failure branch
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'OK'; }
+  }
+}
+
+// ════════════════════════════════════════
+// Notes Hub alerts (IDMS-SCHEMA §41.7)
+//
+// Derived, never authored: computed from the notes event stream at login
+// (routeAfterLogin, both branches) and on the sync tick. Covers notes
+// assigned to me and department-head group alerts; task-assignment alerts
+// arrive with the task-integration slice. Dismissal appends alert_acked so
+// it sticks across the user's devices. One summary popup listing N items,
+// never N popups — everything else stays a badge on the Notes tile.
+//
+// Event cache is shared with notes.html (same origin, same key), so neither
+// page re-downloads what the other already has.
+// ════════════════════════════════════════
+
+var NTA = { events: [], loadedNames: {}, shownIds: {}, checking: false };
+
+// Rollout gate — the Notes Hub is chief-only in the PWA until the live
+// end-to-end pass is proven, so troubleshooting doesn't mean juggling two
+// live PWAs. Not a permission model: delete this function's callers to open
+// the hub to the crew (notes.html carries the same gate).
+function ntaHasNotesAccess() {
+  var r = (currentUser && currentUser.role) || '';
+  return r === 'Chief Engineer' || r === 'Admin';
+}
+
+function ntaCacheKey(year) { return 'nt_events_cache_' + year; }
+
+function ntaEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+async function ntaLoadEvents() {
+  var year = String(new Date().getFullYear());
+  if (!NTA.events.length) {
+    try {
+      var cached = JSON.parse(localStorage.getItem(ntaCacheKey(year)) || 'null');
+      if (cached && cached.events) {
+        NTA.events = cached.events;
+        NTA.events.forEach(function (ev) { if (ev._fn) NTA.loadedNames[ev._fn] = true; });
+      }
+    } catch (e) {}
+  }
+  await refreshToken();
+  var folder = 'Documents/IDMS/data/notes/events/' + year;
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+            encodeURIComponent(folder).replace(/%2F/g, '/') + ':/children?$select=name&$top=200';
+  var names = [];
+  while (url) {
+    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+    if (resp.status === 404) return;   // no notes events yet this year
+    if (!resp.ok) throw new Error('Notes event list: ' + resp.status);
+    var page = await resp.json();
+    (page.value || []).forEach(function (it) { if (/\.json$/i.test(it.name)) names.push(it.name); });
+    url = page['@odata.nextLink'] || null;
+  }
+  names.sort();
+  var fresh = names.filter(function (n) { return !NTA.loadedNames[n]; });
+  for (var i = 0; i < fresh.length; i++) {
+    var evUrl = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+                encodeURIComponent(folder + '/' + fresh[i]).replace(/%2F/g, '/') + ':/content';
+    var r = await fetch(evUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
+    if (!r.ok) continue;
+    var ev = await r.json();
+    if (ev && ev.event_id) { ev._fn = fresh[i]; NTA.events.push(ev); NTA.loadedNames[fresh[i]] = true; }
+  }
+  if (fresh.length) {
+    try {
+      var raw = JSON.stringify({ events: NTA.events });
+      if (raw.length <= 3500000) localStorage.setItem(ntaCacheKey(year), raw);
+    } catch (e) {}
+  }
+}
+
+function ntaComputeAlerts() {
+  var notes = notesReduce.reduce(NTA.events);
+  var me = currentUser.username;
+
+  var myDeptKeys = {};
+  (currentUser.departments || []).forEach(function (d) {
+    var k = (typeof DEPT_FILE_MAP !== 'undefined' && DEPT_FILE_MAP[d]) ||
+            String(d).toLowerCase().replace(/\s+/g, '');
+    myDeptKeys[k] = true;
+  });
+
+  var acked = {};
+  NTA.events.forEach(function (ev) {
+    if (ev.event_type === 'alert_acked' && ev.actor === me) {
+      ((ev.payload || {}).targets || []).forEach(function (t) { acked[t] = true; });
+    }
+  });
+
+  var items = [];
+  for (var id in notes) {
+    var n = notes[id];
+    if (n.deleted || n.merged_into || n.archived || n.completed) continue;
+    if (acked[n.note_id]) continue;
+    if (n.assignee === me) {
+      items.push({ note: n, why: 'Assigned to you by ' + (n.assigned_by || n.author) });
+    } else if (n.group_alert && n.scope.level === 'department' && myDeptKeys[n.scope.department]) {
+      items.push({ note: n, why: 'Group alert from ' + n.author });
+    }
+  }
+  return items;
+}
+
+async function ntaAppendAck(ids) {
+  await refreshToken();
+  var nowIso  = new Date().toISOString();
+  var eventId = erUuid();
+  var tsForFn = nowIso.replace(/[:.\-]/g, '');
+  var filename = tsForFn + '-' + eventId + '.json';
+  var path = 'Documents/IDMS/data/notes/events/' + nowIso.slice(0, 4) + '/' + filename;
+  var eventObj = {
+    schema_version: 1, event_id: eventId, event_type: 'alert_acked',
+    actor: currentUser.username, timestamp: nowIso, payload: { targets: ids }
+  };
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+            encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+  var resp = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json', 'If-None-Match': '*' },
+    body: JSON.stringify(eventObj, null, 2)
+  });
+  if (resp.status !== 412 && !resp.ok) throw new Error('Ack PUT: ' + resp.status);
+  eventObj._fn = filename;
+  NTA.events.push(eventObj);
+  NTA.loadedNames[filename] = true;
+}
+
+function ntaUpdateTileBadge(items) {
+  var el = document.getElementById('er-notes-tile-sub');
+  if (!el) return;
+  el.textContent = items.length
+    ? items.length + ' need' + (items.length === 1 ? 's' : '') + ' your attention'
+    : 'Shared scratch pad';
+  el.style.color = items.length ? 'var(--warning)' : '';
+}
+
+function ntaShowPopup(items) {
+  items.forEach(function (it) { NTA.shownIds[it.note.note_id] = true; });
+
+  var ov = document.getElementById('nta-overlay');
+  if (!ov) {
+    var st = document.createElement('style');
+    st.textContent =
+      '#nta-overlay{position:fixed;inset:0;background:rgba(4,10,22,.82);z-index:90;display:flex;align-items:center;justify-content:center;padding:16px}' +
+      '#nta-card{width:min(420px,94vw);max-height:80vh;overflow-y:auto;overflow-x:hidden;background:var(--bg-1);border:1px solid var(--border-accent);border-radius:var(--radius-lg);padding:18px}' +
+      '#nta-card h2{font-size:17px;margin-bottom:2px}' +
+      '#nta-card .nta-sub{color:var(--text-secondary);font-size:12.5px;margin-bottom:12px}' +
+      '.nta-item{padding:9px 0;border-top:1px solid var(--border)}' +
+      '.nta-item .t{font-size:14px}' +
+      '.nta-item .w{color:var(--warning);font-size:11.5px;margin-top:1px}' +
+      '.nta-item .m{color:var(--text-muted);font-size:11px}' +
+      '#nta-actions{display:flex;gap:8px;margin-top:14px}' +
+      '#nta-actions button{flex:1;padding:11px 8px;border:none;border-radius:var(--radius-md);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font)}' +
+      '#nta-open{background:var(--accent);color:#04263a}' +
+      '#nta-dismiss{background:var(--bg-3);color:var(--text-primary)}' +
+      '#nta-later{background:transparent;color:var(--text-muted)}';
+    document.head.appendChild(st);
+    ov = document.createElement('div');
+    ov.id = 'nta-overlay';
+    document.body.appendChild(ov);
+  }
+
+  var shown = items.slice(0, 8);
+  ov.innerHTML =
+    '<div id="nta-card">' +
+    '<h2>Notes need your attention</h2>' +
+    '<div class="nta-sub">' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' — assigned notes and group alerts</div>' +
+    shown.map(function (it) {
+      return '<div class="nta-item"><div class="t">' + ntaEsc(it.note.title) + '</div>' +
+             '<div class="w">' + ntaEsc(it.why) + '</div>' +
+             '<div class="m">' + ntaEsc(it.note.author) + ' · ' + new Date(it.note.updated).toLocaleString() + '</div></div>';
+    }).join('') +
+    (items.length > shown.length ? '<div class="nta-item m" style="color:var(--text-muted);font-size:12px">…and ' + (items.length - shown.length) + ' more in Notes</div>' : '') +
+    '<div id="nta-actions">' +
+    '<button id="nta-open">Open Notes</button>' +
+    '<button id="nta-dismiss">Dismiss</button>' +
+    '<button id="nta-later">Later</button>' +
+    '</div></div>';
+  ov.style.display = 'flex';
+
+  document.getElementById('nta-open').onclick = function () { window.location.href = 'notes.html'; };
+  document.getElementById('nta-later').onclick = function () { ov.style.display = 'none'; };
+  document.getElementById('nta-dismiss').onclick = function () {
+    ov.style.display = 'none';
+    ntaAppendAck(items.map(function (it) { return it.note.note_id; }))
+      .then(function () { ntaUpdateTileBadge(ntaComputeAlerts()); })
+      .catch(function (e) { console.warn('[NotesAlerts] ack failed:', e.message); });
+  };
+}
+
+async function ntaCheckAlerts(isLogin) {
+  if (NTA.checking) return;
+  if (typeof notesReduce === 'undefined') return;
+  if (!ntaHasNotesAccess()) return;   // rollout gate — also guards the sync-tick caller
+  NTA.checking = true;
+  try {
+    await ntaLoadEvents();
+    var items = ntaComputeAlerts();
+    ntaUpdateTileBadge(items);
+    var fresh = items.filter(function (it) { return !NTA.shownIds[it.note.note_id]; });
+    if (items.length && (isLogin || fresh.length)) ntaShowPopup(items);
+  } catch (e) {
+    console.warn('[NotesAlerts] check failed:', e.message);
+  } finally {
+    NTA.checking = false;
   }
 }
 

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "department_heads": {
+    "engine": ["wostara"],
+    "factory": [],
+    "deck": []
+  },
+  "department_folders": {
+    "engine": [],
+    "factory": [],
+    "deck": []
+  },
+  "templates": []
+}

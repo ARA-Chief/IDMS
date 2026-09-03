@@ -1,11 +1,15 @@
 # IDMS Schema Specification
-**Version 2.30 — F/V Araho**
+**Version 2.31 — F/V Araho**
+
+v2.31 *(2026-09-02)* — **Notes Hub specified (§41, new); §34 Messages superseded.** Adds the full contract for the Notes Hub: a shared, non-private, event-sourced notes surface — an in-house Microsoft To-Do — acting as the go-between for the PWA and the Console. One OneDrive append-only event stream under `data/notes/events/{YYYY}/` (envelope per `docs/architecture.md`, same pattern as the Phase 4/5 event logs), rendered by two implementations over three surfaces: a standalone page in this repo (same origin and MSAL registration as the PWA — also usable as a browser window kept open beside other work), a PWA screen sharing that same code, and a native Console screen fed from the SQLite derived cache by a new `notes` ingest lane. Notes carry a single-line title, optional photo(s), optional body, an optional SFI equipment tag, and an optional `steps[]` checklist; anyone can read, author (including department level, for now — mostly-global rules by design), comment (with photos, reusing the rounds-comment attachment conventions), assign, and promote. Promotion prefills the existing Task Creation screen and submits through each client's *existing ETag-guarded* definition-create path (v2.31 supersedes an earlier working plan for a proposal-inbox: both Console and PWA creates have been guarded since Phase 6 Stage 0, so no new write lane is needed). After promotion the note converts to a task-mirror wrapper — department-level notes can also import tasks directly as mirrors — and a mirror's strike fires the existing `reported_complete` action, never a second completion state: **notes never touch `task_records`, TM Master, or job history.** Deletion is a tombstone event (authors their own, department heads any; Archive is the default on notes carrying others' comments). Alerts are derived (assigned-to-me + department-head-flagged group alerts), acknowledged per user via `alert_acked` events, surfaced as one summary popup at login (both `routeAfterLogin` branches) and on sync diffs. Emergency checklist templates (Blackout Recovery, Boundary Isolation) instantiate under deterministic note ids (`{template_id}-{local date}`) so independently-offline devices converge on one note without de-duplication; a 60-minute reconciliation window handles boundary cases via Console-emitted `note_merged` events. Offline generation makes the service worker a stated prerequisite of the emergency stage (not of the hub's first release). The hub records who did what, when — it never authorizes, and it is explicitly not LOTO. §34 Messages is superseded in place (group alerts cover broadcast; comments cover threaded discussion; person-to-person direct messaging is dropped). §31 Rough Log gains a cross-reference for the display-time daily digest of completed assigned notes. New config file `config/notesconfig.json` (department heads, department folders, checklist templates), registered in the §1 File Location Map.
+
+---
 
 v2.30 *(2026-05-27)* — **Release marker: IDMS Console v0.2.9; Standard-tier nav access for Rounds Setup.** Cuts a shipped release containing every schema delta since v2.23 (which shipped as v0.2.7). Entries v2.24 through v2.29 (rounds-entry comments, ORB C/11 walker recompute, Phase 4 + Phase 5 event-log subsystems, Maintenance & Tasks consolidation, rounds-comment photo attachments, password masking, Skill Tags edit gating) are all included in this release. Companion PWA release tag is v1.9 (`PWA-SCHEMA-v1.1.md`).
 
 **Standard-tier nav access expansion (no on-disk schema change).** `applyCrewNavVisibility` in `src/renderer/js/app.js` now shows the Config sidebar group to `permission_tier === 'standard'` users in addition to admin (purser tier still excluded). Within the Config group, the nav buttons for Vessel Setup (`data-screen="vessel"`), Crew Setup (`data-screen="crewsetup"`), and Settings (`data-screen="settings"`) are individually hidden for non-admin tiers — only Equipment Setup is visible to Standard. Inside `screen-equipment`, `renderEquipment` in `src/renderer/js/equipment.js` forces `EQ.activeTab = 'rounds'` for non-admin users and conditionally renders only the Rounds Setup tab button; the Group Assignment and Sub-Group Assignment tabs remain admin-only. Net effect for Standard tier: full access to Dashboard, Factory Production, Rough Log, Trip Analytics (view-only via existing `taIsAdmin` gating), Maintenance & Tasks, Tank Levels & Transfers, Oil Record Book, Bunker Pre-Load, Schedule, Training Matrix, User Profile, Factory Events, Report Generator, Rounds Log, and Equipment Setup → Rounds Setup. Crew List remains gated by `canSeeCrewList()` (admin OR operational role); Vessel Setup, Crew Setup, and Settings remain admin-only.
 
-Append further v2.30.x or v2.31 entries here as new work lands between releases.
+Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
 
@@ -970,6 +974,7 @@ v2.1 — Navigation restructure. Sidebar groups renamed and reorganised. Stabili
 38. [FMEA Module](#38-fmea-module)
 39. [OEE Module](#39-oee-module)
 40. [tripanalyticsconfig.json](#40-tripanalyticsconfigjson)
+41. [Notes Hub](#41--notes-hub)
 
 ---
 
@@ -996,6 +1001,7 @@ Documents/IDMS/
 │   ├── schedule_draft.json         ← Working draft schedule (editable, not crew-visible)
 │   ├── fmeaconfig.json             ← Factory production FMEA failure mode registry
 │   ├── tripanalyticsconfig.json    ← Trip Analytics module config (ports, map colours, offload estimator, active trip)
+│   ├── notesconfig.json            ← Notes Hub: department heads, department folders, checklist templates (§41)
 │   ├── userprefs-{username}.json   ← Per-user PWA preferences (keypad side, colour mode) — one file per user
 │   └── shells/
 │       ├── factoryshell.json       ← Factory module behaviour
@@ -1028,8 +1034,13 @@ Documents/IDMS/
 │   │   ├── records/
 │   │   │   └── {YYYY}/             ← {equipmentCodeTop}-{YYYY}.json (completed task records per equipment top per year)
 │   │   └── active/                 ← {username}.json (per-user active task state)
-│   └── schedule/
-│       └── notifications/          ← schedule-notification-{YYYY-MM-DD}.json (audit log mirrors)
+│   ├── schedule/
+│   │   └── notifications/          ← schedule-notification-{YYYY-MM-DD}.json (audit log mirrors)
+│   └── notes/
+│       ├── events/
+│       │   └── {YYYY}/             ← {iso}-{event_id}.json — Notes Hub append-only event stream (§41)
+│       └── aggregates/
+│           └── {YYYY}/             ← notes-aggregate-{YYYY}.json (Console-derived cold-start cache, ETag-republished)
 │
 └── console.lock                    ← Active console heartbeat file
 ```
@@ -5418,6 +5429,8 @@ When the daily report is generated from the Dashboard screen, the rough log cont
 - Filtered to `department` in `["engine", "vessel"]`
 - Ordered by `timestamp` ascending
 
+**Notes Hub digest (v2.31):** the Rough Log *display and export* may prepend one synthesized line per department per day summarizing assigned notes completed that day (§41.10). This is computed at render/export time from the notes event stream — it is **not** a written `roughlog-{YYYY}.json` entry and does not appear in the auto-populating sources table above.
+
 ---
 
 ## §32 — Tasks & Maintenance
@@ -5869,19 +5882,15 @@ Auto-drafted from Fuel & Liquids interactions. Organised by ORB Part II codes.
 
 ## §34 — Messages
 
-**Status:** Not built
-**File:** `messages.js`
-**Location:** Personnel → Messages
+**Status:** SUPERSEDED by §41 Notes Hub *(v2.31, 2026-09-02)* — never built; do not build.
 
-**Message types:**
+The Notes Hub absorbs this module's purpose so the vessel grows one messaging-shaped system, not two:
 
-- Direct: one crew member to another
-- Department broadcast: all active crew in a department
-- Vessel broadcast: all active crew aboard
+- **Department / vessel broadcast** → department-head-flagged **group alerts** on department-level notes (§41.7).
+- **Threaded discussion** → **comments** on notes, open to any crew member, with photo attachments (§41.5).
+- **Direct person-to-person messaging** → **dropped**. Assigning a note to someone (§41.6) covers the "this needs your attention" case; anything conversational happens in person or off-system.
 
-**Delivery model:** OneDrive polling. No real-time push. Message files written to `data/messages/`. Field PWA polls on sync cycle; console polls on ingest cycle.
-
-**Notification rules:** notify only if recipient `status = active` AND `vessel = F/T ARAHO` AND current time falls within their watch rotation. Watch rotation field is deferred — initial implementation uses `active + aboard` as proxy.
+The `data/messages/` folder is never created. The polling delivery model and the `active + aboard` notification proxy described here carry forward into the §41 alert rules.
 
 ---
 
@@ -7207,6 +7216,165 @@ The Analytics Setup tab (`renderTASetup()`) provides an admin interface for edit
 - **Refresh from OneDrive:** reloads config from `loadTripAnalyticsConfig()` and re-renders the tab. Prompts a confirmation dialog if unsaved local changes exist.
 
 All write actions are admin-only. Non-admin users see the Setup tab in read-only mode.
+
+---
+
+## §41 — Notes Hub
+
+**Status:** Not built — spec ratified 2026-09-02 (v2.31). Supersedes §34 Messages.
+**Files:** standalone page + PWA screen (this repo, shared implementation); `src/renderer/js/notes.js` + `sync-notes.js` (Console)
+**Location:** Console: Personnel → Notes (also feeds Operations → Assigned Tasks). PWA: hub tile on each department home. Standalone: same-origin page, usable as a browser window kept open beside other work.
+
+### 41.1 Overview
+
+A shared, non-private notes surface — an in-house Microsoft To-Do — acting as the go-between for the PWA and the Console. Designed for handover: anyone can read anyone's notes. Three governing rules, stated once and enforced everywhere:
+
+1. **Notes never touch `task_records`, TM Master, or job history.** Assigned notes are lightweight do-items with a one-line daily trace (§41.10); tasks remain the auditable maintenance record. Real PM work must not migrate into notes to dodge the task ceremony.
+2. **The hub records who did what, when — it never authorizes.** It is explicitly not LOTO and cannot become LOTO without explicitly authored steps; LOTO, permits, and procedure live in the vault's authored SOP world. A future authored LOTO system may *feed* template steps in; the hub never substitutes for one.
+3. **Mostly-global permissions, officer oversight is social.** Anyone reads, authors (including department level, for now), comments, assigns, and promotes. Every event carries its actor, so oversight has the data it needs. An authorship setup page is a future option, not a commitment.
+
+### 41.2 Surfaces — two implementations, three views
+
+| Surface | Implementation | Data path |
+|---|---|---|
+| Standalone browser page | New page in this repo, same origin + MSAL registration as the PWA | Graph direct, event replay + poll |
+| PWA screen | **Same code** as the standalone page (shared modules) | Graph direct, event replay + poll |
+| Console: Personnel → Notes | Native renderer screen (`notes.js`), like every other Console module | SQLite derived cache via `sync-notes.js` ingest lane |
+
+The Console is deliberately native, not an embedded webview: it already needs a notes ingest lane for the Assigned Tasks board and the Rough Log digest, and embedding the hosted page would require a second MSAL session inside Electron. Two renderers, one file contract.
+
+### 41.3 OneDrive files
+
+```
+data/notes/
+├── events/
+│   └── {YYYY}/                 ← {iso}-{event_id}.json — single append-only stream, all event types
+└── aggregates/
+    └── {YYYY}/                 ← notes-aggregate-{YYYY}.json — Console-derived cold-start cache
+
+config/notesconfig.json          ← department heads, department folders, checklist templates
+```
+
+- **One stream, not per-note folders.** All event types share `data/notes/events/{YYYY}/`, exactly like the Phase 5 factory-observation log: filenames `{iso}-{event_id}.json` with `:`, `.`, `-` stripped from the timestamp so lex-sort = chrono-sort; writes are `If-None-Match: *` (412 = already there = success for idempotent retry). Per-note grouping happens in derived state, keyed by `note_id` in payloads.
+- **Photos** reuse the established attachment convention: `data/assets/pictures/{note_id}/` (note photos) and `data/assets/pictures/{comment_id}/` (comment photos), same resize sizes as rounds comments and tasks (1080×1024 full + 240×180 thumb @ 0.85 JPEG), uploaded via the shared resize/upload helper. Client-side downscale is mandatory — Graph's simple PUT caps at 4 MB.
+- **Aggregates** are optional derived artifacts, republished by the Console under an ETag with a regression guard (same discipline as rounds aggregates), so web clients cold-start from one GET plus the event tail after their cursor rather than walking a year of events. First release may ship without them; the cursor-driven replay is authoritative either way.
+
+### 41.4 Event envelope and types
+
+Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 1, event_id, event_type, timestamp, actor, payload}`. `actor` is the IDMS username. Events are immutable; edits append, never mutate.
+
+| `event_type` | Payload | Notes |
+|---|---|---|
+| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "department"\|"personnel"\|"crew", department, owner_username?}`. `origin` = `manual` \| `template` \| `emergency_offline`. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). |
+| `note_edited` | `{note_id, patch, before}` | Same correction pattern as `observation_correction`. |
+| `note_completed` / `note_uncompleted` | `{note_id}` | First `note_completed` sets state; subsequent ones from other actors are preserved and rendered as confirmations, never dropped. |
+| `step_struck` / `step_unstruck` | `{note_id, step_id}` | Multiple strikes of the same step by different actors are all preserved — "struck by A 03:12, confirmed by B 03:14". This is the emergency-checklist timeline. |
+| `note_assigned` / `note_unassigned` | `{note_id, assignee_username}` | Assigner is the envelope `actor`. Assignment is what puts a note on the Assigned Tasks board and in alerts — creation alone never does. |
+| `comment_added` | `{note_id, comment_id, text?, attachments?}` | Photo-only comments (empty text, 1+ photos) allowed, matching rounds comments. |
+| `note_promoted` | `{note_id, task_id}` | Written after the task definition create succeeds (§41.6). Converts the note into a task mirror. |
+| `task_imported` | `{note_id, task_id, title, scope, folder?}` | Department-level only: creates a mirror wrapper for an existing task (§41.6). `scope` is carried explicitly — the reducer is context-free. |
+| `note_archived` | `{note_id}` | Hidden from default views, retained in stream and Completed/Archive views. |
+| `note_deleted` | `{note_id}` | Tombstone. Authors may delete their own notes; department heads any note. UI offers **Archive** as the default when the note carries other people's comments. |
+| `note_merged` | `{from_note_id, into_note_id, template_id}` | Console-emitted reconciliation only (§41.8). Viewers fold the `from` stream into the `into` note. |
+| `alert_acked` | `{targets: [note_id \| task_id, …]}` | Per-user acknowledgement; the acking user is the envelope `actor` (§41.7). |
+
+Folder model: a note's `folder` is a path string. Personal folders are implicit — a folder exists if a note references it (plus a lightweight `folder` patch via `note_edited` to move notes). Department-level folders are declared in `notesconfig.json` by the department head. **[OPEN]** Exact placement of department-head folders relative to the department personnel folder — settle before UI build.
+
+### 41.5 Comments
+
+Any crew member may comment on any note, with photos. Render newest-last under the note, author and date always visible. Comments are what keep a note a living thing between watches; they are also why deletion defaults to Archive once others have written. On promotion (§41.6) the full comment transcript travels into the task as a provenance block.
+
+### 41.6 Task integration — promotion and mirrors
+
+**Promotion.** Any note (any scope) can be **Promoted to Task**. The action prefills the client's existing Task Creation screen:
+
+| Note field | Task Creation field |
+|---|---|
+| `title` | Job name |
+| `body` + provenance block | Description |
+| `equipment_code` | Equipment picker (pre-selected; if absent, the picker blocks submit as it already does — this is why the equipment tag exists) |
+| note + comment photos | Attachments (copied, not referenced) |
+
+The provenance block is plain text appended to the description: `From note {note_id} — {author}, {date}.` followed by the comment transcript, one line per comment: `{author} ({date}): {text} [photo]`. Copied at promote time, so later deletion of the note cannot hollow out the task's history.
+
+Submit travels **each client's existing ETag-guarded definition-create path** — Console `mutateTaskDefinitionFile`, PWA `erTaskCreateInDefinitionsFile` (both guarded since Phase 6 Stage 0). There is no new write lane and no proposal inbox (v2.31 planning note: an inbox was considered and dropped once both create paths were confirmed guarded). The task is created `open`, assigned or not, per the normal screen. On success the client appends `note_promoted {note_id, task_id}` and the note becomes a **mirror** of the task it turned into.
+
+**Mirrors.** A mirror (from promotion, or from department-level `task_imported`) renders the task's live status read-only and strikes through when the task reaches a terminal state. Tapping "complete" on a mirror fires the **existing `reported_complete` action** through the existing path — the mirror stores no completion state of its own, ever. Officer sign-off in the Console remains the only path to `completed`. This is the single seam between the hub and the guarded task machinery, and it introduces no new state.
+
+**Assigned Tasks board (Console).** The board lists tasks and *assigned* notes, visually distinct (note rows carry a note glyph, no TM fields). Unassigned notes never appear. Completing a note row from the board appends `note_completed` — it does not touch any task table.
+
+### 41.7 Alerts
+
+Alerts are **derived, never authored** — computed at read time from three sources: notes assigned to me and not completed; tasks newly assigned to me (vs. my last ack); department-level notes with `group_alert: true` (settable only by the department head). Dismissal appends `alert_acked` with the dismissed ids, so it syncs across the user's devices.
+
+- **Login popup:** one summary popup listing N items, shown after user selection in **both** `routeAfterLogin` branches (single-department users skip the department picker — do not hook the picker screen). Never N popups.
+- **Sync popup:** on each sync cycle, diff derived alerts against acked ids; pop only when something is new.
+- **Everything else is a badge.** New comments on my notes, activity on notes I authored — badge counts on the hub tile, no popup. This is deliberate alarm-fatigue discipline; do not widen popup criteria without revisiting it.
+
+Notification eligibility carries forward the §34 proxy: recipient `status = active` and aboard.
+
+### 41.8 Checklist templates, deterministic instances, reconciliation
+
+`notesconfig.json` declares checklist templates (e.g., Blackout Recovery, Boundary Isolation), editable by department heads in Console → Config. Instantiation is deliberate — a clearly-labelled action, not automatic.
+
+**Deterministic instance identity.** A template instance's `note_id` is `{template_id}-{local YYYY-MM-DD}` — derived from the template and the local date, never the device. Every device that instantiates the template offline generates the *same* note by construction, so reconnecting devices' queued events already reference one note and replay simply interleaves them. (Same idempotency principle as the Phase 5 event filenames.)
+
+**Reconciliation window.** For the cases deterministic ids cannot cover (an incident spanning midnight; a second same-day incident with no sync between): the Console ingest lane, on seeing two instances of the same `template_id` whose `note_created` timestamps differ by ≤ 60 minutes, emits `note_merged` into the earlier id. Instances outside the window stand as separate incidents. Pathological overlaps are resolved by a department head merging or archiving by hand — tombstones make that safe. Device timestamps order the display; **correctness never depends on clock accuracy.**
+
+### 41.9 Offline emergency mode *(later stage — not in the hub's first release)*
+
+"Generate the checklist on your own phone with no internet at all" requires a four-part package, shipped together as its own stage:
+
+1. **Service worker + cached app shell** — the §19 (PWA-SCHEMA) lift, with its MSAL redirect-URI care; installed to home screens. Prerequisite for opening the app offline at all. Also unlocks future notification work — one lift, two payoffs.
+2. **Templates cached locally**, refreshed on normal syncs, so checklists are always resident.
+3. **IndexedDB offline queue** for events *and staged photos* (photos exceed localStorage quotas).
+4. **Emergency mode proper:** MSAL cannot mint tokens offline, so the app runs on the last-logged-in cached identity with an honest banner ("offline — recording locally as {name}"); on reconnect it refreshes the token first, then flushes the queue through the normal append paths. This is the existing observation-queue pattern promoted to a first-class mode.
+
+Until this stage ships, the hub is online-only, and template instantiation simply requires connectivity like everything else.
+
+### 41.10 Rough Log daily digest
+
+One synthesized line per department per day summarizing assigned notes completed that day (count + titles), prepended at Rough Log **display and export time** — computed from the event stream, never written to `roughlog-{YYYY}.json`. See the §31 cross-reference. Rationale: multiple open clients writing a daily entry would race; a view cannot.
+
+### 41.11 notesconfig.json
+
+```jsonc
+{
+  "schema_version": 1,
+  "department_heads": { "engine": ["wostara"], "factory": [], "deck": [] },
+  "department_folders": { "engine": ["Shipyard Prep", "Standing Items"] },
+  "templates": [
+    {
+      "template_id": "blackout-recovery",
+      "title": "Blackout Recovery",
+      "department": "engine",
+      "steps": [ { "step_id": "br-01", "text": "…", "equipment_code": "…" } ],
+      "reference": "vault SOP / procedure this checklist derives from (display-only)"
+    }
+  ]
+}
+```
+
+Edited in Console → Config (department-head or admin tier). ETag-guarded RMW like every config write. `department_heads` drives the `group_alert` and delete-any-note permissions; it is authorization *within the hub only* and grants nothing elsewhere.
+
+### 41.12 Console ingest and SQLite
+
+New `sync-notes.js` lane in the standard 2-minute poll, cursor-driven (`ingest_cursors` subsystem `notes`, `scope_key` = year). The lane mirrors raw events first, then re-derives the whole cache through the **shared reducer** (`notes-reduce.js`, canonical copy in the IDMS repo at `utils/notes-reduce.js`, mirrored byte-identical like `crew-display.js`) — deliberately whole-table on change, so there is no incremental application logic to drift from the page's. Tables (cache only, OneDrive is truth):
+
+| Table | Purpose |
+|---|---|
+| `notes_events` | Raw event mirror: `event_file` (PK, the filename = sort key), `event_id`, `event_type`, `note_id`, `actor`, `timestamp`, `year`, `payload_json` |
+| `notes` | One derived row per note: title/body/scope/folder/assignee/equipment_code, `origin`, `template_id`, `task_id` (mirrors), completed/archived/deleted/group_alert flags, `steps_json`, `attachments_json`, `completions_json`, `comment_count` |
+| `note_comments` | Derived comments with `attachments_json` |
+| `note_alert_acks` | Per-user acked ids, derived from `alert_acked` events |
+
+Rebuild/verify registered in `DIAG_REGISTRY` (`notes`) like every other subsystem; rebuild clears events + derived + cursors and replays from OneDrive.
+
+### 41.13 Open items
+
+- **[OPEN]** Placement of department-head folders relative to the department personnel folder (41.4).
+- **[OPEN]** Whether aggregates ship in the first release or replay-only suffices at initial volumes (41.3).
+- Emergency mode (41.9) is staged after the hub's first online-only release; the service worker work is tracked with PWA-SCHEMA §19.
 
 ---
 
