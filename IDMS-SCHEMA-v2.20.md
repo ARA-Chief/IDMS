@@ -7246,10 +7246,13 @@ A shared, non-private notes surface — an in-house Microsoft To-Do — acting a
 | Surface | Implementation | Data path |
 |---|---|---|
 | Standalone browser page | New page in this repo, same origin + MSAL registration as the PWA | Graph direct, event replay + poll |
+| ↳ *opened from the Console* | **Notes → ⧉ Open in a window** hands the page's URL to the default browser (`notes_url` in `notesconfig.json`, defaulting to the published address). Both surfaces read and write the same event stream, so they stay in step on their sync cycles. | |
 | PWA screen | **Same code** as the standalone page (shared modules) | Graph direct, event replay + poll |
 | Console: Personnel → Notes | Native renderer screen (`notes.js`), like every other Console module | SQLite derived cache via `sync-notes.js` ingest lane |
 
 The Console is deliberately native, not an embedded webview: it already needs a notes ingest lane for the Assigned Tasks board and the Rough Log digest, and embedding the hosted page would require a second MSAL session inside Electron. Two renderers, one file contract.
+
+**Built to be left open.** The standalone page is meant to sit in a window of its own all day beside the Console, so it reopens on the department and place it was last on (per user, since a shared tablet has more than one), names that place in the window title with a count of what is waiting for you, and narrows into a side panel: below 780 px the sidebar folds into a ☰ overlay that closes itself once you pick somewhere, and the detail panel slides over rather than squeezing the list. Restoring a place that has since gone — a department removed, a crew member off this vessel — falls back rather than landing on an empty list.
 
 ### 41.3 OneDrive files
 

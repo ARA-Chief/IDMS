@@ -202,10 +202,23 @@
   #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--border-accent); color: var(--text-primary); padding: 9px 16px; border-radius: var(--radius-md); font-size: 13px; display: none; z-index: 70; max-width: 90vw; }
 
   /* ── Responsive ───────────────────────────────────────── */
+  /* Built to be narrowed into a side panel and left open all day, so the
+     sidebar hides on demand at any width and folds away on its own once the
+     window is too narrow to carry two columns. */
+  .side-toggle { display: none; }
+  .sidebar.hidden { display: none; }
   @media (max-width: 900px) { .detail { position: fixed; right: 0; top: 0; bottom: 0; z-index: 40; box-shadow: -20px 0 40px rgba(0,0,0,.5); width: min(380px, 94vw); } }
-  @media (max-width: 700px) {
-    #screen-app { flex-direction: column; }
-    .sidebar { width: 100%; max-height: 42vh; border-right: none; border-bottom: 1px solid var(--border); }
+  @media (max-width: 780px) {
+    .side-toggle { display: block; }
+    .sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 30; width: min(260px, 84vw); box-shadow: 20px 0 40px rgba(0,0,0,.45); }
+    .sidebar:not(.open) { display: none; }
+    #screen-app { position: relative; }
+    .list-wrap { padding: 12px 14px 40px; }
+    .main-head { padding: 12px 14px 9px; }
+  }
+  @media (max-width: 480px) {
+    .main-head h2 { font-size: 15px; }
+    .main-head .loc { display: none; }
   }
 </style>
 </head>
@@ -247,6 +260,7 @@
 
   <div class="main">
     <div class="main-head">
+      <button class="icon-btn side-toggle" onclick="ntToggleSidebar()" title="Show or hide the list of places">☰</button>
       <h2 id="loc-title"></h2>
       <span class="loc" id="loc-sub"></span>
       <span class="spacer"></span>
@@ -469,6 +483,11 @@ async function ntEnterApp() {
   NT.view = NT.meCrewId
     ? { kind: 'crew', owner: NT.meCrewId, folder: null }
     : { kind: 'department', owner: null, folder: null };
+
+  // This page is meant to be left open all day in a window of its own, so it
+  // reopens where it was rather than sending you back to your own list every
+  // time. Per user, since a shared tablet has more than one.
+  ntRestorePlace();
 
   ntWireDropBar();
   ntLoadCache();
@@ -945,6 +964,7 @@ function ntSetDept(key) {
   NT.dept = key;
   NT.view = { kind: 'department', owner: null, folder: null };
   NT.openNote = null;
+  ntSavePlace();
   ntRenderAll();
 }
 
@@ -1225,7 +1245,31 @@ async function ntTopLevelDrop(ev, el) {
 function ntSetView(view) {
   NT.view = { kind: view.kind, owner: view.owner || null, folder: view.folder || null };
   NT.openNote = null;
+  ntSavePlace();
+  ntCloseSidebarIfNarrow();
   ntRenderAll();
+}
+
+// ── Where you were (§41.2, the all-day window) ──────────────
+
+function ntPlaceKey() { return 'nt_place_' + ((NT.user && NT.user.username) || 'anon'); }
+
+function ntSavePlace() {
+  try {
+    localStorage.setItem(ntPlaceKey(), JSON.stringify({ dept: NT.dept, view: NT.view }));
+  } catch (e) {}
+}
+
+function ntRestorePlace() {
+  try {
+    var p = JSON.parse(localStorage.getItem(ntPlaceKey()) || 'null');
+    if (!p || !p.view || !p.view.kind) return;
+    // A department that has since gone, or a crew member off this vessel,
+    // would restore to an empty list — better to land somewhere real.
+    if (p.dept && NT.crew.some(function (c) { return ntDeptKey(c.department) === p.dept; })) NT.dept = p.dept;
+    if (p.view.kind === 'crew' && !ntCrewById(p.view.owner)) return;
+    NT.view = { kind: p.view.kind, owner: p.view.owner || null, folder: p.view.folder || null };
+  } catch (e) {}
 }
 
 function ntRenderList() {
@@ -1248,6 +1292,13 @@ function ntRenderList() {
   }
   document.getElementById('loc-title').textContent = locTitle;
   document.getElementById('loc-sub').textContent = locSub;
+  // The window sits in a taskbar all day, so its title says where it is and
+  // how much is waiting rather than just "IDMS Notes".
+  var waiting = open.filter(function (n) {
+    return notesReduce.isAssignedTo(n, NT.meCrewId) ||
+           notesReduce.isAssignedTo(n, NT.user.username);
+  }).length;
+  document.title = (waiting ? '(' + waiting + ') ' : '') + locTitle + ' — IDMS Notes';
 
   var h = open.map(ntNoteRow).join('');
   if (!open.length) h += '<div class="empty">Nothing open here.</div>';
@@ -1869,6 +1920,22 @@ function ntResizeImage(file, maxW, maxH, quality) {
 function ntShow(id) {
   document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
   document.getElementById(id).classList.add('active');
+}
+
+// Narrow, the sidebar slides over the list; wide, it hides outright so the
+// notes get the whole window. Picking a place closes it again when narrow,
+// because leaving it covering the list would hide what you just chose.
+function ntToggleSidebar() {
+  var s = document.getElementById('sidebar');
+  var narrow = window.matchMedia('(max-width: 780px)').matches;
+  if (narrow) s.classList.toggle('open');
+  else        s.classList.toggle('hidden');
+}
+
+function ntCloseSidebarIfNarrow() {
+  if (window.matchMedia('(max-width: 780px)').matches) {
+    document.getElementById('sidebar').classList.remove('open');
+  }
 }
 
 function ntToggleArchived() {
