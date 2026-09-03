@@ -1537,10 +1537,7 @@
         <div class="er-hub-tile-label">Profile</div>
         <div class="er-hub-tile-sub">Your crew record</div>
       </button>
-      <!-- Rollout gate: hidden except for the chief while the Notes Hub is
-           being proven live — remove the gate (ntaHasNotesAccess) to open it
-           to the crew. -->
-      <button class="er-hub-tile" id="er-notes-tile" style="display:none" onclick="window.location.href='notes.html'">
+      <button class="er-hub-tile" id="er-notes-tile" onclick="window.location.href='notes.html'">
         <div class="er-hub-tile-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
             <path d="M6 4h13l5 5v15a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
@@ -2508,15 +2505,8 @@ function routeAfterLogin() {
   }
   // Notes Hub alerts (schema §41.7): fire before the routing branch so the
   // popup lands regardless of whether the department picker is shown —
-  // single-department users skip that screen entirely. Gated with the tile
-  // while the hub is chief-only (rollout gate, not a permission model).
-  try {
-    if (ntaHasNotesAccess()) {
-      var ntaTile = document.getElementById('er-notes-tile');
-      if (ntaTile) ntaTile.style.display = '';
-      ntaCheckAlerts(true);
-    }
-  } catch (e) {}
+  // single-department users skip that screen entirely.
+  try { ntaCheckAlerts(true); } catch (e) {}
   depts.length === 1 ? enterDepartment(depts[0]) : showDeptPicker();
 }
 
@@ -10730,15 +10720,6 @@ async function addOilCommit() {
 
 var NTA = { events: [], loadedNames: {}, shownIds: {}, checking: false };
 
-// Rollout gate — the Notes Hub is chief-only in the PWA until the live
-// end-to-end pass is proven, so troubleshooting doesn't mean juggling two
-// live PWAs. Not a permission model: delete this function's callers to open
-// the hub to the crew (notes.html carries the same gate).
-function ntaHasNotesAccess() {
-  var r = (currentUser && currentUser.role) || '';
-  return r === 'Chief Engineer' || r === 'Admin';
-}
-
 function ntaCacheKey(year) { return 'nt_events_cache_' + year; }
 
 function ntaEsc(s) {
@@ -10916,7 +10897,6 @@ function ntaShowPopup(items) {
 async function ntaCheckAlerts(isLogin) {
   if (NTA.checking) return;
   if (typeof notesReduce === 'undefined') return;
-  if (!ntaHasNotesAccess()) return;   // rollout gate — also guards the sync-tick caller
   NTA.checking = true;
   try {
     await ntaLoadEvents();

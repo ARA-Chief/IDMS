@@ -506,9 +506,8 @@ async function ntAfterMsAuth() {
     await ntToken(false);   // proves Graph access before proceeding
   } catch (e) { ntAuthError(e); return; }
 
-  var saved = null;
-  try { saved = JSON.parse(localStorage.getItem('fw_user') || localStorage.getItem('nt_user') || 'null'); } catch (e) {}
-  if (saved && saved.username) { NT.user = saved; ntEnterApp(); return; }
+  var saved = ntSavedIdmsUser();
+  if (saved) { NT.user = saved; ntEnterApp(); return; }
 
   var cfg = await ntGetJson(ONEDRIVE_BASE + '/config/userconfig.json');
   if (!cfg || !cfg.users) { ntAuthError(new Error('userconfig.json unavailable')); return; }
@@ -518,6 +517,30 @@ async function ntAfterMsAuth() {
     return '<option value="' + i + '">' + ntEsc(u.name || u.username) + '</option>';
   }).join('');
   ntShow('screen-login');
+}
+
+// Whoever is already signed in to IDMS in this browser. Three places hold it,
+// and only one is always written:
+//
+//   fw_session  the live PWA session, written on entering a department —
+//               present whether or not "remember me" was ticked, which is why
+//               it is asked first. Reading only fw_user made the notes page
+//               demand a second sign-in from anyone who had not ticked it.
+//   fw_user     the remembered login, kept across visits when it was ticked.
+//   nt_user     this page's own, for a browser that has never run the PWA.
+function ntSavedIdmsUser() {
+  try {
+    var s = JSON.parse(localStorage.getItem('fw_session') || 'null');
+    if (s && s.user && s.user.username) return s.user;
+  } catch (e) {}
+  var keys = ['fw_user', 'nt_user'];
+  for (var i = 0; i < keys.length; i++) {
+    try {
+      var u = JSON.parse(localStorage.getItem(keys[i]) || 'null');
+      if (u && u.username) return u;
+    } catch (e) {}
+  }
+  return null;
 }
 
 function ntIdmsLogin() {
@@ -534,23 +557,7 @@ function ntIdmsLogin() {
 
 // ── Boot ────────────────────────────────────────────────────
 
-// Rollout gate — chief-only until the live end-to-end pass is proven; the
-// PWA's tile and alerts carry the same gate (ntaHasNotesAccess in
-// index.html). Not a permission model: remove both to open it to the crew.
-function ntHasAccess() {
-  var r = (NT.user && NT.user.role) || '';
-  return r === 'Chief Engineer' || r === 'Admin';
-}
-
 async function ntEnterApp() {
-  if (!ntHasAccess()) {
-    document.querySelector('#screen-auth .center-card').innerHTML =
-      '<h1>Notes</h1>' +
-      '<div class="sub">Not open to the crew yet — the Notes Hub is being proven live. Check back soon.</div>' +
-      '<a class="btn ghost" style="text-decoration:none" href="./index.html">Back to IDMS</a>';
-    ntShow('screen-auth');
-    return;
-  }
   ntShow('screen-app');
   // ?shared=1 pins a window to shared mode for this load — a shortcut pinned
   // on a shared machine opens straight into it — otherwise the browser's own
