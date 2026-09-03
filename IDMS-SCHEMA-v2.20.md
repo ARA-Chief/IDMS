@@ -17,6 +17,8 @@ v2.31.3 *(2026-09-02)* — **Assigned Tasks board carries notes; several holders
 
 v2.31.4 *(2026-09-02)* — **Two-level organisation, note dragging, full names.** The folder band gains **groups**: a group sits at the level of Department notes and holds folders, giving two levels and no more (§41.4a). A note's `folder` becomes a path — `"Folder"`, `"Group"`, or `"Group/Folder"` — and `department_folders[{dept}]` now holds bare strings (unchanged, what every existing config contains) or `{type, name, folders[]}` objects; reading normalises both, and a groupless config is written back byte-identical. Groups and folders are added, renamed, removed and dragged into any order inside the band, with the Department-notes and Personnel headings as hard stops and a group refused inside a group. Renaming or moving re-paths the notes beneath, children included. **Dragging a note** now files it into a folder or group, and onto a person means hand-over for a personal note (ownership moves) or assignment for a department or global one. The Console screen gains note dragging, which it did not have at all. Personnel lists show **full names** in both clients — two Sams and two Taylors aboard mean a first name is not an identification.
 
+v2.31.5 *(2026-09-02)* — **The shared window, and a signalled sign-in expiry.** A notes window left open for anyone to write in now records `actor: "browser"` — shown as **"Browser addition"** — instead of whoever last signed in (§41.4d): it says what is known, that the note came from that window, rather than naming the wrong person. Toggled from the footer, remembered per browser, and pinnable with `?shared=1`. `browser` is a reserved actor and never a crew member. Also: an expired Microsoft sign-in is now a stated condition rather than a red dot that retries forever — already-synced notes stay readable, a banner offers **Sign in again**, and writes refuse with that reason instead of a raw `AADSTS` code (§41.2).
+
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
@@ -7323,6 +7325,14 @@ The stored array holds either a bare string (a top-level folder — what every c
 Groups and folders are added, renamed, removed and **dragged into any order within the band** — the two headings are hard stops, and a group cannot be dropped inside a group, because two levels is the whole design. Renaming or moving carries the notes with it (one `note_edited` each, re-pathing children too); removing moves its notes back to Department notes. Nothing is ever deleted. All config writes are ETag-guarded from both clients.
 
 **Dragging a note** onto a sidebar row files it there. Onto a folder or group it takes that path. Onto a person it means one of two things, settled by what the note is rather than by asking: a **personal note is handed over** — it already lives on somebody's list, so dragging it to another list moves its ownership — while a **department or global note is assigned**, which is the only reading that does not take it away from everyone else.
+
+### 41.4d The shared window
+
+A window left open on a bulkhead is an invitation: anyone walking past may add a note, and whoever signed in hours ago is the wrong name to put on it. **Shared mode** answers that — every event the window writes carries `actor: "browser"`, rendered everywhere as **"Browser addition"**. It records what is actually known: that the note came from that window, not who typed it. Signing a note with the wrong person is worse than not signing it.
+
+The Microsoft sign-in still stands behind the window, because OneDrive needs a token; what changes is the authorship written into the note, not the plumbing. In shared mode there is no "me" — nothing is highlighted as yours, the alert count is empty, and the window opens on the department rather than a personal list.
+
+The mode is a footer control reading *Writing as **Browser addition** — sign as me* (and the reverse), remembered per browser, and `?shared=1` on the URL pins a window to it so a shortcut on a shared machine opens straight in. `browser` is a reserved actor: it is not a crew member, never appears in a personnel list, and can never be assigned work.
 
 ### 41.4b Attachment object
 

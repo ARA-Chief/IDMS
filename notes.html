@@ -93,8 +93,13 @@
   .inactive-head:hover { color: var(--text-secondary); }
 
   .sidebar-foot { padding: 12px 16px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
-  .sidebar-foot .who { color: var(--text-secondary); }
-  .sidebar-foot button { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; }
+  .sidebar-foot button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; font-family: var(--font); text-align: left; padding: 0; }
+  .sidebar-foot #btn-archived { margin-left: auto; flex: none; }
+  .who-btn { flex: 1; min-width: 0; line-height: 1.35; }
+  .who-btn b { color: var(--text-secondary); font-weight: 500; }
+  .who-btn.is-shared b { color: var(--accent); }
+  .who-btn .swap { display: block; color: var(--text-muted); font-size: 11px; }
+  .who-btn:hover .swap { color: var(--accent); }
 
   /* ── Main pane ────────────────────────────────────────── */
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -260,7 +265,8 @@
     <div class="brand"><b>Notes</b><span>IDMS</span><div class="sync-pill" id="sync-pill" title="Sync status"></div></div>
     <div class="tree" id="tree"></div>
     <div class="sidebar-foot">
-      <span class="who" id="foot-who"></span>
+      <button class="who-btn" id="foot-who" onclick="ntToggleShared()"
+              title="Switch between signing notes with your own name and leaving this window open for anyone"></button>
       <button onclick="ntToggleArchived()" id="btn-archived">Show archived</button>
     </div>
   </div>
@@ -317,6 +323,20 @@
 
 var ONEDRIVE_BASE = 'Documents/IDMS';
 
+// ── The shared window (§41.4d) ──────────────────────────────
+// A window left open on a bulkhead is an invitation: anyone walking past may
+// add a note, and whoever happened to sign in hours ago is the wrong name to
+// put on it. In shared mode every event this window writes is authored by a
+// standing identity that says exactly what it knows — that a note arrived from
+// this window, and not who typed it. Signing a note with the wrong person is
+// worse than not signing it.
+//
+// The Microsoft sign-in still stands behind it, because OneDrive needs a token;
+// what changes is the authorship recorded in the note, not the plumbing.
+var NT_SHARED_ACTOR = 'browser';
+var NT_SHARED_LABEL = 'Browser addition';
+var NT_SHARED_KEY   = 'nt_shared_window';
+
 var MSAL_CONFIG = {
   auth: {
     clientId:    '5f7c6099-c379-4cfa-ab6a-92bf33b812aa',
@@ -341,6 +361,7 @@ var NT = {
   notesConfig: { schema_version: 1, department_heads: {}, department_folders: {}, templates: [] },
   configEtag: null,
   reauth: false,           // Microsoft sign-in expired; reads work, writes do not
+  shared: false,           // this window writes as "Browser addition" (§41.4d)
   events: [], loadedNames: {}, notes: {},
   dept: null,
   // view.kind: 'general' | 'department' | 'crew'
@@ -531,7 +552,15 @@ async function ntEnterApp() {
     return;
   }
   ntShow('screen-app');
-  document.getElementById('foot-who').textContent = NT.user.name || NT.user.username;
+  // ?shared=1 pins a window to shared mode for this load — a shortcut pinned
+  // on a shared machine opens straight into it — otherwise the browser's own
+  // last choice stands.
+  try {
+    var q = new URLSearchParams(location.search);
+    NT.shared = q.has('shared')
+      ? q.get('shared') !== '0'
+      : localStorage.getItem(NT_SHARED_KEY) === '1';
+  } catch (e) { NT.shared = false; }
   ntSetPill('busy');
 
   var crewCfg = await ntGetJson(ONEDRIVE_BASE + '/config/crewconfig.json').catch(function () { return null; });
@@ -562,10 +591,14 @@ async function ntEnterApp() {
     ? { kind: 'crew', owner: NT.meCrewId, folder: null }
     : { kind: 'department', owner: null, folder: null };
 
+  // A shared window has no "me" to open on, so it starts at the department.
+  if (NT.shared) NT.view = { kind: 'department', owner: null, folder: null };
+
   // This page is meant to be left open all day in a window of its own, so it
   // reopens where it was rather than sending you back to your own list every
   // time. Per user, since a shared tablet has more than one.
   ntRestorePlace();
+  ntRenderWho();
 
   ntWireDropBar();
   ntLoadCache();
@@ -878,7 +911,7 @@ async function ntAppendEvent(eventType, payload) {
     schema_version: 1,
     event_id:   eventId,
     event_type: eventType,
-    actor:      NT.user.username,
+    actor:      ntActor(),
     timestamp:  nowIso,
     payload:    payload
   };
@@ -897,6 +930,11 @@ async function ntAppendEvent(eventType, payload) {
   ntReduce();
   ntRenderAll();
   return eventObj;
+}
+
+// Who this window signs its writes as.
+function ntActor() {
+  return NT.shared ? NT_SHARED_ACTOR : NT.user.username;
 }
 
 function ntUuid() {
@@ -950,6 +988,12 @@ function ntIsPinned(n, view) {
   return view.kind === 'crew' && notesReduce.isAssignedTo(n, view.owner);
 }
 
+// In a shared window there is no "me" — the signed-in account is plumbing, not
+// the person at the keyboard — so nothing is highlighted as yours.
+function ntMeKeys() {
+  return NT.shared ? [] : [NT.meCrewId, NT.user.username];
+}
+
 function ntSortNotes(list, view) {
   view = view || NT.view;
   return list.sort(function (a, b) {
@@ -984,8 +1028,7 @@ function ntCounts(view) {
     if (n.deleted || n.merged_into || n.archived || n.completed) continue;
     if (!ntInView(n, view)) continue;
     open++;
-    if (notesReduce.isAssignedTo(n, NT.meCrewId) ||
-        notesReduce.isAssignedTo(n, NT.user.username)) mine++;
+    if (ntMeKeys().some(function (k) { return notesReduce.isAssignedTo(n, k); })) mine++;
   }
   return { open: open, mine: mine };
 }
@@ -1015,6 +1058,7 @@ function ntCrewById(crewId) {
 // literal (event actors are usernames, which most crew records do not carry).
 function ntShortName(key) {
   if (!key) return '';
+  if (key === NT_SHARED_ACTOR) return NT_SHARED_LABEL;
   var c = ntCrewById(key) ||
           NT.crew.find(function (x) { return x.username && x.username === key; });
   if (!c) return key;
@@ -1024,6 +1068,7 @@ function ntShortName(key) {
 
 function ntFullName(c) {
   if (!c) return '';
+  if (c === NT_SHARED_ACTOR) return NT_SHARED_LABEL;
   if (typeof getDisplayFullName === 'function') { try { return getDisplayFullName(c); } catch (e) {} }
   return c.name || c.username || c.crew_id;
 }
@@ -1375,8 +1420,7 @@ function ntRenderList() {
   // The window sits in a taskbar all day, so its title says where it is and
   // how much is waiting rather than just "IDMS Notes".
   var waiting = open.filter(function (n) {
-    return notesReduce.isAssignedTo(n, NT.meCrewId) ||
-           notesReduce.isAssignedTo(n, NT.user.username);
+    return ntMeKeys().some(function (k) { return notesReduce.isAssignedTo(n, k); });
   }).length;
   document.title = (waiting ? '(' + waiting + ') ' : '') + locTitle + ' — IDMS Notes';
 
@@ -2000,6 +2044,36 @@ function ntResizeImage(file, maxW, maxH, quality) {
 function ntShow(id) {
   document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
   document.getElementById(id).classList.add('active');
+}
+
+// The footer says who this window signs its notes as, and switches between the
+// two. Shown as a sentence rather than a toggle, because "who is about to be
+// named on what I write" deserves to be readable at a glance.
+function ntRenderWho() {
+  var el = document.getElementById('foot-who');
+  if (!el) return;
+  el.innerHTML = NT.shared
+    ? 'Writing as <b>' + ntEsc(NT_SHARED_LABEL) + '</b> <span class="swap">— sign as me</span>'
+    : 'Writing as <b>' + ntEsc(NT.user.name || NT.user.username) + '</b> <span class="swap">— open to anyone</span>';
+  el.classList.toggle('is-shared', !!NT.shared);
+}
+
+function ntToggleShared() {
+  NT.shared = !NT.shared;
+  try { localStorage.setItem(NT_SHARED_KEY, NT.shared ? '1' : '0'); } catch (e) {}
+  // Leaving shared mode lands on your own notes; entering it has none to land
+  // on, so it steps back to the department.
+  if (NT.shared) {
+    if (NT.view.kind === 'crew') NT.view = { kind: 'department', owner: null, folder: null };
+  } else if (NT.meCrewId) {
+    NT.view = { kind: 'crew', owner: NT.meCrewId, folder: null };
+  }
+  ntSavePlace();
+  ntRenderWho();
+  ntRenderAll();
+  ntToast(NT.shared
+    ? 'This window now signs notes "' + NT_SHARED_LABEL + '" — anyone may add one.'
+    : 'This window now signs notes as ' + (NT.user.name || NT.user.username) + '.');
 }
 
 // Narrow, the sidebar slides over the list; wide, it hides outright so the
