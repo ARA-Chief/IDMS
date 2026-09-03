@@ -13,6 +13,8 @@ v2.31.1 *(2026-09-02)* — **Notes Hub: crew_id identity, General scope, section
 
 v2.31.2 *(2026-09-02)* — **Notes Hub: vessel-confined crew, three-state assignment, several assignees.** `crewconfig.json` is the fleet's roster, so every crew list in the hub now filters on vessel by the shared `taskSameVessel` rule — two Alaska Spirit hands were appearing on Araho lists, one of them the record every personnel row had been collapsing onto. Assignment becomes one three-state control (§41.6a): **Unassigned note** (default), **Assignable** (offered to anyone; surfaces in the Notes Tray), then the **Assign to** list, which is a multi-select — a note may be carried by several people. A shared note is one note on several plates, never a copy each: it is pinned into each assignee's personal list, **pin outranking star**, and completing it anywhere completes it for everyone. Removing the last assignee leaves the note assignable rather than unassigned. New event `note_assignment_set`; `note_assigned` now adds a person and `note_unassigned` drops one (or all, with no crew_id). The reducer keeps `assignee` / `assignee_username` as first-assignee mirrors for existing readers and adds `assignee_usernames` as the membership test the PWA alert check uses. Dragging a note onto a person in the sidebar now **assigns** rather than re-files, since re-filing would take the note away from where the work lives. **Still to build (next slice):** the Console's Assigned Tasks board — Notes Tray beside a renamed Tasks Tray, notes on member cards, and drag-between-people with the Reassign / Add Personnel choice. Multi-assignee on *tasks* is a shared-file contract change and is specced separately before any code.
 
+v2.31.3 *(2026-09-02)* — **Assigned Tasks board carries notes; several holders per task.** The board gains a **Notes Tray** beside the renamed **Tasks Tray**, and member cards now list every open task *and* note on that person (§41.6b). Dragging from one person to another asks **Reassign** or **Add Personnel** rather than guessing; the row `×` takes that one person off and leaves any others. The task assignment picker's people become **checkboxes** — several may hold one job — with *Unassigned* and *Locked* staying exclusive. Task multi-assignment is **additive** (§41.6c): new `tasks.assignees` (JSON array, DDL column plus a guarded ALTER) alongside the unchanged `assigned_to`, which is always written as the first holder; when the two disagree a writer that does not know the list has changed the holder, so the single field wins and the stale list is discarded — which is what keeps the PWA correct with no change to it. `getTasksUnified` exposes `assignees`; `taskAssigneeKeys` / `taskAssigneePatch` are the only readers and writers of the pair.
+
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
@@ -7364,6 +7366,29 @@ Naming a person always wins: `note_assignment_set` is ignored while anyone is as
 **Pin outranks star.** Ordering within a personal list is *pinned* (assigned to that person) → *starred* → newest first. The pin is not a user action; it is what being assigned looks like on your own list.
 
 **The crew list is confined to this vessel.** `crewconfig.json` is the fleet's roster — it carries Alaska Spirit hands who cannot do work here — so every crew list in the hub filters on vessel with the same rule the Assigned Tasks board and Crew List use (`taskSameVessel`: a blank on either side passes, so an unrecorded vessel is never hidden by silence). The assignment pool is further narrowed to *active* crew of the note's own department.
+
+### 41.6b The Assigned Tasks board — two trays, one gesture
+
+The Console's Assigned Tasks board carries notes as well as tasks:
+
+- **Tasks Tray** (formerly "Unassigned") — open tasks on nobody's card.
+- **Notes Tray** — notes marked *Assignable* that nobody has picked up.
+- **Member cards** — every open task **and** note assigned to that person. A note assigned to several people appears on each of their cards; it is one note, so completing it anywhere completes it everywhere.
+
+**Dragging** moves work: onto a card to hand it over, onto the matching tray to release it. Dragging from one person's card onto another's cannot know which of two things is meant, so it asks: **Reassign** (take it off the first) or **Add Personnel** (both carry it). The `×` on a row takes *that person* off, leaving anyone else on it — "not mine", not "nobody's". Tasks and notes each refuse the other's tray rather than silently doing nothing.
+
+**Clicking** opens the full picker. For a task that is the assignment modal, where people are now **checkboxes** — several may hold one job — while *Unassigned* and *Locked* remain radio options exclusive with them and each other. For a note it opens the Notes screen, where the three states, comments and attachments live.
+
+### 41.6c Multi-assignee on tasks — the shared-file contract
+
+`assigned_to` on a task definition is a **single** field that the PWA, TM Master imports and every existing reader speak. Multi-assignment is therefore **additive**, not a replacement:
+
+| Field | Meaning |
+|---|---|
+| `assigned_to` | The first holder. Authoritative, unchanged, written on every assignment. |
+| `assignees[]` | Every holder, as assign keys. Absent or empty means "whatever `assigned_to` says". |
+
+Both are written together, `assigned_to` always being `assignees[0]`, so the two agreeing is the normal state. **Disagreement is how a foreign write is detected**: if `assigned_to` names somebody who is not first in the list — including being cleared to null — a writer that does not know about `assignees` has changed the holder since, and the single field wins while the stale list is discarded. That covers a PWA reassignment and a PWA release alike, and it means the PWA needs no change to stay correct. A PWA that later wants to *show* several holders reads `assignees` when it agrees with `assigned_to`; writing it is optional and can follow under the dual-write protocol.
 
 ### 41.7 Alerts
 
