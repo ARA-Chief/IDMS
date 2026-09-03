@@ -104,6 +104,13 @@
   .main-head .spacer { flex: 1; }
   .icon-btn { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); padding: 6px 10px; font-size: 12.5px; cursor: pointer; }
 
+  #reauth-bar { display: none; align-items: center; gap: 12px; padding: 10px 20px;
+    background: rgba(255,170,0,.10); border-bottom: 1px solid rgba(255,170,0,.35); }
+  #reauth-bar .ra-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); flex: none; }
+  #reauth-bar .ra-text { flex: 1; font-size: 12.5px; color: var(--text-secondary); line-height: 1.45; }
+  #reauth-bar .ra-text b { color: var(--text-primary); }
+  #reauth-bar .btn { width: auto; padding: 7px 14px; font-size: 13px; flex: none; }
+
   .list-wrap { flex: 1; overflow-y: auto; padding: 12px 20px 40px; }
 
   .quick-add { display: flex; gap: 8px; margin-bottom: 6px; align-items: stretch; }
@@ -266,6 +273,12 @@
       <span class="spacer"></span>
       <button class="icon-btn" onclick="ntSyncNow()" title="Refresh from OneDrive">↻ Sync</button>
     </div>
+    <div id="reauth-bar">
+      <span class="ra-dot"></span>
+      <span class="ra-text"><b>Microsoft sign-in has expired.</b>
+        Notes already synced are still readable, but nothing new arrives and nothing can be saved until you sign in again.</span>
+      <button class="btn" id="reauth-btn" onclick="ntReconnect()">Sign in again</button>
+    </div>
     <div class="list-wrap">
       <div class="quick-add">
         <div class="qa-bar" id="qa-bar">
@@ -327,6 +340,7 @@ var NT = {
   roleRank: new Map(),     // role_id → seniority index, from trainingmatrix.json
   notesConfig: { schema_version: 1, department_heads: {}, department_folders: {}, templates: [] },
   configEtag: null,
+  reauth: false,           // Microsoft sign-in expired; reads work, writes do not
   events: [], loadedNames: {}, notes: {},
   dept: null,
   // view.kind: 'general' | 'department' | 'crew'
@@ -344,17 +358,81 @@ var NT = {
 
 function ntSetPill(state) {
   var p = document.getElementById('sync-pill');
-  p.className = 'sync-pill ' + (state === 'ok' ? 'ok' : state === 'busy' ? 'warn' : state === 'err' ? 'err' : '');
-  p.title = state === 'ok' ? 'Synced' : state === 'busy' ? 'Syncing…' : state === 'err' ? 'Last sync failed — will retry' : 'Idle';
+  p.className = 'sync-pill ' + (state === 'ok' ? 'ok' : state === 'busy' ? 'warn' : (state === 'err' || state === 'auth') ? 'err' : '');
+  p.title = state === 'ok'   ? 'Synced'
+          : state === 'busy' ? 'Syncing…'
+          : state === 'auth' ? 'Microsoft sign-in has expired — sign in again to resume'
+          : state === 'err'  ? 'Last sync failed — will retry'
+          : 'Idle';
+}
+
+// One sentence for the two failures worth telling apart: a dead sign-in, which
+// a person has to fix, and everything else, which retrying may.
+function ntWhyFailed(e) {
+  if (e && e.ntReauth) return 'Microsoft sign-in has expired — sign in again, then try once more. Nothing was lost.';
+  return e && e.message ? e.message : String(e);
+}
+
+// Azure hands a single-page app a refresh token that lives about a day, so a
+// window left open overnight WILL eventually need a person again. MSAL tries a
+// hidden-iframe renewal first, which also fails wherever third-party cookies
+// are blocked. When that runs out the failure is interaction_required, and the
+// honest response is to say so and offer the sign-in — not to retry forever
+// behind a red dot.
+function ntNeedsInteraction(e) {
+  if (!e) return false;
+  var code = e.errorCode || '';
+  return e.name === 'InteractionRequiredAuthError' ||
+         code === 'interaction_required' || code === 'login_required' ||
+         code === 'consent_required'     || code === 'no_account_error' ||
+         code === 'monitor_window_timeout';
 }
 
 async function ntToken(forceRefresh) {
   // Always ask MSAL rather than caching a token ourselves — the PWA's
   // 401-after-background bug (fixed in 9c52913) came from doing otherwise.
-  var res = await NT.msal.acquireTokenSilent({
-    scopes: MSAL_SCOPES, account: NT.account, forceRefresh: !!forceRefresh
-  });
-  return res.accessToken;
+  try {
+    var res = await NT.msal.acquireTokenSilent({
+      scopes: MSAL_SCOPES, account: NT.account, forceRefresh: !!forceRefresh
+    });
+    ntSetReauth(false);
+    return res.accessToken;
+  } catch (e) {
+    if (ntNeedsInteraction(e)) {
+      ntSetReauth(true);
+      var err = new Error('Microsoft sign-in has expired');
+      err.ntReauth = true;
+      throw err;
+    }
+    throw e;
+  }
+}
+
+// Deliberately not a modal: everything already synced stays readable from the
+// local cache, so the banner sits above the list rather than over it, and only
+// syncing and saving are actually blocked.
+function ntSetReauth(on) {
+  if (NT.reauth === on) return;
+  NT.reauth = on;
+  var bar = document.getElementById('reauth-bar');
+  if (bar) bar.style.display = on ? 'flex' : 'none';
+  if (on) ntSetPill('auth');
+}
+
+async function ntReconnect() {
+  var btn = document.getElementById('reauth-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening sign-in…'; }
+  try {
+    var res = await NT.msal.acquireTokenPopup({ scopes: MSAL_SCOPES, account: NT.account });
+    if (res && res.account) NT.account = res.account;
+    ntSetReauth(false);
+    await ntSyncNow();
+    ntToast('Signed back in — up to date.');
+  } catch (e) {
+    ntToast('Could not sign in — ' + (e && e.message ? e.message : e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign in again'; }
+  }
 }
 
 async function ntFetch(url, opts) {
@@ -649,7 +727,7 @@ async function ntAddSection(kind, groupName) {
       return list;
     });
     ntRenderAll();
-  } catch (e) { ntToast('Could not add — ' + e.message); }
+  } catch (e) { ntToast('Could not add — ' + ntWhyFailed(e)); }
 }
 
 async function ntRenameSection(path) {
@@ -683,7 +761,7 @@ async function ntRenameSection(path) {
     await ntRepathNotes(map);
     if (map[NT.view.folder]) NT.view.folder = map[NT.view.folder];
     ntRenderAll();
-  } catch (e) { ntToast('Could not rename — ' + e.message); }
+  } catch (e) { ntToast('Could not rename — ' + ntWhyFailed(e)); }
 }
 
 async function ntRemoveSection(path) {
@@ -718,7 +796,7 @@ async function ntRemoveSection(path) {
     await ntRepathNotes(map);
     if (paths.indexOf(NT.view.folder) >= 0) NT.view = { kind: 'department', owner: null, folder: null };
     ntRenderAll();
-  } catch (e) { ntToast('Could not remove — ' + e.message); }
+  } catch (e) { ntToast('Could not remove — ' + ntWhyFailed(e)); }
 }
 
 // ── Event sync (replay + poll) ──────────────────────────────
@@ -779,7 +857,9 @@ async function ntSyncNow() {
     }
     ntSetPill('ok');
   } catch (e) {
-    ntSetPill('err');
+    // A dead sign-in already raised its banner in ntToken; anything else is
+    // worth retrying on the next tick, so the pill just goes amber.
+    ntSetPill(e && e.ntReauth ? 'auth' : 'err');
   } finally {
     NT._syncing = false;
   }
@@ -1170,7 +1250,7 @@ async function ntFolderDrop(ev, el) {
       if (Object.keys(real).length) await ntRepathNotes(real);
       if (real[NT.view.folder]) NT.view.folder = real[NT.view.folder];
       ntRenderAll();
-    } catch (e) { ntToast('Could not rearrange — ' + e.message); }
+    } catch (e) { ntToast('Could not rearrange — ' + ntWhyFailed(e)); }
     return;
   }
   // Not a rearrangement — a note being filed into this row. Returned rather
@@ -1239,7 +1319,7 @@ async function ntTopLevelDrop(ev, el) {
       ntToast('A folder called "' + name + '" already sits at the top level.');
     }
     ntRenderAll();
-  } catch (e) { ntToast('Could not move out — ' + e.message); }
+  } catch (e) { ntToast('Could not move out — ' + ntWhyFailed(e)); }
 }
 
 function ntSetView(view) {
@@ -1410,7 +1490,7 @@ async function ntNoteDrop(ev, el) {
 
   try {
     await ntAppendEvent('note_reordered', { note_id: dragged.note_id, sort_index: newIdx });
-  } catch (e) { ntToast('Could not reorder — ' + e.message); }
+  } catch (e) { ntToast('Could not reorder — ' + ntWhyFailed(e)); }
 }
 
 function ntTreeDragOver(ev, el) {
@@ -1460,7 +1540,7 @@ async function ntTreeDrop(ev, el) {
         });
         ntToast('Assigned to ' + ntShortName(view.owner));
       }
-    } catch (e) { ntToast('Could not move — ' + e.message); }
+    } catch (e) { ntToast('Could not move — ' + ntWhyFailed(e)); }
     return;
   }
 
@@ -1475,7 +1555,7 @@ async function ntTreeDrop(ev, el) {
       before: { scope: n.scope, folder: n.folder || null }
     });
     ntToast('Moved to ' + (view.folder || (view.kind === 'general' ? 'General' : ntDeptLabel(NT.dept))));
-  } catch (e) { ntToast('Could not move — ' + e.message); }
+  } catch (e) { ntToast('Could not move — ' + ntWhyFailed(e)); }
 }
 
 // Drag a photo or document straight onto the add bar.
@@ -1674,7 +1754,7 @@ async function ntOpenFile(path) {
     var resp = await ntFetch(ntGraphUrl(ONEDRIVE_BASE + '/' + path), { method: 'GET' });
     if (!resp.ok) { ntToast('Could not open — ' + resp.status); return; }
     window.open(URL.createObjectURL(await resp.blob()), '_blank');
-  } catch (e) { ntToast('Could not open — ' + e.message); }
+  } catch (e) { ntToast('Could not open — ' + ntWhyFailed(e)); }
 }
 
 // ── Actions ─────────────────────────────────────────────────
@@ -1709,7 +1789,7 @@ async function ntQuickAdd() {
       attachments: attachments
     });
   } catch (e) {
-    ntToast('Could not save — ' + e.message);
+    ntToast('Could not save — ' + ntWhyFailed(e));
     input.value = title;
     NT.stagedNew = staged;
     ntRenderStaged();
@@ -1721,7 +1801,7 @@ async function ntToggleComplete(id) {
   if (!n) return;
   try {
     await ntAppendEvent(n.completed ? 'note_uncompleted' : 'note_completed', { note_id: id });
-  } catch (e) { ntToast('Could not save — ' + e.message); }
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntToggleStar(id) {
@@ -1729,7 +1809,7 @@ async function ntToggleStar(id) {
   if (!n) return;
   try {
     await ntAppendEvent(n.starred ? 'note_unstarred' : 'note_starred', { note_id: id });
-  } catch (e) { ntToast('Could not save — ' + e.message); }
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntToggleStep(noteId, stepId) {
@@ -1738,7 +1818,7 @@ async function ntToggleStep(noteId, stepId) {
   if (!s) return;
   try {
     await ntAppendEvent(ntStepStruck(s) ? 'step_unstruck' : 'step_struck', { note_id: noteId, step_id: stepId });
-  } catch (e) { ntToast('Could not save — ' + e.message); }
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntSetAssignMode(id, mode) {
@@ -1748,7 +1828,7 @@ async function ntSetAssignMode(id, mode) {
     // clears the plate first — otherwise the radio would appear to do nothing.
     if (n && n.assignees.length) await ntAppendEvent('note_unassigned', { note_id: id });
     await ntAppendEvent('note_assignment_set', { note_id: id, mode: mode });
-  } catch (e) { ntToast('Could not save — ' + e.message); }
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntToggleAssignee(id, crewId, on) {
@@ -1765,17 +1845,17 @@ async function ntToggleAssignee(id, crewId, on) {
     } else {
       await ntAppendEvent('note_unassigned', { note_id: id, assignee_crew_id: crewId });
     }
-  } catch (e) { ntToast('Could not save — ' + e.message); }
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntArchive(id) {
   try { await ntAppendEvent('note_archived', { note_id: id }); ntCloseDetail(); }
-  catch (e) { ntToast('Could not save — ' + e.message); }
+  catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntUnarchive(id) {
   try { await ntAppendEvent('note_unarchived', { note_id: id }); }
-  catch (e) { ntToast('Could not save — ' + e.message); }
+  catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntDelete(id) {
@@ -1785,7 +1865,7 @@ async function ntDelete(id) {
     : '';
   if (!confirm('Delete this note? It disappears from every view (the event stream keeps a tombstone).' + extra)) return;
   try { await ntAppendEvent('note_deleted', { note_id: id }); ntCloseDetail(); }
-  catch (e) { ntToast('Could not save — ' + e.message); }
+  catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 function ntPickPhoto() {
@@ -1814,7 +1894,7 @@ async function ntAddComment() {
       text: text, attachments: attachments
     });
     NT.stagedPhoto = null;
-  } catch (e) { ntToast('Could not save comment — ' + e.message); }
+  } catch (e) { ntToast('Could not save comment — ' + ntWhyFailed(e)); }
 }
 
 async function ntAddNoteFiles(id) {
@@ -1828,7 +1908,7 @@ async function ntAddNoteFiles(id) {
       var next = (n.attachments || []).slice();
       for (var i = 0; i < files.length; i++) next.push(await ntUploadAny(id, files[i]));
       await ntAppendEvent('note_edited', { note_id: id, patch: { attachments: next }, before: { attachments: n.attachments } });
-    } catch (e) { ntToast('Upload failed — ' + e.message); }
+    } catch (e) { ntToast('Upload failed — ' + ntWhyFailed(e)); }
   };
   inp.click();
 }
