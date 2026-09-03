@@ -123,6 +123,15 @@
   .note-title { font-size: 14.5px; line-height: 1.35; word-break: break-word; }
   .note-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 3px; color: var(--text-muted); font-size: 11.5px; }
   .note-meta .assignee { color: var(--warning); }
+  .note-meta .assignable { color: var(--accent-dim); }
+  .pin { color: var(--accent); font-size: 12px; }
+  .assign-box { display: flex; flex-direction: column; gap: 1px; }
+  .assign-row { display: flex; align-items: flex-start; gap: 9px; padding: 6px 6px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13.5px; }
+  .assign-row:hover { background: var(--bg-2); }
+  .assign-row input { margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+  .assign-row span { display: flex; flex-direction: column; }
+  .assign-row em { font-style: normal; color: var(--text-muted); font-size: 11.5px; }
+  .assign-sep { margin: 8px 0 3px; color: var(--text-muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
   .note-meta .alertflag { color: var(--danger); font-weight: 600; }
   .note-meta .eq { color: var(--accent-dim); }
   .note-meta .mirror { color: var(--accent); }
@@ -424,11 +433,18 @@ async function ntEnterApp() {
   ntSetPill('busy');
 
   var crewCfg = await ntGetJson(ONEDRIVE_BASE + '/config/crewconfig.json').catch(function () { return null; });
-  // Every crew record is kept — active and inactive both render, the inactive
-  // ones behind a collapsed header. crew_id is the identity key: 97 of 112
-  // records carry username null, so a username can neither address nor
+  // crewconfig is the fleet's roster, not this vessel's — it carries Alaska
+  // Spirit hands too, and they cannot do work here. Same rule the Assigned
+  // Tasks board and the Crew List apply (taskSameVessel): a blank on either
+  // side passes, so an unrecorded vessel is never hidden by silence.
+  NT.homeVessel = (crewCfg && crewCfg.vessel) || '';
+  // Every remaining record is kept — active and inactive both render, the
+  // inactive ones behind a collapsed header. crew_id is the identity key: 97
+  // of 112 records carry username null, so a username can neither address nor
   // distinguish a crew member.
-  NT.crew = (crewCfg && crewCfg.crew ? crewCfg.crew : []).filter(function (c) { return c && c.crew_id; });
+  NT.crew = (crewCfg && crewCfg.crew ? crewCfg.crew : [])
+    .filter(function (c) { return c && c.crew_id; })
+    .filter(function (c) { return ntSameVessel(c.vessel, NT.homeVessel); });
 
   await ntLoadConfig();
 
@@ -446,6 +462,15 @@ async function ntEnterApp() {
   if (NT.syncTimer) clearInterval(NT.syncTimer);
   NT.syncTimer = setInterval(ntSyncNow, 60000);
   window.addEventListener('focus', ntSyncNow);
+}
+
+// Mirrors taskSameVessel in IDMS-Console/src/renderer/js/tasks.js — a blank on
+// either side passes, so a crew record with no vessel recorded is not silently
+// dropped off the boat.
+function ntSameVessel(memberVessel, homeVessel) {
+  var a = (memberVessel || '').trim().toLowerCase();
+  var b = (homeVessel   || '').trim().toLowerCase();
+  return !a || !b || a === b;
 }
 
 function ntDeptKey(name) {
@@ -687,25 +712,40 @@ function ntIsDeptHead(deptKey) {
 }
 
 // Does note n belong in view v?
+//
+// A crew view holds two things: the notes that person owns, and every note
+// assigned to them wherever it actually lives. The second kind is not a copy —
+// one note, shown on the plate of each person carrying it, so completing it
+// anywhere completes it for everyone (§41.6a).
 function ntInView(n, v) {
+  if (v.kind === 'crew') {
+    if (notesReduce.isAssignedTo(n, v.owner)) return true;
+    if (n.scope.level !== 'crew') return false;
+    if ((n.scope.department || null) !== NT.dept) return false;
+    // owner_crew_id is canonical; owner_username is honoured for any note
+    // written before crew_id keying landed.
+    return (n.scope.owner_crew_id || n.scope.owner_username) === v.owner;
+  }
   if (v.kind === 'general') return n.scope.level === 'general';
   if ((n.scope.department || null) !== NT.dept) return false;
   if (v.kind === 'department') {
     if (n.scope.level !== 'department') return false;
     return (n.folder || null) === (v.folder || null);
   }
-  if (v.kind === 'crew') {
-    if (n.scope.level !== 'crew') return false;
-    // owner_crew_id is canonical; owner_username is honoured for any note
-    // written before crew_id keying landed.
-    return (n.scope.owner_crew_id || n.scope.owner_username) === v.owner;
-  }
   return false;
 }
 
-// Starred first (manual order among them when set), then newest first.
-function ntSortNotes(list) {
+// Pinned first, then starred, then newest. A pin outranks a star and is not a
+// user action: a note is pinned in the list of whoever it is assigned to.
+function ntIsPinned(n, view) {
+  return view.kind === 'crew' && notesReduce.isAssignedTo(n, view.owner);
+}
+
+function ntSortNotes(list, view) {
+  view = view || NT.view;
   return list.sort(function (a, b) {
+    var ap = ntIsPinned(a, view), bp = ntIsPinned(b, view);
+    if (ap !== bp) return ap ? -1 : 1;
     if (!!a.starred !== !!b.starred) return a.starred ? -1 : 1;
     if (a.starred && b.starred) {
       var ai = typeof a.sort_index === 'number' ? a.sort_index : Infinity;
@@ -735,8 +775,8 @@ function ntCounts(view) {
     if (n.deleted || n.merged_into || n.archived || n.completed) continue;
     if (!ntInView(n, view)) continue;
     open++;
-    if (NT.meCrewId && n.assignee === NT.meCrewId) mine++;
-    else if (n.assignee_username && n.assignee_username === NT.user.username) mine++;
+    if (notesReduce.isAssignedTo(n, NT.meCrewId) ||
+        notesReduce.isAssignedTo(n, NT.user.username)) mine++;
   }
   return { open: open, mine: mine };
 }
@@ -929,7 +969,12 @@ function ntNoteRow(n) {
 
   var meta = '<span>' + ntEsc(ntShortName(n.author)) + ' · ' + ntWhen(n.created) + '</span>';
   if (n.group_alert) meta += '<span class="alertflag">⚠ group alert</span>';
-  if (n.assignee) meta += '<span class="assignee">→ ' + ntEsc(ntShortName(n.assignee)) + '</span>';
+  if (n.assignment === 'assignable') meta += '<span class="assignable">◇ assignable</span>';
+  if (n.assignees.length) {
+    meta += '<span class="assignee">→ ' + ntEsc(n.assignees.map(function (a) {
+      return ntShortName(a.crew_id);
+    }).join(', ')) + '</span>';
+  }
   if (n.equipment_code) meta += '<span class="eq">' + ntEsc(n.equipment_code) + '</span>';
   if (n.task_id) meta += '<span class="mirror">task ' + ntEsc(n.task_id) + '</span>';
   if (n.archived) meta += '<span>archived</span>';
@@ -942,7 +987,9 @@ function ntNoteRow(n) {
     ' ondrop="ntNoteDrop(event,this)"' +
     ' onclick="ntOpenNote(\'' + ntAttr(n.note_id) + '\')">' +
     '<div class="tick' + (n.completed ? ' on' : '') + '" onclick="event.stopPropagation();ntToggleComplete(\'' + ntAttr(n.note_id) + '\')">✓</div>' +
-    '<div class="note-body-col"><div class="note-title">' + ntEsc(n.title) + '</div>' +
+    '<div class="note-body-col"><div class="note-title">' +
+      (ntIsPinned(n, NT.view) ? '<span class="pin" title="Assigned here">📌 </span>' : '') +
+      ntEsc(n.title) + '</div>' +
     '<div class="note-meta">' + meta + '</div></div>' +
     '<div class="glyphs">' + glyphs +
       '<button class="star-btn' + (n.starred ? ' on' : '') + '" title="' + (n.starred ? 'Unstar' : 'Star') +
@@ -1031,10 +1078,26 @@ async function ntTreeDrop(ev, el) {
   try { view = JSON.parse(el.dataset.view); } catch (e) { return; }
   if (ntInView(n, { kind: view.kind, owner: view.owner || null, folder: view.folder || null })) return;
 
+  // Dropping on a person assigns rather than moves. Re-filing a note into
+  // somebody's personal list would take it away from where the work lives;
+  // putting it on their plate is what the gesture means, and the note stays
+  // where it is (§41.6a).
+  if (view.kind === 'crew') {
+    var c = ntCrewById(view.owner);
+    try {
+      await ntAppendEvent('note_assigned', {
+        note_id: n.note_id,
+        assignee_crew_id: view.owner,
+        assignee_username: (c && c.username) || null
+      });
+      ntToast('Assigned to ' + ntShortName(view.owner));
+    } catch (e) { ntToast('Could not assign — ' + e.message); }
+    return;
+  }
+
   var scope;
-  if (view.kind === 'general')         scope = { level: 'general' };
-  else if (view.kind === 'department') scope = { level: 'department', department: NT.dept };
-  else                                 scope = { level: 'crew', department: NT.dept, owner_crew_id: view.owner };
+  if (view.kind === 'general') scope = { level: 'general' };
+  else                         scope = { level: 'department', department: NT.dept };
 
   try {
     await ntAppendEvent('note_edited', {
@@ -1042,7 +1105,7 @@ async function ntTreeDrop(ev, el) {
       patch:  { scope: scope, folder: view.folder || null },
       before: { scope: n.scope, folder: n.folder || null }
     });
-    ntToast('Moved to ' + (view.folder || (view.kind === 'crew' ? ntShortName(view.owner) : view.kind === 'general' ? 'General' : ntDeptLabel(NT.dept))));
+    ntToast('Moved to ' + (view.folder || (view.kind === 'general' ? 'General' : ntDeptLabel(NT.dept))));
   } catch (e) { ntToast('Could not move — ' + e.message); }
 }
 
@@ -1113,7 +1176,12 @@ function ntRenderDetail() {
   var exp = notesReduce.hasAttachments(n) ? notesReduce.attachmentExpiry(n) : null;
   h += '<div class="detail-sec kv">' +
     '<b>' + ntEsc(ntShortName(n.author)) + '</b> · ' + ntWhen(n.created) +
-    (n.assignee ? '<br>Assigned to <b>' + ntEsc(ntFullName(ntCrewById(n.assignee)) || ntShortName(n.assignee)) + '</b> by ' + ntEsc(ntShortName(n.assigned_by || '')) : '') +
+    (n.assignees.length
+      ? '<br>Assigned to <b>' + ntEsc(n.assignees.map(function (a) {
+          return ntFullName(ntCrewById(a.crew_id)) || ntShortName(a.crew_id);
+        }).join(', ')) + '</b> by ' + ntEsc(ntShortName(n.assigned_by || '')) +
+        (n.assignees.length > 1 ? ' <span class="warn">· one note, shared — completing it completes it for everyone</span>' : '')
+      : n.assignment === 'assignable' ? '<br><b>Assignable</b> — open to anyone' : '') +
     (n.equipment_code ? '<br>Equipment <b>' + ntEsc(n.equipment_code) + '</b>' : '') +
     (n.task_id ? '<br>Promoted → task <b>' + ntEsc(n.task_id) + '</b> (mirror — status arrives in the task-integration slice)' : '') +
     (n.completed && lastDone ? '<br>Completed by <b>' + ntEsc(ntShortName(lastDone.actor)) + '</b> ' + ntWhen(lastDone.timestamp) : '') +
@@ -1168,20 +1236,36 @@ function ntRenderDetail() {
     '<button class="btn" onclick="ntAddComment()">Add</button>' +
     '</div></div></div>';
 
-  // Assignment is constrained to active crew in this note's department, and
-  // the placeholder stays "Assign to…" — most notes never need an assignee.
+  // Assignment, three states in one control (§41.6a). Unassigned is the
+  // default and the top row; Assignable offers the note without naming
+  // anyone; ticking people is the third state, and several may be ticked —
+  // one note carried by several, never a copy each.
   var noteDept = n.scope.department || NT.dept;
   var pool = NT.crew.filter(function (c) {
-    return ntDeptKey(c.department) === noteDept && (c.status === 'active' || c.crew_id === n.assignee);
+    return ntDeptKey(c.department) === noteDept &&
+           (c.status === 'active' || notesReduce.isAssignedTo(n, c.crew_id));
   }).sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
 
+  h += '<div class="detail-sec"><h4>Assignment</h4><div class="assign-box">';
+  h += '<label class="assign-row"><input type="radio" name="assign-mode" value="unassigned"' +
+       (n.assignment === 'unassigned' ? ' checked' : '') +
+       ' onchange="ntSetAssignMode(\'' + ntAttr(n.note_id) + '\',\'unassigned\')">' +
+       '<span><b>Unassigned note</b><em>Nobody\'s — it just sits here</em></span></label>';
+  h += '<label class="assign-row"><input type="radio" name="assign-mode" value="assignable"' +
+       (n.assignment === 'assignable' ? ' checked' : '') +
+       ' onchange="ntSetAssignMode(\'' + ntAttr(n.note_id) + '\',\'assignable\')">' +
+       '<span><b>Assignable</b><em>Open to anyone — shows in the Notes Tray</em></span></label>';
+  h += '<div class="assign-sep">Assign to</div>';
+  h += pool.map(function (c) {
+    var on = notesReduce.isAssignedTo(n, c.crew_id);
+    return '<label class="assign-row"><input type="checkbox"' + (on ? ' checked' : '') +
+           ' onchange="ntToggleAssignee(\'' + ntAttr(n.note_id) + '\',\'' + ntAttr(c.crew_id) + '\',this.checked)">' +
+           '<span>' + ntEsc(ntFullName(c)) + (c.status !== 'active' ? ' <em>(inactive)</em>' : '') +
+           (c.role_label ? ' <em>' + ntEsc(c.role_label) + '</em>' : '') + '</span></label>';
+  }).join('') || '<div class="kv" style="padding:4px 2px">Nobody active in this department.</div>';
+  h += '</div></div>';
+
   h += '<div class="detail-actions">';
-  h += '<select class="field" id="assign-sel" onchange="ntAssign(\'' + ntAttr(n.note_id) + '\')" style="margin-bottom:0">' +
-       '<option value=""' + (n.assignee ? '' : ' selected') + '>Assign to…</option>' +
-       pool.map(function (c) {
-         return '<option value="' + ntAttr(c.crew_id) + '"' + (c.crew_id === n.assignee ? ' selected' : '') + '>' +
-                ntEsc(ntFullName(c)) + (c.status !== 'active' ? ' (inactive)' : '') + '</option>';
-       }).join('') + '</select>';
   h += '<button class="btn ghost" onclick="ntAddNoteFiles(\'' + ntAttr(n.note_id) + '\')">＋ Add photo or document</button>';
   h += '<button class="btn ghost" disabled title="Arrives with the task-integration slice">Promote to Task</button>';
   h += n.archived
@@ -1288,11 +1372,20 @@ async function ntToggleStep(noteId, stepId) {
   } catch (e) { ntToast('Could not save — ' + e.message); }
 }
 
-async function ntAssign(id) {
-  var crewId = document.getElementById('assign-sel').value;
+async function ntSetAssignMode(id, mode) {
+  var n = NT.notes[id];
   try {
-    if (crewId) {
-      var c = ntCrewById(crewId);
+    // Naming people outranks both person-less states, so switching to one
+    // clears the plate first — otherwise the radio would appear to do nothing.
+    if (n && n.assignees.length) await ntAppendEvent('note_unassigned', { note_id: id });
+    await ntAppendEvent('note_assignment_set', { note_id: id, mode: mode });
+  } catch (e) { ntToast('Could not save — ' + e.message); }
+}
+
+async function ntToggleAssignee(id, crewId, on) {
+  var c = ntCrewById(crewId);
+  try {
+    if (on) {
       await ntAppendEvent('note_assigned', {
         note_id: id,
         assignee_crew_id: crewId,
@@ -1301,7 +1394,7 @@ async function ntAssign(id) {
         assignee_username: (c && c.username) || null
       });
     } else {
-      await ntAppendEvent('note_unassigned', { note_id: id });
+      await ntAppendEvent('note_unassigned', { note_id: id, assignee_crew_id: crewId });
     }
   } catch (e) { ntToast('Could not save — ' + e.message); }
 }

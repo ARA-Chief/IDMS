@@ -22,6 +22,20 @@
 
   var CREATE_TYPES = { note_created: 1, task_imported: 1 };
 
+  // Keep the single-assignee mirrors in step with the list. Readers that
+  // predate multi-assignment — the PWA alert check, the Console's derived
+  // `assignee` column — keep working off the first entry, and
+  // `assignee_usernames` is the membership test for everything new.
+  function syncAssignment(n) {
+    n.assignee = n.assignees.length ? n.assignees[0].crew_id : null;
+    n.assignee_username = n.assignees.length ? (n.assignees[0].username || null) : null;
+    n.assignee_usernames = n.assignees
+      .map(function (a) { return a.username; })
+      .filter(Boolean);
+    if (n.assignees.length) n.assignment = 'assigned';
+    else if (n.assignment === 'assigned') n.assignment = 'assignable';  // last person removed
+  }
+
   function reduce(events) {
     var ordered = events.slice().sort(function (a, b) {
       var ka = sortKey(a), kb = sortKey(b);
@@ -55,8 +69,18 @@
             group_alert: !!p.group_alert,
             attachments: (p.attachments || []).slice(),
             author: ev.actor, created: ev.timestamp, updated: ev.timestamp,
-            completed: false, completions: [], assignee: null,
-            assignee_username: null, assigned_by: null,
+            completed: false, completions: [],
+            // Assignment is three-state, and the person list is the third
+            // state rather than a separate field (§41.6a):
+            //   'unassigned' — nobody's, and not offered to anyone (default)
+            //   'assignable' — open to whoever picks it up (Notes Tray)
+            //   'assigned'   — one or more named people
+            assignment: 'unassigned',
+            assignees: [],            // [{crew_id, username}] — order is assignment order
+            assignee: null,           // = assignees[0].crew_id, for single-assignee readers
+            assignee_username: null,  // = assignees[0].username
+            assignee_usernames: [],   // every assignee that is also an IDMS login
+            assigned_by: null,
             comments: [], archived: false, deleted: false,
             task_id: null, merged_into: null,
             starred: false, sort_index: null,
@@ -102,18 +126,40 @@
           break;
         // crew_id is the identity key: most of the roster carries username
         // null, so a username can neither address nor distinguish a crew
-        // member. assignee_username rides along when the assignee is also an
-        // IDMS login, which is what the PWA's alert check matches on.
+        // member. username rides along when the assignee is also an IDMS
+        // login, which is what the PWA's alert check matches on.
+        //
+        // note_assigned ADDS a person — a note may be carried by several, and
+        // the same event shape covers one or many.
         case 'note_assigned':
           if (n) {
-            n.assignee = p.assignee_crew_id || p.assignee_username || null;
-            n.assignee_username = p.assignee_username || null;
+            var addId = p.assignee_crew_id || p.assignee_username || null;
+            if (addId && !n.assignees.some(function (a) { return a.crew_id === addId; })) {
+              n.assignees.push({ crew_id: addId, username: p.assignee_username || null });
+            }
             n.assigned_by = ev.actor;
             n.updated = ev.timestamp;
+            syncAssignment(n);
           }
           break;
+        // With a crew_id, drops that one person; without, clears everyone.
         case 'note_unassigned':
-          if (n) { n.assignee = null; n.assignee_username = null; n.updated = ev.timestamp; }
+          if (n) {
+            var dropId = p.assignee_crew_id || p.assignee_username || null;
+            n.assignees = dropId
+              ? n.assignees.filter(function (a) { return a.crew_id !== dropId; })
+              : [];
+            n.updated = ev.timestamp;
+            syncAssignment(n);
+          }
+          break;
+        // The two person-less states. Naming a person always wins, so this is
+        // ignored while anyone is assigned — clear them first.
+        case 'note_assignment_set':
+          if (n && !n.assignees.length) {
+            n.assignment = p.mode === 'assignable' ? 'assignable' : 'unassigned';
+            n.updated = ev.timestamp;
+          }
           break;
         case 'comment_added':
           if (n) {
@@ -131,8 +177,9 @@
             equipment_code: null, steps: [],
             template_id: null, origin: 'task_import', group_alert: false,
             attachments: [], author: ev.actor, created: ev.timestamp, updated: ev.timestamp,
-            completed: false, completions: [], assignee: null,
-            assignee_username: null, assigned_by: null,
+            completed: false, completions: [],
+            assignment: 'unassigned', assignees: [], assignee: null,
+            assignee_username: null, assignee_usernames: [], assigned_by: null,
             comments: [], archived: false, deleted: false,
             task_id: p.task_id, merged_into: null,
             starred: false, sort_index: null,
@@ -184,6 +231,15 @@
     return best;
   }
 
+  // Is this note on that person's plate? crew_id is the key; a username is
+  // accepted so a caller that only knows a login can still ask.
+  function isAssignedTo(note, crewIdOrUsername) {
+    if (!note || !crewIdOrUsername) return false;
+    return (note.assignees || []).some(function (a) {
+      return a.crew_id === crewIdOrUsername || a.username === crewIdOrUsername;
+    });
+  }
+
   function hasAttachments(note) {
     if (!note) return false;
     if ((note.attachments || []).length) return true;
@@ -193,6 +249,7 @@
   var api = {
     reduce: reduce,
     stepStruck: stepStruck,
+    isAssignedTo: isAssignedTo,
     attachmentExpiry: attachmentExpiry,
     hasAttachments: hasAttachments,
     RETENTION_DAYS: RETENTION_DAYS
