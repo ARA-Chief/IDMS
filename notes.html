@@ -20,6 +20,7 @@
     --danger: #ff4d4d;
     --warning: #ffaa00;
     --success: #00ff99;
+    --star: #ffc733;
     --text-primary: #e8f0fe;
     --text-secondary: #7a90b0;
     --text-muted: #4a5c78;
@@ -52,7 +53,7 @@
 
   /* ── App shell ────────────────────────────────────────── */
   #screen-app { flex-direction: row; }
-  .sidebar { width: 250px; flex-shrink: 0; background: var(--bg-1); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .sidebar { width: 260px; flex-shrink: 0; background: var(--bg-1); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
   .brand { padding: 16px 16px 10px; display: flex; align-items: baseline; gap: 8px; }
   .brand b { font-size: 17px; letter-spacing: .3px; }
   .brand span { color: var(--text-muted); font-size: 11px; }
@@ -66,18 +67,39 @@
   .dept-tab.active { background: var(--accent-glow); border-color: var(--border-accent); color: var(--accent); }
 
   .tree { flex: 1; padding: 4px 8px 16px; }
-  .tree-head { padding: 10px 8px 4px; color: var(--text-muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+  .tree-head { padding: 12px 8px 4px; color: var(--text-muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+  .dept-tabs { padding: 2px 2px 8px; }
+  .tree-item.folder .grip { color: var(--text-muted); font-size: 9px; letter-spacing: -1.5px; cursor: grab; opacity: 0; }
+  .tree-item.folder:hover .grip { opacity: 1; }
+  .tree-item.folder .folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tree-item.folder.dragging { opacity: .4; }
+  .tree-item.folder.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  .tree-item.folder.group { font-weight: 600; color: var(--text-primary); }
+  .tree-item.folder.nested { padding-left: 26px; font-size: 13.5px; }
+  .band-adds { display: flex; gap: 4px; }
+  .tree-item.add-folder { color: var(--text-muted); font-size: 12.5px; flex: 1; }
+  .tree-item.add-folder:hover { color: var(--accent); }
   .tree-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary); font-size: 14px; }
   .tree-item:hover { background: var(--bg-2); }
   .tree-item.active { background: var(--bg-3); color: var(--text-primary); }
+  .tree-item.drop-target { background: var(--accent-glow); box-shadow: inset 0 0 0 1px var(--border-accent); color: var(--text-primary); }
   .tree-item .count { margin-left: auto; color: var(--text-muted); font-size: 12px; }
   .tree-item .count.alert { color: var(--warning); font-weight: 600; }
-  .tree-item.sub { padding-left: 26px; font-size: 13.5px; }
+  .tree-item .sec-edit { color: var(--text-muted); font-size: 12px; padding: 0 2px; opacity: 0; }
+  .tree-item:hover .sec-edit { opacity: 1; }
+  .tree-item .sec-edit:hover { color: var(--accent); }
   .me-chip { font-size: 10px; color: var(--accent); border: 1px solid var(--border-accent); border-radius: 4px; padding: 0 4px; }
+  .inactive-head { padding: 10px 10px 4px; color: var(--text-muted); font-size: 12px; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+  .inactive-head:hover { color: var(--text-secondary); }
 
   .sidebar-foot { padding: 12px 16px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
-  .sidebar-foot .who { color: var(--text-secondary); }
-  .sidebar-foot button { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; }
+  .sidebar-foot button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; font-family: var(--font); text-align: left; padding: 0; }
+  .sidebar-foot #btn-archived { margin-left: auto; flex: none; }
+  .who-btn { flex: 1; min-width: 0; line-height: 1.35; }
+  .who-btn b { color: var(--text-secondary); font-weight: 500; }
+  .who-btn.is-shared b { color: var(--accent); }
+  .who-btn .swap { display: block; color: var(--text-muted); font-size: 11px; }
+  .who-btn:hover .swap { color: var(--accent); }
 
   /* ── Main pane ────────────────────────────────────────── */
   .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -87,16 +109,34 @@
   .main-head .spacer { flex: 1; }
   .icon-btn { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); padding: 6px 10px; font-size: 12.5px; cursor: pointer; }
 
+  #reauth-bar { display: none; align-items: center; gap: 12px; padding: 10px 20px;
+    background: rgba(255,170,0,.10); border-bottom: 1px solid rgba(255,170,0,.35); }
+  #reauth-bar .ra-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); flex: none; }
+  #reauth-bar .ra-text { flex: 1; font-size: 12.5px; color: var(--text-secondary); line-height: 1.45; }
+  #reauth-bar .ra-text b { color: var(--text-primary); }
+  #reauth-bar .btn { width: auto; padding: 7px 14px; font-size: 13px; flex: none; }
+
   .list-wrap { flex: 1; overflow-y: auto; padding: 12px 20px 40px; }
 
-  .quick-add { display: flex; gap: 8px; margin-bottom: 14px; }
-  .quick-add input { flex: 1; }
-  .quick-add .field { margin-bottom: 0; }
+  .quick-add { display: flex; gap: 8px; margin-bottom: 6px; align-items: stretch; }
+  .qa-bar { flex: 1; display: flex; align-items: center; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); padding-right: 4px; }
+  .qa-bar.drag-over { border-color: var(--accent); background: var(--accent-glow); }
+  .qa-bar input { flex: 1; background: none; border: none; color: var(--text-primary); font-size: 15px; font-family: var(--font); padding: 11px 12px; }
+  .qa-bar input:focus { outline: none; }
+  .qa-attach { background: none; border: none; color: var(--text-secondary); font-size: 20px; line-height: 1; cursor: pointer; padding: 4px 9px; border-radius: var(--radius-sm); }
+  .qa-attach:hover { color: var(--accent); background: var(--bg-2); }
   .quick-add .btn { width: auto; padding: 10px 18px; }
+  .staged { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .staged:empty { margin-bottom: 0; }
+  .chip { display: flex; align-items: center; gap: 6px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 6px 3px 10px; font-size: 12px; color: var(--text-secondary); }
+  .chip button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 0 3px; }
+  .chip button:hover { color: var(--danger); }
 
   .note-row { display: flex; align-items: flex-start; gap: 11px; padding: 11px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 8px; cursor: pointer; }
   .note-row:hover { border-color: var(--border-accent); }
   .note-row.done .note-title { text-decoration: line-through; color: var(--text-muted); }
+  .note-row.dragging { opacity: .4; }
+  .note-row.drop-before { box-shadow: 0 -2px 0 var(--accent); }
   .tick { width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; border: 2px solid var(--text-muted); border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; color: transparent; }
   .tick:hover { border-color: var(--accent); }
   .tick.on { border-color: var(--success); color: var(--success); }
@@ -104,10 +144,23 @@
   .note-title { font-size: 14.5px; line-height: 1.35; word-break: break-word; }
   .note-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 3px; color: var(--text-muted); font-size: 11.5px; }
   .note-meta .assignee { color: var(--warning); }
+  .note-meta .assignable { color: var(--accent-dim); }
+  .pin { color: var(--accent); font-size: 12px; }
+  .assign-box { display: flex; flex-direction: column; gap: 1px; }
+  .assign-row { display: flex; align-items: flex-start; gap: 9px; padding: 6px 6px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13.5px; }
+  .assign-row:hover { background: var(--bg-2); }
+  .assign-row input { margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+  .assign-row span { display: flex; flex-direction: column; }
+  .assign-row em { font-style: normal; color: var(--text-muted); font-size: 11.5px; }
+  .assign-sep { margin: 8px 0 3px; color: var(--text-muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
   .note-meta .alertflag { color: var(--danger); font-weight: 600; }
   .note-meta .eq { color: var(--accent-dim); }
   .note-meta .mirror { color: var(--accent); }
+  .note-meta .expiry { color: var(--warning); }
   .glyphs { display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+  .star-btn { background: none; border: none; cursor: pointer; font-size: 15px; line-height: 1; color: var(--text-muted); padding: 0 2px; }
+  .star-btn.on { color: var(--star); }
+  .star-btn:hover { color: var(--star); }
 
   .group-head { display: flex; align-items: center; gap: 8px; margin: 18px 2px 8px; color: var(--text-secondary); font-size: 13px; cursor: pointer; user-select: none; }
   .group-head .n { color: var(--text-muted); }
@@ -127,6 +180,7 @@
   .detail-sec .body-text { font-size: 14px; line-height: 1.5; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; }
   .kv { font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; }
   .kv b { color: var(--text-primary); font-weight: 500; }
+  .kv .warn { color: var(--warning); }
 
   .step-row { display: flex; gap: 9px; align-items: flex-start; padding: 6px 0; font-size: 14px; }
   .step-row .tick { width: 17px; height: 17px; font-size: 10px; }
@@ -135,6 +189,9 @@
 
   .thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
   .thumbs img { width: 74px; height: 56px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border); cursor: pointer; background: var(--bg-2); }
+  .file-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 5px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; }
+  .file-row:hover { border-color: var(--border-accent); color: var(--text-primary); }
+  .file-row .fsize { margin-left: auto; color: var(--text-muted); font-size: 11px; }
 
   .comment { padding: 8px 0; border-top: 1px solid var(--border); }
   .comment:first-child { border-top: none; }
@@ -157,11 +214,23 @@
   #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--border-accent); color: var(--text-primary); padding: 9px 16px; border-radius: var(--radius-md); font-size: 13px; display: none; z-index: 70; max-width: 90vw; }
 
   /* ── Responsive ───────────────────────────────────────── */
+  /* Built to be narrowed into a side panel and left open all day, so the
+     sidebar hides on demand at any width and folds away on its own once the
+     window is too narrow to carry two columns. */
+  .side-toggle { display: none; }
+  .sidebar.hidden { display: none; }
   @media (max-width: 900px) { .detail { position: fixed; right: 0; top: 0; bottom: 0; z-index: 40; box-shadow: -20px 0 40px rgba(0,0,0,.5); width: min(380px, 94vw); } }
-  @media (max-width: 700px) {
-    #screen-app { flex-direction: column; }
-    .sidebar { width: 100%; max-height: 42vh; border-right: none; border-bottom: 1px solid var(--border); }
-    .sidebar.collapsed .tree, .sidebar.collapsed .tree-head { display: none; }
+  @media (max-width: 780px) {
+    .side-toggle { display: block; }
+    .sidebar { position: absolute; left: 0; top: 0; bottom: 0; z-index: 30; width: min(260px, 84vw); box-shadow: 20px 0 40px rgba(0,0,0,.45); }
+    .sidebar:not(.open) { display: none; }
+    #screen-app { position: relative; }
+    .list-wrap { padding: 12px 14px 40px; }
+    .main-head { padding: 12px 14px 9px; }
+  }
+  @media (max-width: 480px) {
+    .main-head h2 { font-size: 15px; }
+    .main-head .loc { display: none; }
   }
 </style>
 </head>
@@ -194,27 +263,38 @@
 <div class="screen" id="screen-app">
   <div class="sidebar" id="sidebar">
     <div class="brand"><b>Notes</b><span>IDMS</span><div class="sync-pill" id="sync-pill" title="Sync status"></div></div>
-    <div class="dept-tabs" id="dept-tabs"></div>
     <div class="tree" id="tree"></div>
     <div class="sidebar-foot">
-      <span class="who" id="foot-who"></span>
+      <button class="who-btn" id="foot-who" onclick="ntToggleShared()"
+              title="Switch between signing notes with your own name and leaving this window open for anyone"></button>
       <button onclick="ntToggleArchived()" id="btn-archived">Show archived</button>
     </div>
   </div>
 
   <div class="main">
     <div class="main-head">
+      <button class="icon-btn side-toggle" onclick="ntToggleSidebar()" title="Show or hide the list of places">☰</button>
       <h2 id="loc-title"></h2>
       <span class="loc" id="loc-sub"></span>
       <span class="spacer"></span>
       <button class="icon-btn" onclick="ntSyncNow()" title="Refresh from OneDrive">↻ Sync</button>
     </div>
+    <div id="reauth-bar">
+      <span class="ra-dot"></span>
+      <span class="ra-text"><b>Microsoft sign-in has expired.</b>
+        Notes already synced are still readable, but nothing new arrives and nothing can be saved until you sign in again.</span>
+      <button class="btn" id="reauth-btn" onclick="ntReconnect()">Sign in again</button>
+    </div>
     <div class="list-wrap">
       <div class="quick-add">
-        <input class="field" id="qa-title" placeholder="Add a note — single-line title" maxlength="200"
-               onkeydown="if(event.key==='Enter')ntQuickAdd()">
+        <div class="qa-bar" id="qa-bar">
+          <input id="qa-title" placeholder="Add a note — single-line title" maxlength="200"
+                 onkeydown="if(event.key==='Enter')ntQuickAdd()">
+          <button class="qa-attach" onclick="ntPickNewFiles()" title="Attach a photo or document">+</button>
+        </div>
         <button class="btn" onclick="ntQuickAdd()">Add</button>
       </div>
+      <div class="staged" id="qa-staged"></div>
       <div id="note-list"></div>
     </div>
   </div>
@@ -225,19 +305,37 @@
 <div id="lightbox" onclick="this.classList.remove('open')"><img id="lightbox-img" alt=""></div>
 <div id="toast"></div>
 <input type="file" id="photo-input" accept="image/*" style="display:none">
+<input type="file" id="file-input" multiple style="display:none">
 
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="utils/crew-display.js"></script>
 <script src="utils/notes-reduce.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════
-// IDMS Notes — standalone page, schema §41 (Notes Hub), slice 1.
+// IDMS Notes — standalone page, schema §41 (Notes Hub).
 // Same origin, MSAL registration, and Graph conventions as index.html.
 // Storage contract: append-only events under
 //   Documents/IDMS/data/notes/events/{YYYY}/{iso-compact}-{event_id}.json
 // This page never mutates a shared file; every action is a new event.
+// The one exception is config/notesconfig.json (custom sections), which is a
+// config document and takes the ETag-guarded read-mutate-write instead.
 // ════════════════════════════════════════════════════════════
 
 var ONEDRIVE_BASE = 'Documents/IDMS';
+
+// ── The shared window (§41.4d) ──────────────────────────────
+// A window left open on a bulkhead is an invitation: anyone walking past may
+// add a note, and whoever happened to sign in hours ago is the wrong name to
+// put on it. In shared mode every event this window writes is authored by a
+// standing identity that says exactly what it knows — that a note arrived from
+// this window, and not who typed it. Signing a note with the wrong person is
+// worse than not signing it.
+//
+// The Microsoft sign-in still stands behind it, because OneDrive needs a token;
+// what changes is the authorship recorded in the note, not the plumbing.
+var NT_SHARED_ACTOR = 'browser';
+var NT_SHARED_LABEL = 'Browser addition';
+var NT_SHARED_KEY   = 'nt_shared_window';
 
 var MSAL_CONFIG = {
   auth: {
@@ -249,43 +347,113 @@ var MSAL_CONFIG = {
 };
 var MSAL_SCOPES = ['User.Read', 'Files.ReadWrite', 'offline_access'];
 
-// Department display-name ↔ path-key mapping (schema §1).
+// Department display-name ↔ path-key mapping (schema §1). Departments beyond
+// the three that own equipment (Wheelhouse, Galley) fall through to the
+// slugifier in ntDeptKey, which is enough for notes.
 var DEPT_KEYS = { 'Factory': 'factory', 'Engine Room': 'engine', 'Deck': 'deck' };
 
 var NT = {
   msal: null, account: null,
   user: null,              // { username, name, role, permission_tier }
-  crew: [],                // active crew, from crewconfig.json
-  notesConfig: { department_heads: {}, department_folders: {}, templates: [] },
-  events: [],              // raw events, ascending
-  loadedNames: {},         // event filename → true (fetch dedupe)
-  notes: {},               // note_id → derived state
-  dept: null,              // active department key
-  view: { kind: 'crew', owner: null, folder: null },  // or kind:'department'
+  meCrewId: null,          // this user's crew_id, when they appear in the roster
+  crew: [],                // every crew record (active and inactive)
+  roleRank: new Map(),     // role_id → seniority index, from trainingmatrix.json
+  notesConfig: { schema_version: 1, department_heads: {}, department_folders: {}, templates: [] },
+  configEtag: null,
+  reauth: false,           // Microsoft sign-in expired; reads work, writes do not
+  shared: false,           // this window writes as "Browser addition" (§41.4d)
+  events: [], loadedNames: {}, notes: {},
+  dept: null,
+  // view.kind: 'general' | 'department' | 'crew'
+  view: { kind: 'department', owner: null, folder: null },
   openNote: null,
-  showArchived: false,
-  showCompleted: false,
+  showArchived: false, showCompleted: false, showInactive: false,
   stagedPhoto: null,       // File staged on the comment box
-  syncTimer: null,
-  syncState: 'idle'
+  stagedNew: [],           // Files staged on the add bar
+  dragNoteId: null,
+  dragFolder: null,
+  syncTimer: null
 };
 
 // ── Auth ────────────────────────────────────────────────────
 
 function ntSetPill(state) {
-  NT.syncState = state;
   var p = document.getElementById('sync-pill');
-  p.className = 'sync-pill ' + (state === 'ok' ? 'ok' : state === 'busy' ? 'warn' : state === 'err' ? 'err' : '');
-  p.title = state === 'ok' ? 'Synced' : state === 'busy' ? 'Syncing…' : state === 'err' ? 'Last sync failed — will retry' : 'Idle';
+  p.className = 'sync-pill ' + (state === 'ok' ? 'ok' : state === 'busy' ? 'warn' : (state === 'err' || state === 'auth') ? 'err' : '');
+  p.title = state === 'ok'   ? 'Synced'
+          : state === 'busy' ? 'Syncing…'
+          : state === 'auth' ? 'Microsoft sign-in has expired — sign in again to resume'
+          : state === 'err'  ? 'Last sync failed — will retry'
+          : 'Idle';
+}
+
+// One sentence for the two failures worth telling apart: a dead sign-in, which
+// a person has to fix, and everything else, which retrying may.
+function ntWhyFailed(e) {
+  if (e && e.ntReauth) return 'Microsoft sign-in has expired — sign in again, then try once more. Nothing was lost.';
+  return e && e.message ? e.message : String(e);
+}
+
+// Azure hands a single-page app a refresh token that lives about a day, so a
+// window left open overnight WILL eventually need a person again. MSAL tries a
+// hidden-iframe renewal first, which also fails wherever third-party cookies
+// are blocked. When that runs out the failure is interaction_required, and the
+// honest response is to say so and offer the sign-in — not to retry forever
+// behind a red dot.
+function ntNeedsInteraction(e) {
+  if (!e) return false;
+  var code = e.errorCode || '';
+  return e.name === 'InteractionRequiredAuthError' ||
+         code === 'interaction_required' || code === 'login_required' ||
+         code === 'consent_required'     || code === 'no_account_error' ||
+         code === 'monitor_window_timeout';
 }
 
 async function ntToken(forceRefresh) {
   // Always ask MSAL rather than caching a token ourselves — the PWA's
   // 401-after-background bug (fixed in 9c52913) came from doing otherwise.
-  var res = await NT.msal.acquireTokenSilent({
-    scopes: MSAL_SCOPES, account: NT.account, forceRefresh: !!forceRefresh
-  });
-  return res.accessToken;
+  try {
+    var res = await NT.msal.acquireTokenSilent({
+      scopes: MSAL_SCOPES, account: NT.account, forceRefresh: !!forceRefresh
+    });
+    ntSetReauth(false);
+    return res.accessToken;
+  } catch (e) {
+    if (ntNeedsInteraction(e)) {
+      ntSetReauth(true);
+      var err = new Error('Microsoft sign-in has expired');
+      err.ntReauth = true;
+      throw err;
+    }
+    throw e;
+  }
+}
+
+// Deliberately not a modal: everything already synced stays readable from the
+// local cache, so the banner sits above the list rather than over it, and only
+// syncing and saving are actually blocked.
+function ntSetReauth(on) {
+  if (NT.reauth === on) return;
+  NT.reauth = on;
+  var bar = document.getElementById('reauth-bar');
+  if (bar) bar.style.display = on ? 'flex' : 'none';
+  if (on) ntSetPill('auth');
+}
+
+async function ntReconnect() {
+  var btn = document.getElementById('reauth-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening sign-in…'; }
+  try {
+    var res = await NT.msal.acquireTokenPopup({ scopes: MSAL_SCOPES, account: NT.account });
+    if (res && res.account) NT.account = res.account;
+    ntSetReauth(false);
+    await ntSyncNow();
+    ntToast('Signed back in — up to date.');
+  } catch (e) {
+    ntToast('Could not sign in — ' + (e && e.message ? e.message : e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign in again'; }
+  }
 }
 
 async function ntFetch(url, opts) {
@@ -318,7 +486,6 @@ function ntInit() {
     NT.msal.handleRedirectPromise().then(function () {
       var accounts = NT.msal.getAllAccounts();
       if (accounts.length > 0) { NT.account = accounts[0]; ntAfterMsAuth(); }
-      // else: stay on the sign-in screen
     }).catch(function (e) { ntAuthError(e); });
   } catch (e) { ntAuthError(e); }
 }
@@ -339,12 +506,9 @@ async function ntAfterMsAuth() {
     await ntToken(false);   // proves Graph access before proceeding
   } catch (e) { ntAuthError(e); return; }
 
-  // Identity: reuse the PWA's session when this browser has one.
-  var saved = null;
-  try { saved = JSON.parse(localStorage.getItem('fw_user') || localStorage.getItem('nt_user') || 'null'); } catch (e) {}
-  if (saved && saved.username) { NT.user = saved; ntEnterApp(); return; }
+  var saved = ntSavedIdmsUser();
+  if (saved) { NT.user = saved; ntEnterApp(); return; }
 
-  // No PWA session — offer the same userconfig-backed login the PWA runs.
   var cfg = await ntGetJson(ONEDRIVE_BASE + '/config/userconfig.json');
   if (!cfg || !cfg.users) { ntAuthError(new Error('userconfig.json unavailable')); return; }
   NT._users = cfg.users.filter(function (u) { return u.status !== 'retired'; });
@@ -353,6 +517,30 @@ async function ntAfterMsAuth() {
     return '<option value="' + i + '">' + ntEsc(u.name || u.username) + '</option>';
   }).join('');
   ntShow('screen-login');
+}
+
+// Whoever is already signed in to IDMS in this browser. Three places hold it,
+// and only one is always written:
+//
+//   fw_session  the live PWA session, written on entering a department —
+//               present whether or not "remember me" was ticked, which is why
+//               it is asked first. Reading only fw_user made the notes page
+//               demand a second sign-in from anyone who had not ticked it.
+//   fw_user     the remembered login, kept across visits when it was ticked.
+//   nt_user     this page's own, for a browser that has never run the PWA.
+function ntSavedIdmsUser() {
+  try {
+    var s = JSON.parse(localStorage.getItem('fw_session') || 'null');
+    if (s && s.user && s.user.username) return s.user;
+  } catch (e) {}
+  var keys = ['fw_user', 'nt_user'];
+  for (var i = 0; i < keys.length; i++) {
+    try {
+      var u = JSON.parse(localStorage.getItem(keys[i]) || 'null');
+      if (u && u.username) return u;
+    } catch (e) {}
+  }
+  return null;
 }
 
 function ntIdmsLogin() {
@@ -369,44 +557,72 @@ function ntIdmsLogin() {
 
 // ── Boot ────────────────────────────────────────────────────
 
-// Rollout gate — chief-only until the live end-to-end pass is proven; the
-// PWA's tile and alerts carry the same gate (ntaHasNotesAccess in
-// index.html). Not a permission model: remove both to open it to the crew.
-function ntHasAccess() {
-  var r = (NT.user && NT.user.role) || '';
-  return r === 'Chief Engineer' || r === 'Admin';
-}
-
 async function ntEnterApp() {
-  if (!ntHasAccess()) {
-    document.querySelector('#screen-auth .center-card').innerHTML =
-      '<h1>Notes</h1>' +
-      '<div class="sub">Not open to the crew yet — the Notes Hub is being proven live. Check back soon.</div>' +
-      '<a class="btn ghost" style="text-decoration:none" href="./index.html">Back to IDMS</a>';
-    ntShow('screen-auth');
-    return;
-  }
   ntShow('screen-app');
-  document.getElementById('foot-who').textContent = NT.user.name || NT.user.username;
+  // ?shared=1 pins a window to shared mode for this load — a shortcut pinned
+  // on a shared machine opens straight into it — otherwise the browser's own
+  // last choice stands.
+  try {
+    var q = new URLSearchParams(location.search);
+    NT.shared = q.has('shared')
+      ? q.get('shared') !== '0'
+      : localStorage.getItem(NT_SHARED_KEY) === '1';
+  } catch (e) { NT.shared = false; }
   ntSetPill('busy');
 
   var crewCfg = await ntGetJson(ONEDRIVE_BASE + '/config/crewconfig.json').catch(function () { return null; });
-  NT.crew = (crewCfg && crewCfg.crew ? crewCfg.crew : []).filter(function (c) { return c.status === 'active'; });
+  // crewconfig is the fleet's roster, not this vessel's — it carries Alaska
+  // Spirit hands too, and they cannot do work here. Same rule the Assigned
+  // Tasks board and the Crew List apply (taskSameVessel): a blank on either
+  // side passes, so an unrecorded vessel is never hidden by silence.
+  NT.homeVessel = (crewCfg && crewCfg.vessel) || '';
+  // Every remaining record is kept — active and inactive both render, the
+  // inactive ones behind a collapsed header. crew_id is the identity key: 97
+  // of 112 records carry username null, so a username can neither address nor
+  // distinguish a crew member.
+  NT.crew = (crewCfg && crewCfg.crew ? crewCfg.crew : [])
+    .filter(function (c) { return c && c.crew_id; })
+    .filter(function (c) { return ntSameVessel(c.vessel, NT.homeVessel); });
 
-  var nCfg = await ntGetJson(ONEDRIVE_BASE + '/config/notesconfig.json').catch(function () { return null; });
-  if (nCfg) NT.notesConfig = Object.assign(NT.notesConfig, nCfg);
+  await ntLoadConfig();
 
-  // Default department: the user's own, else first known.
-  var mine = NT.crew.find(function (c) { return c.username === NT.user.username; });
+  // Seniority order for the personnel list, from the same file the schedule
+  // and the Assigned Tasks board read.
+  var tm = await ntGetJson(ONEDRIVE_BASE + '/config/trainingmatrix.json').catch(function () { return null; });
+  NT.roleRank = new Map(((tm && tm.roles) || []).map(function (r, i) { return [r.role_id, i]; }));
+
+  var mine = NT.crew.find(function (c) { return c.username && c.username === NT.user.username; });
+  NT.meCrewId = mine ? mine.crew_id : null;
   NT.dept = ntDeptKey(mine ? mine.department : null) || 'engine';
-  NT.view = { kind: 'crew', owner: NT.user.username, folder: null };
+  NT.view = NT.meCrewId
+    ? { kind: 'crew', owner: NT.meCrewId, folder: null }
+    : { kind: 'department', owner: null, folder: null };
 
+  // A shared window has no "me" to open on, so it starts at the department.
+  if (NT.shared) NT.view = { kind: 'department', owner: null, folder: null };
+
+  // This page is meant to be left open all day in a window of its own, so it
+  // reopens where it was rather than sending you back to your own list every
+  // time. Per user, since a shared tablet has more than one.
+  ntRestorePlace();
+  ntRenderWho();
+
+  ntWireDropBar();
   ntLoadCache();
   ntRenderAll();
   await ntSyncNow();
   if (NT.syncTimer) clearInterval(NT.syncTimer);
   NT.syncTimer = setInterval(ntSyncNow, 60000);
   window.addEventListener('focus', ntSyncNow);
+}
+
+// Mirrors taskSameVessel in IDMS-Console/src/renderer/js/tasks.js — a blank on
+// either side passes, so a crew record with no vessel recorded is not silently
+// dropped off the boat.
+function ntSameVessel(memberVessel, homeVessel) {
+  var a = (memberVessel || '').trim().toLowerCase();
+  var b = (homeVessel   || '').trim().toLowerCase();
+  return !a || !b || a === b;
 }
 
 function ntDeptKey(name) {
@@ -417,6 +633,210 @@ function ntDeptKey(name) {
   if (low.indexOf('factory') >= 0) return 'factory';
   if (low.indexOf('deck') >= 0) return 'deck';
   return low.replace(/[^a-z]/g, '');
+}
+
+function ntDeptLabel(key) {
+  var c = NT.crew.find(function (x) { return ntDeptKey(x.department) === key; });
+  if (c) return c.department;
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+// ── notesconfig.json (custom sections) ──────────────────────
+// A config document with many potential editors, so it takes the ETag-guarded
+// read-mutate-write from architecture.md, never a blind PUT.
+
+async function ntLoadConfig() {
+  try {
+    var resp = await ntFetch(ntGraphUrl(ONEDRIVE_BASE + '/config/notesconfig.json'), { method: 'GET' });
+    if (resp.status === 404) { NT.configEtag = null; return; }
+    if (!resp.ok) return;
+    NT.configEtag = resp.headers.get('ETag') || null;
+    var cfg = await resp.json();
+    if (cfg) {
+      cfg.department_heads   = cfg.department_heads   || {};
+      cfg.department_folders = cfg.department_folders || {};
+      cfg.templates          = cfg.templates          || [];
+      NT.notesConfig = cfg;
+    }
+  } catch (e) { /* fall back to the in-memory defaults */ }
+}
+
+async function ntSaveConfig(mutate) {
+  for (var attempt = 0; attempt < 3; attempt++) {
+    await ntLoadConfig();
+    var next = JSON.parse(JSON.stringify(NT.notesConfig));
+    if (mutate(next) === false) return;
+    var headers = { 'Content-Type': 'application/json' };
+    if (NT.configEtag) headers['If-Match'] = NT.configEtag;
+    else               headers['If-None-Match'] = '*';
+    var resp = await ntFetch(ntGraphUrl(ONEDRIVE_BASE + '/config/notesconfig.json'), {
+      method: 'PUT', headers: headers, body: JSON.stringify(next, null, 2)
+    });
+    if (resp.status === 412) continue;       // someone else saved first — re-read and re-apply
+    if (!resp.ok) throw new Error('Config save → ' + resp.status);
+    NT.notesConfig = next;
+    NT.configEtag = resp.headers.get('ETag') || null;
+    return;
+  }
+  throw new Error('notesconfig was being edited elsewhere — try again');
+}
+
+// ── Groups and folders (§41.4a) ─────────────────────────────
+// Two levels. A GROUP sits at the level of Department notes and may hold
+// folders; a FOLDER is either top-level or inside one group. A note records
+// where it lives as a single path string in `folder`:
+//
+//   "Shipyard Prep"            top-level folder
+//   "Overhauls"                the group itself — notes may sit directly in one
+//   "Overhauls/Main Engine"    a folder inside that group
+//
+// The stored shape is an ordered array whose entries are either a bare string
+// (a top-level folder, which is what every existing config holds) or an
+// object. Reading normalises both, so nothing has to be migrated.
+function ntSections(deptKey) {
+  var raw = (NT.notesConfig.department_folders || {})[deptKey] || [];
+  return raw.map(function (e) {
+    if (typeof e === 'string') return { type: 'folder', name: e, folders: [] };
+    return {
+      type:    e.type === 'group' ? 'group' : 'folder',
+      name:    e.name,
+      folders: Array.isArray(e.folders) ? e.folders.slice() : []
+    };
+  }).filter(function (e) { return e.name; });
+}
+
+function ntFolderPath(groupName, folderName) {
+  return groupName ? groupName + '/' + folderName : folderName;
+}
+
+// Every path this entry owns — a group owns its own and its children's, which
+// is what lets a group's count include the notes filed beneath it.
+function ntPathsUnder(entry) {
+  if (entry.type !== 'group') return [entry.name];
+  return [entry.name].concat(entry.folders.map(function (f) { return entry.name + '/' + f; }));
+}
+
+async function ntMutateSections(fn) {
+  await ntSaveConfig(function (cfg) {
+    cfg.department_folders = cfg.department_folders || {};
+    var list = ntSections(NT.dept);
+    var next = fn(list);
+    if (next === false) return false;
+    // Written back in the normalised shape; a top-level folder stays a bare
+    // string so a config that never uses groups reads exactly as it did.
+    cfg.department_folders[NT.dept] = next.map(function (e) {
+      return e.type === 'group'
+        ? { type: 'group', name: e.name, folders: e.folders }
+        : e.name;
+    });
+  });
+}
+
+// Re-file every note under `fromPaths` onto the matching `toPaths`, one
+// appended edit each. Used by rename and remove — nothing is ever deleted.
+async function ntRepathNotes(map) {
+  for (var id in NT.notes) {
+    var n = NT.notes[id];
+    if (n.deleted || (n.scope.department || null) !== NT.dept) continue;
+    if (!Object.prototype.hasOwnProperty.call(map, n.folder || '')) continue;
+    await ntAppendEvent('note_edited', {
+      note_id: id,
+      patch:  { folder: map[n.folder] },
+      before: { folder: n.folder }
+    });
+  }
+}
+
+async function ntAddSection(kind, groupName) {
+  var what = kind === 'group' ? 'group' : 'folder';
+  var name = (prompt('New ' + what + ' name (' + ntDeptLabel(NT.dept) + ' only):') || '').trim();
+  if (!name || name.indexOf('/') >= 0) {
+    if (name) ntToast('A name cannot contain "/".');
+    return;
+  }
+  try {
+    await ntMutateSections(function (list) {
+      if (groupName) {
+        var g = list.find(function (e) { return e.type === 'group' && e.name === groupName; });
+        if (!g || g.folders.indexOf(name) >= 0) return false;
+        g.folders.push(name);
+        return list;
+      }
+      if (list.some(function (e) { return e.name === name; })) return false;
+      list.push({ type: what, name: name, folders: [] });
+      return list;
+    });
+    ntRenderAll();
+  } catch (e) { ntToast('Could not add — ' + ntWhyFailed(e)); }
+}
+
+async function ntRenameSection(path) {
+  var parts = String(path).split('/');
+  var oldName = parts[parts.length - 1];
+  var parent  = parts.length > 1 ? parts[0] : null;
+  var name = (prompt('Rename:', oldName) || '').trim();
+  if (!name || name === oldName || name.indexOf('/') >= 0) {
+    if (name && name.indexOf('/') >= 0) ntToast('A name cannot contain "/".');
+    return;
+  }
+  try {
+    var map = {};
+    await ntMutateSections(function (list) {
+      if (parent) {
+        var g = list.find(function (e) { return e.type === 'group' && e.name === parent; });
+        var i = g ? g.folders.indexOf(oldName) : -1;
+        if (i < 0) return false;
+        g.folders[i] = name;
+        map[parent + '/' + oldName] = parent + '/' + name;
+        return list;
+      }
+      var entry = list.find(function (e) { return e.name === oldName; });
+      if (!entry) return false;
+      entry.name = name;
+      map[oldName] = name;
+      // A group takes its children's paths with it.
+      entry.folders.forEach(function (f) { map[oldName + '/' + f] = name + '/' + f; });
+      return list;
+    });
+    await ntRepathNotes(map);
+    if (map[NT.view.folder]) NT.view.folder = map[NT.view.folder];
+    ntRenderAll();
+  } catch (e) { ntToast('Could not rename — ' + ntWhyFailed(e)); }
+}
+
+async function ntRemoveSection(path) {
+  var parts = String(path).split('/');
+  var name   = parts[parts.length - 1];
+  var parent = parts.length > 1 ? parts[0] : null;
+  var entry = parent ? null : ntSections(NT.dept).find(function (e) { return e.name === name; });
+  var paths = entry ? ntPathsUnder(entry) : [path];
+
+  var count = 0;
+  for (var id in NT.notes) {
+    var n = NT.notes[id];
+    if (!n.deleted && paths.indexOf(n.folder) >= 0 && (n.scope.department || null) === NT.dept) count++;
+  }
+  var childNote = entry && entry.type === 'group' && entry.folders.length
+    ? '\n\nIts ' + entry.folders.length + ' folder(s) go with it.' : '';
+  if (!confirm('Remove "' + name + '"?' + childNote +
+      (count ? '\n\n' + count + ' note(s) move back to Department notes — nothing is deleted.' : ''))) return;
+
+  try {
+    var map = {};
+    paths.forEach(function (p) { map[p] = null; });
+    await ntMutateSections(function (list) {
+      if (parent) {
+        var g = list.find(function (e) { return e.type === 'group' && e.name === parent; });
+        if (!g) return false;
+        g.folders = g.folders.filter(function (f) { return f !== name; });
+        return list;
+      }
+      return list.filter(function (e) { return e.name !== name; });
+    });
+    await ntRepathNotes(map);
+    if (paths.indexOf(NT.view.folder) >= 0) NT.view = { kind: 'department', owner: null, folder: null };
+    ntRenderAll();
+  } catch (e) { ntToast('Could not remove — ' + ntWhyFailed(e)); }
 }
 
 // ── Event sync (replay + poll) ──────────────────────────────
@@ -477,7 +897,9 @@ async function ntSyncNow() {
     }
     ntSetPill('ok');
   } catch (e) {
-    ntSetPill('err');
+    // A dead sign-in already raised its banner in ntToken; anything else is
+    // worth retrying on the next tick, so the pill just goes amber.
+    ntSetPill(e && e.ntReauth ? 'auth' : 'err');
   } finally {
     NT._syncing = false;
   }
@@ -496,7 +918,7 @@ async function ntAppendEvent(eventType, payload) {
     schema_version: 1,
     event_id:   eventId,
     event_type: eventType,
-    actor:      NT.user.username,
+    actor:      ntActor(),
     timestamp:  nowIso,
     payload:    payload
   };
@@ -517,6 +939,11 @@ async function ntAppendEvent(eventType, payload) {
   return eventObj;
 }
 
+// Who this window signs its writes as.
+function ntActor() {
+  return NT.shared ? NT_SHARED_ACTOR : NT.user.username;
+}
+
 function ntUuid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -529,18 +956,64 @@ function ntUuid() {
 // The reducer itself lives in utils/notes-reduce.js — the canonical copy
 // shared with the Console's ingest lane. Nothing derives state any other way.
 
-function ntReduce() {
-  NT.notes = notesReduce.reduce(NT.events);
-}
-
-function ntStepStruck(step) {
-  return notesReduce.stepStruck(step);
-}
+function ntReduce() { NT.notes = notesReduce.reduce(NT.events); }
+function ntStepStruck(step) { return notesReduce.stepStruck(step); }
 
 function ntIsDeptHead(deptKey) {
   if (NT.user.permission_tier === 'admin') return true;
   var heads = (NT.notesConfig.department_heads || {})[deptKey] || [];
   return heads.indexOf(NT.user.username) >= 0;
+}
+
+// Does note n belong in view v?
+//
+// A crew view holds two things: the notes that person owns, and every note
+// assigned to them wherever it actually lives. The second kind is not a copy —
+// one note, shown on the plate of each person carrying it, so completing it
+// anywhere completes it for everyone (§41.6a).
+function ntInView(n, v) {
+  if (v.kind === 'crew') {
+    if (notesReduce.isAssignedTo(n, v.owner)) return true;
+    if (n.scope.level !== 'crew') return false;
+    if ((n.scope.department || null) !== NT.dept) return false;
+    // owner_crew_id is canonical; owner_username is honoured for any note
+    // written before crew_id keying landed.
+    return (n.scope.owner_crew_id || n.scope.owner_username) === v.owner;
+  }
+  if (v.kind === 'general') return n.scope.level === 'general';
+  if ((n.scope.department || null) !== NT.dept) return false;
+  if (v.kind === 'department') {
+    if (n.scope.level !== 'department') return false;
+    return (n.folder || null) === (v.folder || null);
+  }
+  return false;
+}
+
+// Pinned first, then starred, then newest. A pin outranks a star and is not a
+// user action: a note is pinned in the list of whoever it is assigned to.
+function ntIsPinned(n, view) {
+  return view.kind === 'crew' && notesReduce.isAssignedTo(n, view.owner);
+}
+
+// In a shared window there is no "me" — the signed-in account is plumbing, not
+// the person at the keyboard — so nothing is highlighted as yours.
+function ntMeKeys() {
+  return NT.shared ? [] : [NT.meCrewId, NT.user.username];
+}
+
+function ntSortNotes(list, view) {
+  view = view || NT.view;
+  return list.sort(function (a, b) {
+    var ap = ntIsPinned(a, view), bp = ntIsPinned(b, view);
+    if (ap !== bp) return ap ? -1 : 1;
+    if (!!a.starred !== !!b.starred) return a.starred ? -1 : 1;
+    if (a.starred && b.starred) {
+      var ai = typeof a.sort_index === 'number' ? a.sort_index : Infinity;
+      var bi = typeof b.sort_index === 'number' ? b.sort_index : Infinity;
+      if (ai !== bi) return ai - bi;
+    }
+    return a.created < b.created ? 1 : -1;
+  });
 }
 
 function ntVisibleNotes() {
@@ -549,18 +1022,22 @@ function ntVisibleNotes() {
     var n = NT.notes[id];
     if (n.deleted || n.merged_into) continue;
     if (n.archived && !NT.showArchived) continue;
-    if ((n.scope.department || null) !== NT.dept) continue;
-    if (NT.view.kind === 'department') {
-      if (n.scope.level !== 'department') continue;
-    } else {
-      if (n.scope.level !== 'crew' || n.scope.owner_username !== NT.view.owner) continue;
-    }
-    if (NT.view.folder && n.folder !== NT.view.folder) continue;
-    if (!NT.view.folder && NT.view.kind === 'department' && n.folder) continue;
+    if (!ntInView(n, NT.view)) continue;
     out.push(n);
   }
-  out.sort(function (a, b) { return a.created < b.created ? 1 : -1; });
-  return out;
+  return ntSortNotes(out);
+}
+
+function ntCounts(view) {
+  var open = 0, mine = 0;
+  for (var id in NT.notes) {
+    var n = NT.notes[id];
+    if (n.deleted || n.merged_into || n.archived || n.completed) continue;
+    if (!ntInView(n, view)) continue;
+    open++;
+    if (ntMeKeys().some(function (k) { return notesReduce.isAssignedTo(n, k); })) mine++;
+  }
+  return { open: open, mine: mine };
 }
 
 // ── Rendering ───────────────────────────────────────────────
@@ -571,6 +1048,8 @@ function ntEsc(s) {
   });
 }
 
+function ntAttr(s) { return ntEsc(s).replace(/'/g, '&#39;'); }
+
 function ntWhen(iso) {
   if (!iso) return '';
   var d = new Date(iso);
@@ -578,90 +1057,351 @@ function ntWhen(iso) {
          d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function ntCrewName(username) {
-  var c = NT.crew.find(function (x) { return x.username === username; });
-  if (!c) return username;
-  if (c.nickname) return c.nickname;
-  return (c.name || username).split(/\s+/)[0];
+function ntCrewById(crewId) {
+  return NT.crew.find(function (x) { return x.crew_id === crewId; }) || null;
 }
 
-function ntRenderAll() { ntRenderTabs(); ntRenderTree(); ntRenderList(); ntRenderDetail(); }
+// Short display name. Accepts a crew_id, and falls back to a username or a
+// literal (event actors are usernames, which most crew records do not carry).
+function ntShortName(key) {
+  if (!key) return '';
+  if (key === NT_SHARED_ACTOR) return NT_SHARED_LABEL;
+  var c = ntCrewById(key) ||
+          NT.crew.find(function (x) { return x.username && x.username === key; });
+  if (!c) return key;
+  if (c.nickname) return c.nickname;
+  return (c.name || key).split(/\s+/)[0];
+}
 
-function ntRenderTabs() {
+function ntFullName(c) {
+  if (!c) return '';
+  if (c === NT_SHARED_ACTOR) return NT_SHARED_LABEL;
+  if (typeof getDisplayFullName === 'function') { try { return getDisplayFullName(c); } catch (e) {} }
+  return c.name || c.username || c.crew_id;
+}
+
+function ntRenderAll() { ntRenderTree(); ntRenderList(); ntRenderDetail(); }
+
+function ntDeptList() {
   var keys = [], seen = {};
   NT.crew.forEach(function (c) {
     var k = ntDeptKey(c.department);
     if (k && !seen[k]) { seen[k] = true; keys.push({ key: k, label: c.department }); }
   });
   if (!keys.length) keys = [{ key: 'engine', label: 'Engine Room' }];
-  document.getElementById('dept-tabs').innerHTML = keys.map(function (d) {
-    return '<div class="dept-tab' + (d.key === NT.dept ? ' active' : '') + '" onclick="ntSetDept(\'' + d.key + '\')">' + ntEsc(d.label) + '</div>';
-  }).join('');
+  return keys;
 }
 
 function ntSetDept(key) {
   NT.dept = key;
   NT.view = { kind: 'department', owner: null, folder: null };
   NT.openNote = null;
+  ntSavePlace();
   ntRenderAll();
-}
-
-function ntCounts(kind, owner, folder) {
-  var open = 0, mine = 0;
-  for (var id in NT.notes) {
-    var n = NT.notes[id];
-    if (n.deleted || n.merged_into || n.archived || n.completed) continue;
-    if ((n.scope.department || null) !== NT.dept) continue;
-    if (kind === 'department' && n.scope.level !== 'department') continue;
-    if (kind === 'crew' && (n.scope.level !== 'crew' || n.scope.owner_username !== owner)) continue;
-    if (folder !== undefined && (n.folder || null) !== folder) continue;
-    open++;
-    if (n.assignee === NT.user.username) mine++;
-  }
-  return { open: open, mine: mine };
 }
 
 function ntRenderTree() {
   var h = '';
-  var deptFolders = (NT.notesConfig.department_folders || {})[NT.dept] || [];
+
+  // Reading order, top to bottom: what is global, then which department, then
+  // that department's own notes and folders, then its people. The pills sit
+  // under the Department heading because that heading names them.
+  h += '<div class="tree-head">Global</div>';
+  h += ntTreeItem({ kind: 'general', owner: null, folder: null }, '🌐 General notes');
 
   h += '<div class="tree-head">Department</div>';
-  var dc = ntCounts('department', null, null);
-  h += ntTreeItem('department', null, null, '📋 ' + (NT.dept === 'engine' ? 'Engine Room' : NT.dept.charAt(0).toUpperCase() + NT.dept.slice(1)) + ' notes', dc);
-  deptFolders.forEach(function (f) {
-    h += ntTreeItem('department', null, f, '📁 ' + ntEsc(f), ntCounts('department', null, f), true);
-  });
+  h += '<div class="dept-tabs">' + ntDeptList().map(function (d) {
+    return '<div class="dept-tab' + (d.key === NT.dept ? ' active' : '') +
+           '" onclick="ntSetDept(\'' + ntAttr(d.key) + '\')">' + ntEsc(d.label) + '</div>';
+  }).join('') + '</div>';
+  // Department notes doubles as the way out of a group: a folder dragged onto
+  // it returns to the top level. Without that there is no escape once a folder
+  // is inside a group and nothing else sits at the top to drop it before.
+  h += ntTreeItem({ kind: 'department', owner: null, folder: null },
+                  '📋 ' + ntEsc(ntDeptLabel(NT.dept)) + ' notes', null, true);
+
+  // Groups and folders, per department. They live strictly between Department
+  // notes and the Personnel heading — those are the hard stops, and every
+  // rearrangement happens inside that band.
+  h += '<div id="folder-band">' + ntSections(NT.dept).map(ntBandEntry).join('') + '</div>';
+  h += '<div class="band-adds">' +
+       '<span class="tree-item add-folder" onclick="ntAddSection(\'folder\')">＋ Add folder</span>' +
+       '<span class="tree-item add-folder" onclick="ntAddSection(\'group\')">＋ Add group</span>' +
+       '</div>';
 
   h += '<div class="tree-head">Personnel</div>';
   var deptCrew = NT.crew.filter(function (c) { return ntDeptKey(c.department) === NT.dept; });
-  deptCrew.sort(function (a, b) {
-    if (a.username === NT.user.username) return -1;
-    if (b.username === NT.user.username) return 1;
-    return (a.name || '').localeCompare(b.name || '');
+  // Senior first, the same order the schedule and the Assigned Tasks board
+  // use: trainingmatrix.roles[] is kept in rank order by Crew Setup, so a
+  // role's index in it is its rank. Deliberately no hoisting of the signed-in
+  // user — the point is that everyone sees the same list in the same order.
+  var sorter = function (a, b) {
+    var ra = NT.roleRank.has(a.role_id) ? NT.roleRank.get(a.role_id) : 999;
+    var rb = NT.roleRank.has(b.role_id) ? NT.roleRank.get(b.role_id) : 999;
+    return ra - rb || (a.name || '').localeCompare(b.name || '');
+  };
+  var active   = deptCrew.filter(function (c) { return c.status === 'active'; }).sort(sorter);
+  var inactive = deptCrew.filter(function (c) { return c.status !== 'active'; }).sort(sorter);
+
+  // Full names: two Sams and two Taylors aboard means a first name alone is
+  // not an identification.
+  active.forEach(function (c) {
+    var label = '👤 ' + ntEsc(ntFullName(c));
+    if (c.crew_id === NT.meCrewId) label += ' <span class="me-chip">me</span>';
+    h += ntTreeItem({ kind: 'crew', owner: c.crew_id, folder: null }, label);
   });
-  deptCrew.forEach(function (c) {
-    var cc = ntCounts('crew', c.username);
-    var label = '👤 ' + ntEsc(ntCrewName(c.username));
-    if (c.username === NT.user.username) label += ' <span class="me-chip">me</span>';
-    h += ntTreeItem('crew', c.username, null, label, cc);
-  });
+
+  if (inactive.length) {
+    h += '<div class="inactive-head" onclick="NT.showInactive=!NT.showInactive;ntRenderTree()">' +
+         '<span>' + (NT.showInactive ? '▾' : '▸') + '</span> Inactive <span style="color:var(--text-muted)">' +
+         inactive.length + '</span></div>';
+    if (NT.showInactive) {
+      inactive.forEach(function (c) {
+        h += ntTreeItem({ kind: 'crew', owner: c.crew_id, folder: null },
+                        '👤 ' + ntEsc(ntFullName(c)));
+      });
+    }
+  }
 
   document.getElementById('tree').innerHTML = h;
 }
 
-function ntTreeItem(kind, owner, folder, label, counts, sub) {
-  var active = NT.view.kind === kind && NT.view.owner === owner && (NT.view.folder || null) === (folder || null);
-  var countHtml = counts.open
-    ? '<span class="count' + (counts.mine ? ' alert' : '') + '">' + counts.open + '</span>' : '';
-  return '<div class="tree-item' + (active ? ' active' : '') + (sub ? ' sub' : '') + '" ' +
-         'onclick="ntSetView(\'' + kind + '\',' + (owner ? '\'' + owner + '\'' : 'null') + ',' + (folder ? '\'' + ntEsc(folder).replace(/'/g, "\\'") + '\'' : 'null') + ')">' +
-         label + countHtml + '</div>';
+// One top-level entry: a folder row, or a group row followed by its folders.
+function ntBandEntry(entry) {
+  if (entry.type !== 'group') return ntFolderRow(entry.name, null, false);
+  return ntFolderRow(entry.name, null, true) +
+         entry.folders.map(function (f) { return ntFolderRow(f, entry.name, false); }).join('');
 }
 
-function ntSetView(kind, owner, folder) {
-  NT.view = { kind: kind, owner: owner, folder: folder };
+// A row in the band: a drop target for notes like any other view, plus rename,
+// remove, and a grip for rearranging. Groups also carry a ＋ that adds a folder
+// inside them.
+function ntFolderRow(name, groupName, isGroup) {
+  var path   = ntFolderPath(groupName, name);
+  var view   = { kind: 'department', owner: null, folder: path };
+  var active = NT.view.kind === 'department' && NT.view.folder === path;
+  var counts = isGroup
+    ? ntCountsUnder(ntSections(NT.dept).find(function (e) { return e.name === name; }))
+    : ntCounts(view);
+  var count = counts.open
+    ? '<span class="count' + (counts.mine ? ' alert' : '') + '">' + counts.open + '</span>' : '';
+  var esc = ntAttr(path).replace(/'/g, "\\'");
+
+  return '<div class="tree-item folder' + (isGroup ? ' group' : '') + (groupName ? ' nested' : '') +
+    (active ? ' active' : '') + '" draggable="true"' +
+    ' data-path="' + ntAttr(path) + '" data-group="' + ntAttr(groupName || '') + '"' +
+    ' data-isgroup="' + (isGroup ? '1' : '') + '"' +
+    ' data-view=\'' + ntAttr(JSON.stringify(view)) + '\'' +
+    ' onclick=\'ntSetView(' + ntAttr(JSON.stringify(view)) + ')\'' +
+    ' ondragstart="ntFolderDragStart(event,this)" ondragend="ntFolderDragEnd(this)"' +
+    ' ondragover="ntFolderDragOver(event,this)"' +
+    ' ondragleave="this.classList.remove(\'drop-before\',\'drop-target\')"' +
+    ' ondrop="ntFolderDrop(event,this)">' +
+    '<span class="grip" title="Drag to rearrange">⋮⋮</span>' +
+    '<span class="folder-name">' + (isGroup ? '▾ ' : '') + ntEsc(name) + '</span>' + count +
+    (isGroup ? '<span class="sec-edit" title="Add a folder in here" onclick="event.stopPropagation();ntAddSection(\'folder\',\'' + esc + '\')">＋</span>' : '') +
+    '<span class="sec-edit" title="Rename" onclick="event.stopPropagation();ntRenameSection(\'' + esc + '\')">✎</span>' +
+    '<span class="sec-edit" title="Remove" onclick="event.stopPropagation();ntRemoveSection(\'' + esc + '\')">✕</span>' +
+    '</div>';
+}
+
+// A group's count is its own notes plus everything in its folders.
+function ntCountsUnder(entry) {
+  if (!entry) return { open: 0, mine: 0 };
+  return ntPathsUnder(entry).reduce(function (acc, p) {
+    var c = ntCounts({ kind: 'department', owner: null, folder: p });
+    return { open: acc.open + c.open, mine: acc.mine + c.mine };
+  }, { open: 0, mine: 0 });
+}
+
+function ntFolderDragStart(ev, el) {
+  NT.dragFolder = { path: el.dataset.path, group: el.dataset.group || null, isGroup: !!el.dataset.isgroup };
+  el.classList.add('dragging');
+  try { ev.dataTransfer.setData('text/plain', NT.dragFolder.path); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {}
+  ev.stopPropagation();
+}
+
+function ntFolderDragEnd(el) {
+  NT.dragFolder = null;
+  el.classList.remove('dragging');
+  document.querySelectorAll('.drop-before,.drop-target').forEach(function (x) {
+    x.classList.remove('drop-before'); x.classList.remove('drop-target');
+  });
+}
+
+// Two different drags land on a band row: another row being rearranged, or a
+// note being re-filed into it. The state says which.
+function ntFolderDragOver(ev, el) {
+  var d = NT.dragFolder;
+  if (d && d.path !== el.dataset.path) {
+    // A group cannot be dropped into a group — two levels, not a tree.
+    if (d.isGroup && el.dataset.group) return;
+    ev.preventDefault();
+    el.classList.add('drop-before');
+    return;
+  }
+  ntTreeDragOver(ev, el);
+}
+
+async function ntFolderDrop(ev, el) {
+  el.classList.remove('drop-before');
+  var d = NT.dragFolder;
+  if (d && d.path !== el.dataset.path) {
+    if (d.isGroup && el.dataset.group) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    NT.dragFolder = null;
+
+    // Where it lands: inside the target's group when the target is nested,
+    // inside the group itself when dropped on a group row, otherwise at the
+    // top level immediately before the target.
+    var targetGroup = el.dataset.group || (el.dataset.isgroup ? el.dataset.path : null);
+    var targetPath  = el.dataset.path;
+    try {
+      var map = {};
+      await ntMutateSections(function (list) {
+        var name = d.path.split('/').pop();
+
+        // Lift it out of wherever it is now.
+        var moved = null;
+        if (d.group) {
+          var src = list.find(function (e) { return e.type === 'group' && e.name === d.group; });
+          if (!src) return false;
+          src.folders = src.folders.filter(function (f) { return f !== name; });
+          moved = { type: 'folder', name: name, folders: [] };
+        } else {
+          var i = list.findIndex(function (e) { return e.name === name; });
+          if (i < 0) return false;
+          moved = list.splice(i, 1)[0];
+        }
+
+        if (targetGroup && !moved.folders.length && moved.type !== 'group') {
+          var g = list.find(function (e) { return e.type === 'group' && e.name === targetGroup; });
+          if (!g) return false;
+          if (g.folders.indexOf(name) < 0) {
+            // Before the target folder when dropped on one, else at the end.
+            var at = el.dataset.group ? g.folders.indexOf(targetPath.split('/').pop()) : -1;
+            if (at < 0) g.folders.push(name); else g.folders.splice(at, 0, name);
+          }
+          map[d.path] = targetGroup + '/' + name;
+        } else {
+          var topName = (targetGroup && el.dataset.isgroup) ? targetGroup : targetPath.split('/')[0];
+          var at2 = list.findIndex(function (e) { return e.name === topName; });
+          list.splice(at2 < 0 ? list.length : at2, 0, moved);
+          map[d.path] = name;
+          // A group carries its folders' paths with it.
+          if (moved.type === 'group') {
+            moved.folders.forEach(function (f) { map[moved.name + '/' + f] = moved.name + '/' + f; });
+          }
+        }
+        return list;
+      });
+      // Only notes whose path actually changed need an event.
+      var real = {};
+      Object.keys(map).forEach(function (k) { if (map[k] !== k) real[k] = map[k]; });
+      if (Object.keys(real).length) await ntRepathNotes(real);
+      if (real[NT.view.folder]) NT.view.folder = real[NT.view.folder];
+      ntRenderAll();
+    } catch (e) { ntToast('Could not rearrange — ' + ntWhyFailed(e)); }
+    return;
+  }
+  // Not a rearrangement — a note being filed into this row. Returned rather
+  // than called, so the drop completes before anything awaiting it continues.
+  return ntTreeDrop(ev, el);
+}
+
+// Every tree item is a drop target: dragging a note onto it re-files the note
+// into that view (§41.6 move semantics — one note_edited event).
+function ntTreeItem(view, label, sectionName, acceptsFolders) {
+  var counts = ntCounts(view);
+  var active = NT.view.kind === view.kind &&
+               (NT.view.owner || null) === (view.owner || null) &&
+               (NT.view.folder || null) === (view.folder || null);
+  var countHtml = counts.open
+    ? '<span class="count' + (counts.mine ? ' alert' : '') + '">' + counts.open + '</span>' : '';
+  var secBtns = sectionName
+    ? '<span class="sec-edit" title="Rename" onclick="event.stopPropagation();ntRenameSection(\'' + ntAttr(sectionName) + '\')">✎</span>' +
+      '<span class="sec-edit" title="Remove" onclick="event.stopPropagation();ntRemoveSection(\'' + ntAttr(sectionName) + '\')">✕</span>'
+    : '';
+  var payload = ntAttr(JSON.stringify(view));
+  return '<div class="tree-item' + (active ? ' active' : '') + '"' +
+         ' data-view=\'' + payload + '\'' +
+         (acceptsFolders ? ' data-toplevel="1"' : '') +
+         ' onclick=\'ntSetView(' + payload + ')\'' +
+         ' ondragover="' + (acceptsFolders ? 'ntTopLevelDragOver' : 'ntTreeDragOver') + '(event,this)"' +
+         ' ondragleave="this.classList.remove(\'drop-target\')"' +
+         ' ondrop="' + (acceptsFolders ? 'ntTopLevelDrop' : 'ntTreeDrop') + '(event,this)">' +
+         label + countHtml + secBtns + '</div>';
+}
+
+// Department notes accepts two kinds of drop: a note (filed at department
+// level) and a folder or group being lifted back out to the top level.
+function ntTopLevelDragOver(ev, el) {
+  if (NT.dragFolder) { ev.preventDefault(); el.classList.add('drop-target'); return; }
+  ntTreeDragOver(ev, el);
+}
+
+async function ntTopLevelDrop(ev, el) {
+  el.classList.remove('drop-target');
+  var d = NT.dragFolder;
+  if (!d) return ntTreeDrop(ev, el);
+
+  ev.preventDefault();
+  ev.stopPropagation();
+  NT.dragFolder = null;
+  if (!d.group) return;                 // already at the top level
+
+  var name = d.path.split('/').pop();
+  try {
+    var map = {};
+    await ntMutateSections(function (list) {
+      var g = list.find(function (e) { return e.type === 'group' && e.name === d.group; });
+      if (!g || g.folders.indexOf(name) < 0) return false;
+      g.folders = g.folders.filter(function (f) { return f !== name; });
+      if (list.some(function (e) { return e.name === name; })) return false;   // name already taken up top
+      list.unshift({ type: 'folder', name: name, folders: [] });
+      map[d.path] = name;
+      return list;
+    });
+    if (Object.keys(map).length) {
+      await ntRepathNotes(map);
+      if (map[NT.view.folder]) NT.view.folder = map[NT.view.folder];
+      ntToast('"' + name + '" moved out of ' + d.group);
+    } else {
+      ntToast('A folder called "' + name + '" already sits at the top level.');
+    }
+    ntRenderAll();
+  } catch (e) { ntToast('Could not move out — ' + ntWhyFailed(e)); }
+}
+
+function ntSetView(view) {
+  NT.view = { kind: view.kind, owner: view.owner || null, folder: view.folder || null };
   NT.openNote = null;
+  ntSavePlace();
+  ntCloseSidebarIfNarrow();
   ntRenderAll();
+}
+
+// ── Where you were (§41.2, the all-day window) ──────────────
+
+function ntPlaceKey() { return 'nt_place_' + ((NT.user && NT.user.username) || 'anon'); }
+
+function ntSavePlace() {
+  try {
+    localStorage.setItem(ntPlaceKey(), JSON.stringify({ dept: NT.dept, view: NT.view }));
+  } catch (e) {}
+}
+
+function ntRestorePlace() {
+  try {
+    var p = JSON.parse(localStorage.getItem(ntPlaceKey()) || 'null');
+    if (!p || !p.view || !p.view.kind) return;
+    // A department that has since gone, or a crew member off this vessel,
+    // would restore to an empty list — better to land somewhere real.
+    if (p.dept && NT.crew.some(function (c) { return ntDeptKey(c.department) === p.dept; })) NT.dept = p.dept;
+    if (p.view.kind === 'crew' && !ntCrewById(p.view.owner)) return;
+    NT.view = { kind: p.view.kind, owner: p.view.owner || null, folder: p.view.folder || null };
+  } catch (e) {}
 }
 
 function ntRenderList() {
@@ -670,18 +1410,26 @@ function ntRenderList() {
   var done = notes.filter(function (n) { return n.completed; });
 
   var locTitle, locSub;
-  if (NT.view.kind === 'department') {
-    locTitle = NT.view.folder || 'Department notes';
-    locSub = 'visible to everyone';
+  if (NT.view.kind === 'general') {
+    locTitle = 'General notes';
+    locSub = 'interdepartmental — visible to the whole vessel';
+  } else if (NT.view.kind === 'department') {
+    locTitle = NT.view.folder || (ntDeptLabel(NT.dept) + ' notes');
+    locSub = NT.view.folder ? 'section · ' + ntDeptLabel(NT.dept) : 'visible to everyone';
   } else {
-    locTitle = ntCrewName(NT.view.owner) + (NT.view.owner === NT.user.username ? ' (my notes)' : '');
-    locSub = 'shared — notes are never private';
+    var c = ntCrewById(NT.view.owner);
+    locTitle = ntFullName(c) || ntShortName(NT.view.owner);
+    if (NT.view.owner === NT.meCrewId) locTitle += ' (my notes)';
+    locSub = (c && c.status !== 'active' ? 'inactive · ' : '') + 'shared — notes are never private';
   }
   document.getElementById('loc-title').textContent = locTitle;
   document.getElementById('loc-sub').textContent = locSub;
-
-  var canQuickAdd = NT.view.kind === 'department' || NT.view.owner === NT.user.username;
-  document.querySelector('.quick-add').style.display = canQuickAdd ? 'flex' : 'none';
+  // The window sits in a taskbar all day, so its title says where it is and
+  // how much is waiting rather than just "IDMS Notes".
+  var waiting = open.filter(function (n) {
+    return ntMeKeys().some(function (k) { return notesReduce.isAssignedTo(n, k); });
+  }).length;
+  document.title = (waiting ? '(' + waiting + ') ' : '') + locTitle + ' — IDMS Notes';
 
   var h = open.map(ntNoteRow).join('');
   if (!open.length) h += '<div class="empty">Nothing open here.</div>';
@@ -695,26 +1443,213 @@ function ntRenderList() {
 }
 
 function ntNoteRow(n) {
+  var files = (n.attachments || []).filter(function (a) { return a.kind === 'file'; }).length;
+  var pics  = (n.attachments || []).filter(function (a) { return a.kind !== 'file'; }).length;
   var glyphs = '';
-  if (n.attachments.length || n.comments.some(function (c) { return c.attachments.length; })) glyphs += '<span title="Has photos">📷</span>';
+  if (pics || n.comments.some(function (c) { return c.attachments.length; })) glyphs += '<span title="Has photos">📷</span>';
+  if (files) glyphs += '<span title="Has documents">📎' + files + '</span>';
   if (n.comments.length) glyphs += '<span title="Comments">💬' + n.comments.length + '</span>';
   if (n.steps.length) {
-    var doneSteps = n.steps.filter(ntStepStruck).length;
-    glyphs += '<span title="Checklist">☑ ' + doneSteps + '/' + n.steps.length + '</span>';
+    glyphs += '<span title="Checklist">☑ ' + n.steps.filter(ntStepStruck).length + '/' + n.steps.length + '</span>';
   }
-  var meta = '<span>' + ntEsc(ntCrewName(n.author)) + ' · ' + ntWhen(n.created) + '</span>';
+
+  var meta = '<span>' + ntEsc(ntShortName(n.author)) + ' · ' + ntWhen(n.created) + '</span>';
   if (n.group_alert) meta += '<span class="alertflag">⚠ group alert</span>';
-  if (n.assignee) meta += '<span class="assignee">→ ' + ntEsc(ntCrewName(n.assignee)) + '</span>';
+  if (n.assignment === 'assignable') meta += '<span class="assignable">◇ assignable</span>';
+  if (n.assignees.length) {
+    meta += '<span class="assignee">→ ' + ntEsc(n.assignees.map(function (a) {
+      return ntShortName(a.crew_id);
+    }).join(', ')) + '</span>';
+  }
   if (n.equipment_code) meta += '<span class="eq">' + ntEsc(n.equipment_code) + '</span>';
   if (n.task_id) meta += '<span class="mirror">task ' + ntEsc(n.task_id) + '</span>';
   if (n.archived) meta += '<span>archived</span>';
+  var exp = ntExpiryLine(n);
+  if (exp) meta += '<span class="expiry">' + ntEsc(exp) + '</span>';
 
-  return '<div class="note-row' + (n.completed ? ' done' : '') + '" onclick="ntOpenNote(\'' + n.note_id + '\')">' +
-    '<div class="tick' + (n.completed ? ' on' : '') + '" onclick="event.stopPropagation();ntToggleComplete(\'' + n.note_id + '\')">✓</div>' +
-    '<div class="note-body-col"><div class="note-title">' + ntEsc(n.title) + '</div>' +
+  return '<div class="note-row' + (n.completed ? ' done' : '') + '" data-id="' + ntAttr(n.note_id) + '"' +
+    ' draggable="true" ondragstart="ntNoteDragStart(event,this)" ondragend="ntNoteDragEnd(this)"' +
+    ' ondragover="ntNoteDragOver(event,this)" ondragleave="this.classList.remove(\'drop-before\')"' +
+    ' ondrop="ntNoteDrop(event,this)"' +
+    ' onclick="ntOpenNote(\'' + ntAttr(n.note_id) + '\')">' +
+    '<div class="tick' + (n.completed ? ' on' : '') + '" onclick="event.stopPropagation();ntToggleComplete(\'' + ntAttr(n.note_id) + '\')">✓</div>' +
+    '<div class="note-body-col"><div class="note-title">' +
+      (ntIsPinned(n, NT.view) ? '<span class="pin" title="Assigned here">📌 </span>' : '') +
+      ntEsc(n.title) + '</div>' +
     '<div class="note-meta">' + meta + '</div></div>' +
-    '<div class="glyphs">' + glyphs + '</div></div>';
+    '<div class="glyphs">' + glyphs +
+      '<button class="star-btn' + (n.starred ? ' on' : '') + '" title="' + (n.starred ? 'Unstar' : 'Star') +
+      '" onclick="event.stopPropagation();ntToggleStar(\'' + ntAttr(n.note_id) + '\')">' + (n.starred ? '★' : '☆') + '</button>' +
+    '</div></div>';
 }
+
+// "files expunge in N days" — eligibility only; the Console purges, and only
+// when an officer says so (§41.14).
+function ntExpiryLine(n) {
+  if (!notesReduce.hasAttachments(n)) return '';
+  var e = notesReduce.attachmentExpiry(n);
+  if (!e) return '';
+  var days = Math.ceil((new Date(e.due) - Date.now()) / 86400000);
+  if (days <= 0) return 'files due for purge';
+  return 'files kept ' + days + 'd (' + e.reason + ')';
+}
+
+// ── Drag and drop ───────────────────────────────────────────
+
+function ntNoteDragStart(ev, el) {
+  NT.dragNoteId = el.dataset.id;
+  el.classList.add('dragging');
+  ev.dataTransfer.effectAllowed = 'move';
+  try { ev.dataTransfer.setData('text/plain', el.dataset.id); } catch (e) {}
+}
+
+function ntNoteDragEnd(el) {
+  el.classList.remove('dragging');
+  NT.dragNoteId = null;
+  document.querySelectorAll('.drop-before,.drop-target').forEach(function (x) {
+    x.classList.remove('drop-before'); x.classList.remove('drop-target');
+  });
+}
+
+// Reordering only means something where manual order is honoured — among
+// starred notes. Anywhere else the list is chronological and a drop is a no-op.
+function ntNoteDragOver(ev, el) {
+  var dragged = NT.dragNoteId && NT.notes[NT.dragNoteId];
+  var target  = NT.notes[el.dataset.id];
+  if (!dragged || !target || !dragged.starred || !target.starred) return;
+  ev.preventDefault();
+  el.classList.add('drop-before');
+}
+
+async function ntNoteDrop(ev, el) {
+  el.classList.remove('drop-before');
+  var dragged = NT.dragNoteId && NT.notes[NT.dragNoteId];
+  var target  = NT.notes[el.dataset.id];
+  if (!dragged || !target || dragged === target) return;
+  if (!dragged.starred || !target.starred) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+
+  // Insert before the target: take the midpoint between it and its predecessor
+  // so one event does the job and no other note has to be rewritten.
+  var starred = ntSortNotes(ntVisibleNotes().filter(function (n) { return n.starred && n !== dragged; }));
+  var idx = starred.indexOf(target);
+  var prev = idx > 0 ? starred[idx - 1] : null;
+  var prevIdx = prev && typeof prev.sort_index === 'number' ? prev.sort_index : 0;
+  var tgtIdx  = typeof target.sort_index === 'number' ? target.sort_index : (idx + 1) * 1000;
+  var newIdx  = idx === 0 ? tgtIdx - 1000 : (prevIdx + tgtIdx) / 2;
+
+  try {
+    await ntAppendEvent('note_reordered', { note_id: dragged.note_id, sort_index: newIdx });
+  } catch (e) { ntToast('Could not reorder — ' + ntWhyFailed(e)); }
+}
+
+function ntTreeDragOver(ev, el) {
+  if (!NT.dragNoteId) return;
+  ev.preventDefault();
+  el.classList.add('drop-target');
+}
+
+// Dropping a note on a tree item re-files it: one note_edited carrying the new
+// scope and folder. Nothing is copied, nothing is deleted.
+async function ntTreeDrop(ev, el) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  el.classList.remove('drop-target');
+  var n = NT.dragNoteId && NT.notes[NT.dragNoteId];
+  NT.dragNoteId = null;
+  if (!n) return;
+
+  var view;
+  try { view = JSON.parse(el.dataset.view); } catch (e) { return; }
+  if (ntInView(n, { kind: view.kind, owner: view.owner || null, folder: view.folder || null })) return;
+
+  // Dropping on a person means one of two things, and which one is settled by
+  // what the note is rather than by asking:
+  //
+  //   a personal note → hand the note itself over. It already lives on
+  //                     somebody's list, so dragging it to another list moves
+  //                     it — that is what dragging between two people means.
+  //   anything else   → put it on their plate. A department or global note
+  //                     belongs where it is, and assigning is the only reading
+  //                     that does not take it away from everyone else.
+  if (view.kind === 'crew') {
+    var c = ntCrewById(view.owner);
+    try {
+      if (n.scope.level === 'crew') {
+        await ntAppendEvent('note_edited', {
+          note_id: n.note_id,
+          patch:  { scope: { level: 'crew', department: NT.dept, owner_crew_id: view.owner } },
+          before: { scope: n.scope }
+        });
+        ntToast('Moved to ' + ntShortName(view.owner) + "'s notes");
+      } else {
+        await ntAppendEvent('note_assigned', {
+          note_id: n.note_id,
+          assignee_crew_id: view.owner,
+          assignee_username: (c && c.username) || null
+        });
+        ntToast('Assigned to ' + ntShortName(view.owner));
+      }
+    } catch (e) { ntToast('Could not move — ' + ntWhyFailed(e)); }
+    return;
+  }
+
+  var scope;
+  if (view.kind === 'general') scope = { level: 'general' };
+  else                         scope = { level: 'department', department: NT.dept };
+
+  try {
+    await ntAppendEvent('note_edited', {
+      note_id: n.note_id,
+      patch:  { scope: scope, folder: view.folder || null },
+      before: { scope: n.scope, folder: n.folder || null }
+    });
+    ntToast('Moved to ' + (view.folder || (view.kind === 'general' ? 'General' : ntDeptLabel(NT.dept))));
+  } catch (e) { ntToast('Could not move — ' + ntWhyFailed(e)); }
+}
+
+// Drag a photo or document straight onto the add bar.
+function ntWireDropBar() {
+  var bar = document.getElementById('qa-bar');
+  ['dragenter', 'dragover'].forEach(function (t) {
+    bar.addEventListener(t, function (ev) {
+      if (NT.dragNoteId) return;              // that is a note move, not a file
+      ev.preventDefault();
+      bar.classList.add('drag-over');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (t) {
+    bar.addEventListener(t, function () { bar.classList.remove('drag-over'); });
+  });
+  bar.addEventListener('drop', function (ev) {
+    if (NT.dragNoteId) return;
+    var files = ev.dataTransfer && ev.dataTransfer.files;
+    if (!files || !files.length) return;
+    ev.preventDefault();
+    for (var i = 0; i < files.length; i++) NT.stagedNew.push(files[i]);
+    ntRenderStaged();
+  });
+}
+
+function ntPickNewFiles() {
+  var inp = document.getElementById('file-input');
+  inp.onchange = function () {
+    for (var i = 0; i < inp.files.length; i++) NT.stagedNew.push(inp.files[i]);
+    inp.value = '';
+    ntRenderStaged();
+  };
+  inp.click();
+}
+
+function ntRenderStaged() {
+  document.getElementById('qa-staged').innerHTML = NT.stagedNew.map(function (f, i) {
+    return '<span class="chip">' + (ntIsImage(f) ? '📷' : '📎') + ' ' + ntEsc(f.name) +
+           ' <button onclick="NT.stagedNew.splice(' + i + ',1);ntRenderStaged()">✕</button></span>';
+  }).join('');
+}
+
+function ntIsImage(file) { return /^image\//i.test(file.type || ''); }
 
 // ── Detail panel ────────────────────────────────────────────
 
@@ -730,17 +1665,27 @@ function ntRenderDetail() {
   var isDeptHead = ntIsDeptHead(NT.dept);
   var canDelete = n.author === NT.user.username || isDeptHead;
   var othersCommented = n.comments.some(function (c) { return c.actor !== n.author; });
+  var lastDone = n.completions.length ? n.completions[n.completions.length - 1] : null;
 
   var h = '<div class="detail-head">' +
-    '<div class="note-title' + (n.completed ? '" style="text-decoration:line-through;color:var(--text-muted)' : '') + '">' + ntEsc(n.title) + '</div>' +
+    '<button class="star-btn' + (n.starred ? ' on' : '') + '" style="font-size:18px" onclick="ntToggleStar(\'' + ntAttr(n.note_id) + '\')">' +
+      (n.starred ? '★' : '☆') + '</button>' +
+    '<div class="note-title"' + (n.completed ? ' style="text-decoration:line-through;color:var(--text-muted)"' : '') + '>' + ntEsc(n.title) + '</div>' +
     '<button class="close-x" onclick="ntCloseDetail()">✕</button></div>';
 
+  var exp = notesReduce.hasAttachments(n) ? notesReduce.attachmentExpiry(n) : null;
   h += '<div class="detail-sec kv">' +
-    '<b>' + ntEsc(ntCrewName(n.author)) + '</b> · ' + ntWhen(n.created) +
-    (n.assignee ? '<br>Assigned to <b>' + ntEsc(ntCrewName(n.assignee)) + '</b> by ' + ntEsc(ntCrewName(n.assigned_by || '')) : '') +
+    '<b>' + ntEsc(ntShortName(n.author)) + '</b> · ' + ntWhen(n.created) +
+    (n.assignees.length
+      ? '<br>Assigned to <b>' + ntEsc(n.assignees.map(function (a) {
+          return ntFullName(ntCrewById(a.crew_id)) || ntShortName(a.crew_id);
+        }).join(', ')) + '</b> by ' + ntEsc(ntShortName(n.assigned_by || '')) +
+        (n.assignees.length > 1 ? ' <span class="warn">· one note, shared — completing it completes it for everyone</span>' : '')
+      : n.assignment === 'assignable' ? '<br><b>Assignable</b> — open to anyone' : '') +
     (n.equipment_code ? '<br>Equipment <b>' + ntEsc(n.equipment_code) + '</b>' : '') +
     (n.task_id ? '<br>Promoted → task <b>' + ntEsc(n.task_id) + '</b> (mirror — status arrives in the task-integration slice)' : '') +
-    (n.completed && n.completions.length ? '<br>Completed by <b>' + ntEsc(ntCrewName(n.completions[n.completions.length - 1].actor)) + '</b> ' + ntWhen(n.completions[n.completions.length - 1].timestamp) : '') +
+    (n.completed && lastDone ? '<br>Completed by <b>' + ntEsc(ntShortName(lastDone.actor)) + '</b> ' + ntWhen(lastDone.timestamp) : '') +
+    (exp ? '<br><span class="warn">Attachments kept until ' + ntWhen(exp.due) + ' (' + exp.reason + ' — ' + exp.days + ' days). Archive the note to keep them.</span>' : '') +
     '</div>';
 
   if (n.body) h += '<div class="detail-sec"><div class="body-text">' + ntEsc(n.body) + '</div></div>';
@@ -749,28 +1694,36 @@ function ntRenderDetail() {
     h += '<div class="detail-sec"><h4>Checklist</h4>' + n.steps.map(function (s) {
       var struck = ntStepStruck(s);
       var strikeLine = s.strikes.filter(function (k) { return k.struck; }).map(function (k, i) {
-        return (i === 0 ? '' : ' · confirmed ') + ntEsc(ntCrewName(k.actor)) + ' ' + ntWhen(k.timestamp);
+        return (i === 0 ? '' : ' · confirmed ') + ntEsc(ntShortName(k.actor)) + ' ' + ntWhen(k.timestamp);
       }).join('');
       return '<div class="step-row' + (struck ? ' done' : '') + '">' +
-        '<div class="tick' + (struck ? ' on' : '') + '" onclick="ntToggleStep(\'' + n.note_id + '\',\'' + s.step_id + '\')">✓</div>' +
+        '<div class="tick' + (struck ? ' on' : '') + '" onclick="ntToggleStep(\'' + ntAttr(n.note_id) + '\',\'' + ntAttr(s.step_id) + '\')">✓</div>' +
         '<div><span class="step-text">' + ntEsc(s.text) + '</span>' +
         (strikeLine ? '<span class="step-strikes">' + strikeLine + '</span>' : '') + '</div></div>';
     }).join('') + '</div>';
   }
 
-  if (n.attachments.length) {
-    h += '<div class="detail-sec"><h4>Photos</h4><div class="thumbs">' + n.attachments.map(function (a) {
-      return '<img data-thumb="' + ntEsc(a.thumbnail_path) + '" data-full="' + ntEsc(a.path) + '" alt="">';
+  var pics  = (n.attachments || []).filter(function (a) { return a.kind !== 'file'; });
+  var files = (n.attachments || []).filter(function (a) { return a.kind === 'file'; });
+  if (pics.length) {
+    h += '<div class="detail-sec"><h4>Photos</h4><div class="thumbs">' + pics.map(function (a) {
+      return '<img data-thumb="' + ntAttr(a.thumbnail_path) + '" data-full="' + ntAttr(a.path) + '" alt="">';
     }).join('') + '</div></div>';
+  }
+  if (files.length) {
+    h += '<div class="detail-sec"><h4>Documents</h4>' + files.map(function (a) {
+      return '<div class="file-row" onclick="ntOpenFile(\'' + ntAttr(a.path) + '\')">📎 ' + ntEsc(a.filename) +
+             '<span class="fsize">' + (a.size ? Math.max(1, Math.round(a.size / 1024)) + ' KB' : '') + '</span></div>';
+    }).join('') + '</div>';
   }
 
   h += '<div class="detail-sec"><h4>Comments</h4>';
   h += n.comments.map(function (c) {
     var imgs = c.attachments.length
       ? '<div class="thumbs" style="margin-top:5px">' + c.attachments.map(function (a) {
-          return '<img data-thumb="' + ntEsc(a.thumbnail_path) + '" data-full="' + ntEsc(a.path) + '" alt="">';
+          return '<img data-thumb="' + ntAttr(a.thumbnail_path) + '" data-full="' + ntAttr(a.path) + '" alt="">';
         }).join('') + '</div>' : '';
-    return '<div class="comment"><div class="c-meta">' + ntEsc(ntCrewName(c.actor)) + ' · ' + ntWhen(c.timestamp) + '</div>' +
+    return '<div class="comment"><div class="c-meta">' + ntEsc(ntShortName(c.actor)) + ' · ' + ntWhen(c.timestamp) + '</div>' +
            '<div class="c-text">' + ntEsc(c.text) + '</div>' + imgs + '</div>';
   }).join('') || '<div class="kv" style="padding:2px 0 8px">No comments yet.</div>';
 
@@ -783,20 +1736,46 @@ function ntRenderDetail() {
     '<button class="btn" onclick="ntAddComment()">Add</button>' +
     '</div></div></div>';
 
+  // Assignment, three states in one control (§41.6a). Unassigned is the
+  // default and the top row; Assignable offers the note without naming
+  // anyone; ticking people is the third state, and several may be ticked —
+  // one note carried by several, never a copy each.
+  var noteDept = n.scope.department || NT.dept;
+  var pool = NT.crew.filter(function (c) {
+    return ntDeptKey(c.department) === noteDept &&
+           (c.status === 'active' || notesReduce.isAssignedTo(n, c.crew_id));
+  }).sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+  h += '<div class="detail-sec"><h4>Assignment</h4><div class="assign-box">';
+  h += '<label class="assign-row"><input type="radio" name="assign-mode" value="unassigned"' +
+       (n.assignment === 'unassigned' ? ' checked' : '') +
+       ' onchange="ntSetAssignMode(\'' + ntAttr(n.note_id) + '\',\'unassigned\')">' +
+       '<span><b>Unassigned note</b><em>Nobody\'s — it just sits here</em></span></label>';
+  h += '<label class="assign-row"><input type="radio" name="assign-mode" value="assignable"' +
+       (n.assignment === 'assignable' ? ' checked' : '') +
+       ' onchange="ntSetAssignMode(\'' + ntAttr(n.note_id) + '\',\'assignable\')">' +
+       '<span><b>Assignable</b><em>Open to anyone — shows in the Notes Tray</em></span></label>';
+  h += '<div class="assign-sep">Assign to</div>';
+  h += pool.map(function (c) {
+    var on = notesReduce.isAssignedTo(n, c.crew_id);
+    return '<label class="assign-row"><input type="checkbox"' + (on ? ' checked' : '') +
+           ' onchange="ntToggleAssignee(\'' + ntAttr(n.note_id) + '\',\'' + ntAttr(c.crew_id) + '\',this.checked)">' +
+           '<span>' + ntEsc(ntFullName(c)) + (c.status !== 'active' ? ' <em>(inactive)</em>' : '') +
+           (c.role_label ? ' <em>' + ntEsc(c.role_label) + '</em>' : '') + '</span></label>';
+  }).join('') || '<div class="kv" style="padding:4px 2px">Nobody active in this department.</div>';
+  h += '</div></div>';
+
   h += '<div class="detail-actions">';
-  h += '<select class="field" id="assign-sel" onchange="ntAssign(\'' + n.note_id + '\')" style="margin-bottom:0">' +
-       '<option value="">' + (n.assignee ? 'Unassign' : 'Assign to…') + '</option>' +
-       NT.crew.filter(function (c) { return ntDeptKey(c.department) === NT.dept; }).map(function (c) {
-         return '<option value="' + ntEsc(c.username) + '"' + (c.username === n.assignee ? ' selected' : '') + '>' + ntEsc(c.name || c.username) + '</option>';
-       }).join('') + '</select>';
-  h += '<button class="btn ghost" onclick="ntAddNotePhoto(\'' + n.note_id + '\')">📷 Add photo to note</button>';
+  h += '<button class="btn ghost" onclick="ntAddNoteFiles(\'' + ntAttr(n.note_id) + '\')">＋ Add photo or document</button>';
   h += '<button class="btn ghost" disabled title="Arrives with the task-integration slice">Promote to Task</button>';
-  if (!n.archived) h += '<button class="btn ghost" onclick="ntArchive(\'' + n.note_id + '\')">Archive</button>';
+  h += n.archived
+    ? '<button class="btn ghost" onclick="ntUnarchive(\'' + ntAttr(n.note_id) + '\')">Unarchive</button>'
+    : '<button class="btn ghost" onclick="ntArchive(\'' + ntAttr(n.note_id) + '\')">Archive</button>';
   if (canDelete) {
     if (othersCommented && !isDeptHead) {
       h += '<button class="btn ghost" disabled title="Others have commented — Archive instead, or a department head can delete">Delete</button>';
     } else {
-      h += '<button class="btn danger" onclick="ntDelete(\'' + n.note_id + '\')">Delete note</button>';
+      h += '<button class="btn danger" onclick="ntDelete(\'' + ntAttr(n.note_id) + '\')">Delete note</button>';
     }
   }
   h += '</div>';
@@ -821,24 +1800,51 @@ async function ntHydrateImg(img) {
   } catch (e) {}
 }
 
+async function ntOpenFile(path) {
+  try {
+    var resp = await ntFetch(ntGraphUrl(ONEDRIVE_BASE + '/' + path), { method: 'GET' });
+    if (!resp.ok) { ntToast('Could not open — ' + resp.status); return; }
+    window.open(URL.createObjectURL(await resp.blob()), '_blank');
+  } catch (e) { ntToast('Could not open — ' + ntWhyFailed(e)); }
+}
+
 // ── Actions ─────────────────────────────────────────────────
+
+function ntNewScope() {
+  if (NT.view.kind === 'general') return { level: 'general' };
+  if (NT.view.kind === 'department') return { level: 'department', department: NT.dept };
+  return { level: 'crew', department: NT.dept, owner_crew_id: NT.view.owner };
+}
 
 async function ntQuickAdd() {
   var input = document.getElementById('qa-title');
   var title = input.value.trim();
-  if (!title) return;
-  var scope = NT.view.kind === 'department'
-    ? { level: 'department', department: NT.dept }
-    : { level: 'crew', department: NT.dept, owner_username: NT.user.username };
+  var staged = NT.stagedNew.slice();
+  if (!title && !staged.length) return;
+  if (!title) title = staged[0].name;          // a file dropped with no title names itself
+
+  var noteId = 'note-' + ntUuid();
   input.value = '';
+  NT.stagedNew = [];
+  ntRenderStaged();
+
   try {
+    var attachments = [];
+    for (var i = 0; i < staged.length; i++) attachments.push(await ntUploadAny(noteId, staged[i]));
     await ntAppendEvent('note_created', {
-      note_id: 'note-' + ntUuid(),
-      title: title, scope: scope,
+      note_id: noteId,
+      title: title,
+      scope: ntNewScope(),
       folder: NT.view.folder || null,
-      origin: 'manual'
+      origin: 'manual',
+      attachments: attachments
     });
-  } catch (e) { ntToast('Could not save — ' + e.message); input.value = title; }
+  } catch (e) {
+    ntToast('Could not save — ' + ntWhyFailed(e));
+    input.value = title;
+    NT.stagedNew = staged;
+    ntRenderStaged();
+  }
 }
 
 async function ntToggleComplete(id) {
@@ -846,7 +1852,15 @@ async function ntToggleComplete(id) {
   if (!n) return;
   try {
     await ntAppendEvent(n.completed ? 'note_uncompleted' : 'note_completed', { note_id: id });
-  } catch (e) { ntToast('Could not save — ' + e.message); }
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
+}
+
+async function ntToggleStar(id) {
+  var n = NT.notes[id];
+  if (!n) return;
+  try {
+    await ntAppendEvent(n.starred ? 'note_unstarred' : 'note_starred', { note_id: id });
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntToggleStep(noteId, stepId) {
@@ -855,26 +1869,54 @@ async function ntToggleStep(noteId, stepId) {
   if (!s) return;
   try {
     await ntAppendEvent(ntStepStruck(s) ? 'step_unstruck' : 'step_struck', { note_id: noteId, step_id: stepId });
-  } catch (e) { ntToast('Could not save — ' + e.message); }
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
-async function ntAssign(id) {
-  var v = document.getElementById('assign-sel').value;
+async function ntSetAssignMode(id, mode) {
+  var n = NT.notes[id];
   try {
-    if (v) await ntAppendEvent('note_assigned', { note_id: id, assignee_username: v });
-    else   await ntAppendEvent('note_unassigned', { note_id: id });
-  } catch (e) { ntToast('Could not save — ' + e.message); }
+    // Naming people outranks both person-less states, so switching to one
+    // clears the plate first — otherwise the radio would appear to do nothing.
+    if (n && n.assignees.length) await ntAppendEvent('note_unassigned', { note_id: id });
+    await ntAppendEvent('note_assignment_set', { note_id: id, mode: mode });
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
+}
+
+async function ntToggleAssignee(id, crewId, on) {
+  var c = ntCrewById(crewId);
+  try {
+    if (on) {
+      await ntAppendEvent('note_assigned', {
+        note_id: id,
+        assignee_crew_id: crewId,
+        // Rides along when the assignee is also an IDMS login — that is what
+        // the PWA's alert check matches on.
+        assignee_username: (c && c.username) || null
+      });
+    } else {
+      await ntAppendEvent('note_unassigned', { note_id: id, assignee_crew_id: crewId });
+    }
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntArchive(id) {
   try { await ntAppendEvent('note_archived', { note_id: id }); ntCloseDetail(); }
-  catch (e) { ntToast('Could not save — ' + e.message); }
+  catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
+}
+
+async function ntUnarchive(id) {
+  try { await ntAppendEvent('note_unarchived', { note_id: id }); }
+  catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 async function ntDelete(id) {
-  if (!confirm('Delete this note? It disappears from every view (the event stream keeps a tombstone).')) return;
+  var n = NT.notes[id];
+  var extra = notesReduce.hasAttachments(n)
+    ? '\n\nIts attachments stay recoverable for ' + notesReduce.RETENTION_DAYS.deleted + ' days, then become eligible for purge.'
+    : '';
+  if (!confirm('Delete this note? It disappears from every view (the event stream keeps a tombstone).' + extra)) return;
   try { await ntAppendEvent('note_deleted', { note_id: id }); ntCloseDetail(); }
-  catch (e) { ntToast('Could not save — ' + e.message); }
+  catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
 function ntPickPhoto() {
@@ -897,62 +1939,90 @@ async function ntAddComment() {
   var commentId = 'cmt-' + ntUuid();
   try {
     var attachments = [];
-    if (NT.stagedPhoto) attachments.push(await ntUploadImage(commentId, NT.stagedPhoto));
+    if (NT.stagedPhoto) attachments.push(await ntUploadAny(commentId, NT.stagedPhoto));
     await ntAppendEvent('comment_added', {
       note_id: n.note_id, comment_id: commentId,
       text: text, attachments: attachments
     });
     NT.stagedPhoto = null;
-  } catch (e) { ntToast('Could not save comment — ' + e.message); }
+  } catch (e) { ntToast('Could not save comment — ' + ntWhyFailed(e)); }
 }
 
-async function ntAddNotePhoto(id) {
-  var inp = document.getElementById('photo-input');
+async function ntAddNoteFiles(id) {
+  var inp = document.getElementById('file-input');
   inp.onchange = async function () {
-    var file = inp.files[0];
+    var files = Array.prototype.slice.call(inp.files);
     inp.value = '';
-    if (!file) return;
+    if (!files.length) return;
     try {
-      var meta = await ntUploadImage(id, file);
       var n = NT.notes[id];
-      var next = (n.attachments || []).concat([meta]);
+      var next = (n.attachments || []).slice();
+      for (var i = 0; i < files.length; i++) next.push(await ntUploadAny(id, files[i]));
       await ntAppendEvent('note_edited', { note_id: id, patch: { attachments: next }, before: { attachments: n.attachments } });
-    } catch (e) { ntToast('Photo failed — ' + e.message); }
+    } catch (e) { ntToast('Upload failed — ' + ntWhyFailed(e)); }
   };
   inp.click();
 }
 
-// Resize + upload, matching the task/rounds-comment attachment conventions
-// exactly: 1080×1024 full + 240×180 thumb @ 0.85 JPEG, under
-// data/assets/pictures/{item_id}/. Client-side resize keeps every PUT under
-// Graph's 4 MB simple-upload cap.
+// ── Upload ──────────────────────────────────────────────────
+
+// Images follow the task/rounds-comment convention exactly (1080×1024 full +
+// 240×180 thumb @ 0.85 JPEG under data/assets/pictures/{item_id}/), so the
+// Console's existing thumbnail and lightbox helpers render them unchanged.
+// Everything else is stored as-is under data/notes/files/{item_id}/.
+async function ntUploadAny(itemId, file) {
+  return ntIsImage(file) ? ntUploadImage(itemId, file) : ntUploadFile(itemId, file);
+}
+
 async function ntUploadImage(itemId, file) {
-  var safeName  = ntSanitizeFilename(file.name);
+  var safeName  = ntSanitizeFilename(file.name, '.jpg');
   var fullBlob  = await ntResizeImage(file, 1080, 1024, 0.85);
   var thumbBlob = await ntResizeImage(file, 240, 180, 0.85);
   var basePath  = ONEDRIVE_BASE + '/data/assets/pictures/' + itemId + '/';
-  await ntPutBlob(basePath + safeName, fullBlob);
-  await ntPutBlob(basePath + 'thumb-' + safeName, thumbBlob);
+  await ntPutBlob(basePath + safeName, fullBlob, 'image/jpeg');
+  await ntPutBlob(basePath + 'thumb-' + safeName, thumbBlob, 'image/jpeg');
   return {
+    kind: 'image',
     filename: safeName,
     path: 'data/assets/pictures/' + itemId + '/' + safeName,
-    thumbnail_path: 'data/assets/pictures/' + itemId + '/thumb-' + safeName
+    thumbnail_path: 'data/assets/pictures/' + itemId + '/thumb-' + safeName,
+    size: fullBlob.size
   };
 }
 
-async function ntPutBlob(path, blob) {
-  var resp = await ntFetch(ntGraphUrl(path), {
-    method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob
-  });
-  if (!resp.ok) throw new Error('Image upload → ' + resp.status);
+async function ntUploadFile(itemId, file) {
+  // Graph's simple upload tops out at 4 MB and a document cannot be resized
+  // down the way a photo can, so oversized files are refused with a reason
+  // rather than a raw 413.
+  if (file.size > 4 * 1024 * 1024) {
+    throw new Error('"' + file.name + '" is ' + Math.round(file.size / 1048576) + ' MB — 4 MB is the limit for documents');
+  }
+  var safeName = ntSanitizeFilename(file.name, '.bin');
+  var path = 'data/notes/files/' + itemId + '/' + safeName;
+  await ntPutBlob(ONEDRIVE_BASE + '/' + path, file, file.type || 'application/octet-stream');
+  return {
+    kind: 'file',
+    filename: safeName,
+    path: path,
+    thumbnail_path: null,
+    size: file.size,
+    content_type: file.type || null
+  };
 }
 
-function ntSanitizeFilename(name) {
+async function ntPutBlob(path, blob, contentType) {
+  var resp = await ntFetch(ntGraphUrl(path), {
+    method: 'PUT', headers: { 'Content-Type': contentType || 'application/octet-stream' }, body: blob
+  });
+  if (!resp.ok) throw new Error('Upload → ' + resp.status);
+}
+
+function ntSanitizeFilename(name, fallbackExt) {
   var dot = name.lastIndexOf('.');
-  var ext = dot > 0 ? name.slice(dot).toLowerCase() : '.jpg';
+  var ext = dot > 0 ? name.slice(dot).toLowerCase().replace(/[^a-z0-9.]/g, '') : (fallbackExt || '');
   var base = name.slice(0, dot > 0 ? dot : name.length)
     .replace(/[^a-zA-Z0-9\-]/g, '-').replace(/-+/g, '-').toLowerCase();
-  return (base || 'image') + ext;
+  return (base || 'file') + ext;
 }
 
 function ntResizeImage(file, maxW, maxH, quality) {
@@ -981,6 +2051,52 @@ function ntResizeImage(file, maxW, maxH, quality) {
 function ntShow(id) {
   document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
   document.getElementById(id).classList.add('active');
+}
+
+// The footer says who this window signs its notes as, and switches between the
+// two. Shown as a sentence rather than a toggle, because "who is about to be
+// named on what I write" deserves to be readable at a glance.
+function ntRenderWho() {
+  var el = document.getElementById('foot-who');
+  if (!el) return;
+  el.innerHTML = NT.shared
+    ? 'Writing as <b>' + ntEsc(NT_SHARED_LABEL) + '</b> <span class="swap">— sign as me</span>'
+    : 'Writing as <b>' + ntEsc(NT.user.name || NT.user.username) + '</b> <span class="swap">— open to anyone</span>';
+  el.classList.toggle('is-shared', !!NT.shared);
+}
+
+function ntToggleShared() {
+  NT.shared = !NT.shared;
+  try { localStorage.setItem(NT_SHARED_KEY, NT.shared ? '1' : '0'); } catch (e) {}
+  // Leaving shared mode lands on your own notes; entering it has none to land
+  // on, so it steps back to the department.
+  if (NT.shared) {
+    if (NT.view.kind === 'crew') NT.view = { kind: 'department', owner: null, folder: null };
+  } else if (NT.meCrewId) {
+    NT.view = { kind: 'crew', owner: NT.meCrewId, folder: null };
+  }
+  ntSavePlace();
+  ntRenderWho();
+  ntRenderAll();
+  ntToast(NT.shared
+    ? 'This window now signs notes "' + NT_SHARED_LABEL + '" — anyone may add one.'
+    : 'This window now signs notes as ' + (NT.user.name || NT.user.username) + '.');
+}
+
+// Narrow, the sidebar slides over the list; wide, it hides outright so the
+// notes get the whole window. Picking a place closes it again when narrow,
+// because leaving it covering the list would hide what you just chose.
+function ntToggleSidebar() {
+  var s = document.getElementById('sidebar');
+  var narrow = window.matchMedia('(max-width: 780px)').matches;
+  if (narrow) s.classList.toggle('open');
+  else        s.classList.toggle('hidden');
+}
+
+function ntCloseSidebarIfNarrow() {
+  if (window.matchMedia('(max-width: 780px)').matches) {
+    document.getElementById('sidebar').classList.remove('open');
+  }
 }
 
 function ntToggleArchived() {

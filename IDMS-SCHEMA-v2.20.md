@@ -9,6 +9,16 @@ v2.30 *(2026-05-27)* — **Release marker: IDMS Console v0.2.9; Standard-tier na
 
 **Standard-tier nav access expansion (no on-disk schema change).** `applyCrewNavVisibility` in `src/renderer/js/app.js` now shows the Config sidebar group to `permission_tier === 'standard'` users in addition to admin (purser tier still excluded). Within the Config group, the nav buttons for Vessel Setup (`data-screen="vessel"`), Crew Setup (`data-screen="crewsetup"`), and Settings (`data-screen="settings"`) are individually hidden for non-admin tiers — only Equipment Setup is visible to Standard. Inside `screen-equipment`, `renderEquipment` in `src/renderer/js/equipment.js` forces `EQ.activeTab = 'rounds'` for non-admin users and conditionally renders only the Rounds Setup tab button; the Group Assignment and Sub-Group Assignment tabs remain admin-only. Net effect for Standard tier: full access to Dashboard, Factory Production, Rough Log, Trip Analytics (view-only via existing `taIsAdmin` gating), Maintenance & Tasks, Tank Levels & Transfers, Oil Record Book, Bunker Pre-Load, Schedule, Training Matrix, User Profile, Factory Events, Report Generator, Rounds Log, and Equipment Setup → Rounds Setup. Crew List remains gated by `canSeeCrewList()` (admin OR operational role); Vessel Setup, Crew Setup, and Settings remain admin-only.
 
+v2.31.1 *(2026-09-02)* — **Notes Hub: crew_id identity, General scope, sections, stars, documents, retention.** First round of live-use corrections and additions. **crew_id replaces username as the Notes Hub identity key** (§41.4a) — 97 of 112 `crewconfig.json` records carry `username: null`, so the roster collapsed onto the first null-username record and every personnel row rendered as the same person; `assignee_username` still rides along on assignment for the PWA alert check. Personnel lists now show active crew only, with inactive behind a collapsed header. Assignment is constrained to active crew of the note's own department and its placeholder stays "Assign to…" — most notes never need an assignee. New **General** scope above the departments for interdepartmental notes. **Sections** (the former department folders) become their own headers between Department and Personnel, added / renamed / removed from the Notes page under an ETag-guarded `notesconfig.json` write; removing one re-files its notes rather than deleting them. Notes are **dragged between any of those places** (one `note_edited`), can be **starred** (shared, sorts above everything, `note_starred`/`note_unstarred`), and starred notes accept a **manual order** (`note_reordered`, float `sort_index` so an insert is one event). Attachments gained **documents alongside photos** (§41.4b) — the `＋` on the add bar or a file dropped onto it, at creation time as well as after — stored byte-for-byte under `data/notes/files/{item_id}/` with a 4 MB refusal rather than a raw 413. New **attachment retention** (§41.14): 30 days after delete or completion, 10 after promotion, never for archived, earliest clock wins; eligibility is computed by the shared reducer and shown on the note, but **nothing deletes on a timer** — the purge is an officer action in the Console, per architecture.md, and that screen is the next slice. Also new: `note_unarchived`. Two §41.13 open items are closed.
+
+v2.31.2 *(2026-09-02)* — **Notes Hub: vessel-confined crew, three-state assignment, several assignees.** `crewconfig.json` is the fleet's roster, so every crew list in the hub now filters on vessel by the shared `taskSameVessel` rule — two Alaska Spirit hands were appearing on Araho lists, one of them the record every personnel row had been collapsing onto. Assignment becomes one three-state control (§41.6a): **Unassigned note** (default), **Assignable** (offered to anyone; surfaces in the Notes Tray), then the **Assign to** list, which is a multi-select — a note may be carried by several people. A shared note is one note on several plates, never a copy each: it is pinned into each assignee's personal list, **pin outranking star**, and completing it anywhere completes it for everyone. Removing the last assignee leaves the note assignable rather than unassigned. New event `note_assignment_set`; `note_assigned` now adds a person and `note_unassigned` drops one (or all, with no crew_id). The reducer keeps `assignee` / `assignee_username` as first-assignee mirrors for existing readers and adds `assignee_usernames` as the membership test the PWA alert check uses. Dragging a note onto a person in the sidebar now **assigns** rather than re-files, since re-filing would take the note away from where the work lives. **Still to build (next slice):** the Console's Assigned Tasks board — Notes Tray beside a renamed Tasks Tray, notes on member cards, and drag-between-people with the Reassign / Add Personnel choice. Multi-assignee on *tasks* is a shared-file contract change and is specced separately before any code.
+
+v2.31.3 *(2026-09-02)* — **Assigned Tasks board carries notes; several holders per task.** The board gains a **Notes Tray** beside the renamed **Tasks Tray**, and member cards now list every open task *and* note on that person (§41.6b). Dragging from one person to another asks **Reassign** or **Add Personnel** rather than guessing; the row `×` takes that one person off and leaves any others. The task assignment picker's people become **checkboxes** — several may hold one job — with *Unassigned* and *Locked* staying exclusive. Task multi-assignment is **additive** (§41.6c): new `tasks.assignees` (JSON array, DDL column plus a guarded ALTER) alongside the unchanged `assigned_to`, which is always written as the first holder; when the two disagree a writer that does not know the list has changed the holder, so the single field wins and the stale list is discarded — which is what keeps the PWA correct with no change to it. `getTasksUnified` exposes `assignees`; `taskAssigneeKeys` / `taskAssigneePatch` are the only readers and writers of the pair.
+
+v2.31.4 *(2026-09-02)* — **Two-level organisation, note dragging, full names.** The folder band gains **groups**: a group sits at the level of Department notes and holds folders, giving two levels and no more (§41.4a). A note's `folder` becomes a path — `"Folder"`, `"Group"`, or `"Group/Folder"` — and `department_folders[{dept}]` now holds bare strings (unchanged, what every existing config contains) or `{type, name, folders[]}` objects; reading normalises both, and a groupless config is written back byte-identical. Groups and folders are added, renamed, removed and dragged into any order inside the band, with the Department-notes and Personnel headings as hard stops and a group refused inside a group. Renaming or moving re-paths the notes beneath, children included. **Dragging a note** now files it into a folder or group, and onto a person means hand-over for a personal note (ownership moves) or assignment for a department or global one. The Console screen gains note dragging, which it did not have at all. Personnel lists show **full names** in both clients — two Sams and two Taylors aboard mean a first name is not an identification.
+
+v2.31.5 *(2026-09-02)* — **The shared window, and a signalled sign-in expiry.** A notes window left open for anyone to write in now records `actor: "browser"` — shown as **"Browser addition"** — instead of whoever last signed in (§41.4d): it says what is known, that the note came from that window, rather than naming the wrong person. Toggled from the footer, remembered per browser, and pinnable with `?shared=1`. `browser` is a reserved actor and never a crew member. Also: an expired Microsoft sign-in is now a stated condition rather than a red dot that retries forever — already-synced notes stay readable, a banner offers **Sign in again**, and writes refuse with that reason instead of a raw `AADSTS` code (§41.2).
+
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
@@ -7238,10 +7248,15 @@ A shared, non-private notes surface — an in-house Microsoft To-Do — acting a
 | Surface | Implementation | Data path |
 |---|---|---|
 | Standalone browser page | New page in this repo, same origin + MSAL registration as the PWA | Graph direct, event replay + poll |
+| ↳ *opened from the Console* | **Notes → ⧉ Open in a window** hands the page's URL to the default browser (`notes_url` in `notesconfig.json`, defaulting to the published address). Both surfaces read and write the same event stream, so they stay in step on their sync cycles. | |
 | PWA screen | **Same code** as the standalone page (shared modules) | Graph direct, event replay + poll |
 | Console: Personnel → Notes | Native renderer screen (`notes.js`), like every other Console module | SQLite derived cache via `sync-notes.js` ingest lane |
 
 The Console is deliberately native, not an embedded webview: it already needs a notes ingest lane for the Assigned Tasks board and the Rough Log digest, and embedding the hosted page would require a second MSAL session inside Electron. Two renderers, one file contract.
+
+**Sign-in expiry.** Azure issues a single-page app a refresh token that lives about a day, and MSAL's fallback — a hidden-iframe renewal against the Microsoft session cookie — fails wherever third-party cookies are blocked. So a window left open overnight *will* eventually need a person. The page treats that as a state rather than an error: notes already synced stay readable from the local cache, a banner above the list says the sign-in expired and what that means, and **Sign in again** re-authenticates in a popup and resumes syncing on the spot, with the place you were on preserved. Writes refuse with that reason rather than a raw `AADSTS` code, and nothing typed is discarded. This is the one thing that cannot be engineered away — a token has to expire — so it is signposted instead.
+
+**Built to be left open.** The standalone page is meant to sit in a window of its own all day beside the Console, so it reopens on the department and place it was last on (per user, since a shared tablet has more than one), names that place in the window title with a count of what is waiting for you, and narrows into a side panel: below 780 px the sidebar folds into a ☰ overlay that closes itself once you pick somewhere, and the detail panel slides over rather than squeezing the list. Restoring a place that has since gone — a department removed, a crew member off this vessel — falls back rather than landing on an empty list.
 
 ### 41.3 OneDrive files
 
@@ -7263,13 +7278,20 @@ config/notesconfig.json          ← department heads, department folders, check
 
 Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 1, event_id, event_type, timestamp, actor, payload}`. `actor` is the IDMS username. Events are immutable; edits append, never mutate.
 
+**Replay order.** The event filename is the sort key (lex = chrono), but the reducer applies **creations first, then every other event in stream order**. Filenames carry each writing device's own UTC clock, so a comment or a struck step can legitimately sort *ahead* of the note it belongs to — two devices seconds apart, or offline devices reconnecting (§41.9). A single pass would find no note and drop that event permanently. Mutations still apply to one another in stream order, which is where last-writer-wins actually matters.
+
 | `event_type` | Payload | Notes |
 |---|---|---|
-| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "department"\|"personnel"\|"crew", department, owner_username?}`. `origin` = `manual` \| `template` \| `emergency_offline`. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). |
+| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "general"\|"department"\|"crew", department?, owner_crew_id?}` — see §41.4a. `origin` = `manual` \| `template` \| `emergency_offline`. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). `attachments[]` = §41.4b. |
 | `note_edited` | `{note_id, patch, before}` | Same correction pattern as `observation_correction`. |
 | `note_completed` / `note_uncompleted` | `{note_id}` | First `note_completed` sets state; subsequent ones from other actors are preserved and rendered as confirmations, never dropped. |
 | `step_struck` / `step_unstruck` | `{note_id, step_id}` | Multiple strikes of the same step by different actors are all preserved — "struck by A 03:12, confirmed by B 03:14". This is the emergency-checklist timeline. |
-| `note_assigned` / `note_unassigned` | `{note_id, assignee_username}` | Assigner is the envelope `actor`. Assignment is what puts a note on the Assigned Tasks board and in alerts — creation alone never does. |
+| `note_assigned` | `{note_id, assignee_crew_id, assignee_username?}` | **Adds** one person — a note may be carried by several (§41.6a). Assigner is the envelope `actor`. `assignee_crew_id` is authoritative (§41.4a); `assignee_username` rides along only when that person is also an IDMS login, and the set of those is what the PWA's alert check matches on. |
+| `note_unassigned` | `{note_id, assignee_crew_id?}` | With a crew_id, drops that one person; without, clears everyone. |
+| `note_assignment_set` | `{note_id, mode: "unassigned"\|"assignable"}` | The two person-less states. Ignored while anyone is assigned — naming a person always wins, so the clients clear the plate first. |
+| `note_starred` / `note_unstarred` | `{note_id}` | Shared, not per-user: a star marks a note important for everyone, matching the hub's non-private premise. Starred notes sort above the rest in every view. |
+| `note_reordered` | `{note_id, sort_index}` | Manual ordering, **starred notes only** — everything else stays newest-first. `sort_index` is a float so inserting between two neighbours costs one event instead of reindexing the list. |
+| `note_unarchived` | `{note_id}` | Returns an archived note to its list, and restarts any attachment retention clock (§41.14). |
 | `comment_added` | `{note_id, comment_id, text?, attachments?}` | Photo-only comments (empty text, 1+ photos) allowed, matching rounds comments. |
 | `note_promoted` | `{note_id, task_id}` | Written after the task definition create succeeds (§41.6). Converts the note into a task mirror. |
 | `task_imported` | `{note_id, task_id, title, scope, folder?}` | Department-level only: creates a mirror wrapper for an existing task (§41.6). `scope` is carried explicitly — the reducer is context-free. |
@@ -7278,7 +7300,60 @@ Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 
 | `note_merged` | `{from_note_id, into_note_id, template_id}` | Console-emitted reconciliation only (§41.8). Viewers fold the `from` stream into the `into` note. |
 | `alert_acked` | `{targets: [note_id \| task_id, …]}` | Per-user acknowledgement; the acking user is the envelope `actor` (§41.7). |
 
-Folder model: a note's `folder` is a path string. Personal folders are implicit — a folder exists if a note references it (plus a lightweight `folder` patch via `note_edited` to move notes). Department-level folders are declared in `notesconfig.json` by the department head. **[OPEN]** Exact placement of department-head folders relative to the department personnel folder — settle before UI build.
+### 41.4a Scope, and why crew_id is the identity key
+
+```
+scope = { level: "general" }                                      ← interdepartmental
+scope = { level: "department", department: "engine" }             ← one department
+scope = { level: "crew", department: "engine", owner_crew_id: … } ← one crew member
+```
+
+**General** sits above the departments and is the repository for interdepartmental communication — anything that is not one department's business. It has no `department`, so it is the same list whichever department tab is selected.
+
+**`crew_id` is the identity key throughout — never `username`.** 97 of the 112 records in `crewconfig.json` carry `username: null`, because most of the crew have no IDMS login; a username can therefore neither address nor distinguish a crew member, and a lookup keyed on one silently collapses the whole roster onto the first null-username record. Event `actor` remains a username (only people who can log in write events), and `assignee_username` rides along on assignment when it exists, so the PWA's alert check — which knows the signed-in user by username alone — keeps working. Notes written before this rule carry `scope.owner_username`, which readers still honour.
+
+**Groups and folders** occupy the band between Department notes and the Personnel heading, one arrangement per department, stored in `notesconfig.json` under `department_folders[{dept}]`. There are exactly **two levels**: a *group* sits at the level of Department notes and may hold folders; a *folder* is either top-level or inside one group. A note records where it lives as a single path string in `folder`:
+
+```
+"Shipyard Prep"           top-level folder
+"Overhauls"               the group itself — notes may sit directly in one
+"Overhauls/Main Engine"   a folder inside that group
+```
+
+The stored array holds either a bare string (a top-level folder — what every config written before groups contains) or `{type, name, folders[]}`. Reading normalises both, so nothing is migrated, and a config that never uses groups is written back byte-identical. A `/` is refused in a name, since it is the path separator.
+
+Groups and folders are added, renamed, removed and **dragged into any order within the band** — the two headings are hard stops, and a group cannot be dropped inside a group, because two levels is the whole design. Renaming or moving carries the notes with it (one `note_edited` each, re-pathing children too); removing moves its notes back to Department notes. Nothing is ever deleted. All config writes are ETag-guarded from both clients.
+
+**Dragging a note** onto a sidebar row files it there. Onto a folder or group it takes that path. Onto a person it means one of two things, settled by what the note is rather than by asking: a **personal note is handed over** — it already lives on somebody's list, so dragging it to another list moves its ownership — while a **department or global note is assigned**, which is the only reading that does not take it away from everyone else.
+
+### 41.4d The shared window
+
+A window left open on a bulkhead is an invitation: anyone walking past may add a note, and whoever signed in hours ago is the wrong name to put on it. **Shared mode** answers that — every event the window writes carries `actor: "browser"`, rendered everywhere as **"Browser addition"**. It records what is actually known: that the note came from that window, not who typed it. Signing a note with the wrong person is worse than not signing it.
+
+The Microsoft sign-in still stands behind the window, because OneDrive needs a token; what changes is the authorship written into the note, not the plumbing. In shared mode there is no "me" — nothing is highlighted as yours, the alert count is empty, and the window opens on the department rather than a personal list.
+
+The mode is a footer control reading *Writing as **Browser addition** — sign as me* (and the reverse), remembered per browser, and `?shared=1` on the URL pins a window to it so a shortcut on a shared machine opens straight in. `browser` is a reserved actor: it is not a crew member, never appears in a personnel list, and can never be assigned work.
+
+### 41.4b Attachment object
+
+```jsonc
+{
+  "kind": "image" | "file",
+  "filename": "seal-datasheet.pdf",
+  "path": "data/notes/files/{item_id}/seal-datasheet.pdf",
+  "thumbnail_path": "data/assets/pictures/{item_id}/thumb-x.jpg",  // images only, else null
+  "size": 20480,
+  "content_type": "application/pdf"                                // files only
+}
+```
+
+Images keep the task/rounds-comment convention exactly (1080×1024 full + 240×180 thumb @ 0.85 JPEG under `data/assets/pictures/{item_id}/`), so the Console's existing thumbnail and lightbox helpers render note photos unchanged. Everything else is stored byte-for-byte under `data/notes/files/{item_id}/`. `item_id` is the `note_id` for note attachments and the `comment_id` for comment attachments.
+
+A document cannot be downscaled the way a photo can, so files over Graph's 4 MB simple-upload ceiling are refused with a plain-English reason rather than a raw 413; the upload-session path is future work. Attachments may be added when the note is created — the `＋` on the add bar, or dropping a file onto it — as well as afterwards.
+
+### 41.4c Ordering
+
+Within any view: **starred first**, then newest first. Among starred notes a manual order is honoured when set (`sort_index`, dragged), and starred notes without one fall back to newest-first behind those that have one. Unstarred notes are always chronological — dragging one onto another is a no-op, and the UI does not pretend otherwise.
 
 ### 41.5 Comments
 
@@ -7302,6 +7377,47 @@ Submit travels **each client's existing ETag-guarded definition-create path** �
 **Mirrors.** A mirror (from promotion, or from department-level `task_imported`) renders the task's live status read-only and strikes through when the task reaches a terminal state. Tapping "complete" on a mirror fires the **existing `reported_complete` action** through the existing path — the mirror stores no completion state of its own, ever. Officer sign-off in the Console remains the only path to `completed`. This is the single seam between the hub and the guarded task machinery, and it introduces no new state.
 
 **Assigned Tasks board (Console).** The board lists tasks and *assigned* notes, visually distinct (note rows carry a note glyph, no TM fields). Unassigned notes never appear. Completing a note row from the board appends `note_completed` — it does not touch any task table.
+
+### 41.6a Assignment — three states, several people
+
+Assignment is one control with three states, in this order:
+
+| State | Meaning | Where it shows |
+|---|---|---|
+| **Unassigned note** (default) | Nobody's, and not offered to anyone. | Its own list only. |
+| **Assignable** | Open to whoever picks it up. | Its own list, plus the **Notes Tray** on the Assigned Tasks board. |
+| **Assigned** — one or more named people | On those people's plates. | Its own list, each assignee's personal list (pinned), and each assignee's card on the Assigned Tasks board. |
+
+Naming a person always wins: `note_assignment_set` is ignored while anyone is assigned, and the clients clear the plate before switching to a person-less state, so the control can never disagree with itself. Removing the last assignee leaves the note **assignable** rather than silently unassigned — it was offered work a moment ago, and dropping it off the board entirely is not what removing one name means.
+
+**A shared note is one note, not a copy each.** It appears in every assignee's personal list — pinned above their own notes — but there is a single `note_id` and a single completion. Completing it anywhere completes it for everyone, and the panel says so when more than one person is on it. This is the same mirroring rule §41.6 applies to imported tasks, for the same reason: two records of one job drift.
+
+**Pin outranks star.** Ordering within a personal list is *pinned* (assigned to that person) → *starred* → newest first. The pin is not a user action; it is what being assigned looks like on your own list.
+
+**The crew list is confined to this vessel.** `crewconfig.json` is the fleet's roster — it carries Alaska Spirit hands who cannot do work here — so every crew list in the hub filters on vessel with the same rule the Assigned Tasks board and Crew List use (`taskSameVessel`: a blank on either side passes, so an unrecorded vessel is never hidden by silence). The assignment pool is further narrowed to *active* crew of the note's own department.
+
+### 41.6b The Assigned Tasks board — two trays, one gesture
+
+The Console's Assigned Tasks board carries notes as well as tasks:
+
+- **Tasks Tray** (formerly "Unassigned") — open tasks on nobody's card.
+- **Notes Tray** — notes marked *Assignable* that nobody has picked up.
+- **Member cards** — every open task **and** note assigned to that person. A note assigned to several people appears on each of their cards; it is one note, so completing it anywhere completes it everywhere.
+
+**Dragging** moves work: onto a card to hand it over, onto the matching tray to release it. Dragging from one person's card onto another's cannot know which of two things is meant, so it asks: **Reassign** (take it off the first) or **Add Personnel** (both carry it). The `×` on a row takes *that person* off, leaving anyone else on it — "not mine", not "nobody's". Tasks and notes each refuse the other's tray rather than silently doing nothing.
+
+**Clicking** opens the full picker. For a task that is the assignment modal, where people are now **checkboxes** — several may hold one job — while *Unassigned* and *Locked* remain radio options exclusive with them and each other. For a note it opens the Notes screen, where the three states, comments and attachments live.
+
+### 41.6c Multi-assignee on tasks — the shared-file contract
+
+`assigned_to` on a task definition is a **single** field that the PWA, TM Master imports and every existing reader speak. Multi-assignment is therefore **additive**, not a replacement:
+
+| Field | Meaning |
+|---|---|
+| `assigned_to` | The first holder. Authoritative, unchanged, written on every assignment. |
+| `assignees[]` | Every holder, as assign keys. Absent or empty means "whatever `assigned_to` says". |
+
+Both are written together, `assigned_to` always being `assignees[0]`, so the two agreeing is the normal state. **Disagreement is how a foreign write is detected**: if `assigned_to` names somebody who is not first in the list — including being cleared to null — a writer that does not know about `assignees` has changed the holder since, and the single field wins while the stale list is discarded. That covers a PWA reassignment and a PWA release alike, and it means the PWA needs no change to stay correct. A PWA that later wants to *show* several holders reads `assignees` when it agrees with `assigned_to`; writing it is optional and can follow under the dual-write protocol.
 
 ### 41.7 Alerts
 
@@ -7355,7 +7471,7 @@ One synthesized line per department per day summarizing assigned notes completed
 }
 ```
 
-Edited in Console → Config (department-head or admin tier). ETag-guarded RMW like every config write. `department_heads` drives the `group_alert` and delete-any-note permissions; it is authorization *within the hub only* and grants nothing elsewhere.
+Edited in Console → Config (department-head or admin tier) **and from the Notes page itself** — the `＋` beside the Sections header adds one, and each section row carries rename and remove. Both writers take the ETag-guarded RMW (read with ETag → mutate → `If-Match`, retry once on 412, `If-None-Match: *` when the file does not exist yet); neither ever writes blind. `department_heads` drives the `group_alert` and delete-any-note permissions; it is authorization *within the hub only* and grants nothing elsewhere.
 
 ### 41.12 Console ingest and SQLite
 
@@ -7370,10 +7486,27 @@ New `sync-notes.js` lane in the standard 2-minute poll, cursor-driven (`ingest_c
 
 Rebuild/verify registered in `DIAG_REGISTRY` (`notes`) like every other subsystem; rebuild clears events + derived + cursors and replays from OneDrive.
 
+### 41.14 Attachment retention
+
+Attachments outlive their note by a grace period, then become **eligible for purge**. The clock depends on how the note left circulation:
+
+| Note state | Grace | Why |
+|---|---|---|
+| Deleted | 30 days | Recovery window for a mistaken delete. |
+| Completed | 30 days | The work is done; the evidence is not needed indefinitely. |
+| Promoted to task | 10 days | The documents are copied onto the task at promote time (§41.6), so this is purely insurance against a failed sync. |
+| **Archived** | **never** | Archiving is the deliberate "keep this" action. An archived note keeps its files indefinitely, whatever else is true of it. |
+
+When more than one clock applies, the **earliest** due date wins. Un-completing or un-archiving clears the corresponding stamp, so the clock restarts rather than carrying a stale deadline. Both clients show the remaining time on the note (`files kept 5d (completed)`), and the delete confirmation says how long attachments survive.
+
+**Eligibility is not deletion.** `docs/architecture.md` reserves deletion for a human action, and a background timer quietly destroying evidence is exactly what that rule exists to prevent. The reducer computes *what is due*; a Console screen lists it and an officer purges — one click, with the list in front of them. No timer deletes anything on its own.
+
 ### 41.13 Open items
 
-- **[OPEN]** Placement of department-head folders relative to the department personnel folder (41.4).
+- ~~**[OPEN]** Placement of department-head folders relative to the department personnel folder.~~ **Settled (v2.31.1):** they are *sections*, their own headers between Department and Personnel, per §41.4a.
+- ~~**[OPEN]** Who may author notes at department level.~~ **Settled (v2.31.1):** anyone, deliberately — mostly-global rules keep the first release clean, and an authorship setup page stays a future option rather than a commitment.
 - **[OPEN]** Whether aggregates ship in the first release or replay-only suffices at initial volumes (41.3).
+- **[NEXT SLICE]** The Console-side attachment purge screen required by §41.14 — the reducer already computes eligibility; nothing purges yet.
 - Emergency mode (41.9) is staged after the hub's first online-only release; the service worker work is tracked with PWA-SCHEMA §19.
 
 ---
