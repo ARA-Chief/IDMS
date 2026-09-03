@@ -307,6 +307,7 @@ var NT = {
   user: null,              // { username, name, role, permission_tier }
   meCrewId: null,          // this user's crew_id, when they appear in the roster
   crew: [],                // every crew record (active and inactive)
+  roleRank: new Map(),     // role_id → seniority index, from trainingmatrix.json
   notesConfig: { schema_version: 1, department_heads: {}, department_folders: {}, templates: [] },
   configEtag: null,
   events: [], loadedNames: {}, notes: {},
@@ -453,6 +454,11 @@ async function ntEnterApp() {
     .filter(function (c) { return ntSameVessel(c.vessel, NT.homeVessel); });
 
   await ntLoadConfig();
+
+  // Seniority order for the personnel list, from the same file the schedule
+  // and the Assigned Tasks board read.
+  var tm = await ntGetJson(ONEDRIVE_BASE + '/config/trainingmatrix.json').catch(function () { return null; });
+  NT.roleRank = new Map(((tm && tm.roles) || []).map(function (r, i) { return [r.role_id, i]; }));
 
   var mine = NT.crew.find(function (c) { return c.username && c.username === NT.user.username; });
   NT.meCrewId = mine ? mine.crew_id : null;
@@ -869,10 +875,14 @@ function ntRenderTree() {
 
   h += '<div class="tree-head">Personnel</div>';
   var deptCrew = NT.crew.filter(function (c) { return ntDeptKey(c.department) === NT.dept; });
+  // Senior first, the same order the schedule and the Assigned Tasks board
+  // use: trainingmatrix.roles[] is kept in rank order by Crew Setup, so a
+  // role's index in it is its rank. Deliberately no hoisting of the signed-in
+  // user — the point is that everyone sees the same list in the same order.
   var sorter = function (a, b) {
-    if (a.crew_id === NT.meCrewId) return -1;
-    if (b.crew_id === NT.meCrewId) return 1;
-    return (a.name || '').localeCompare(b.name || '');
+    var ra = NT.roleRank.has(a.role_id) ? NT.roleRank.get(a.role_id) : 999;
+    var rb = NT.roleRank.has(b.role_id) ? NT.roleRank.get(b.role_id) : 999;
+    return ra - rb || (a.name || '').localeCompare(b.name || '');
   };
   var active   = deptCrew.filter(function (c) { return c.status === 'active'; }).sort(sorter);
   var inactive = deptCrew.filter(function (c) { return c.status !== 'active'; }).sort(sorter);
