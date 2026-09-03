@@ -15,6 +15,8 @@ v2.31.2 *(2026-09-02)* — **Notes Hub: vessel-confined crew, three-state assign
 
 v2.31.3 *(2026-09-02)* — **Assigned Tasks board carries notes; several holders per task.** The board gains a **Notes Tray** beside the renamed **Tasks Tray**, and member cards now list every open task *and* note on that person (§41.6b). Dragging from one person to another asks **Reassign** or **Add Personnel** rather than guessing; the row `×` takes that one person off and leaves any others. The task assignment picker's people become **checkboxes** — several may hold one job — with *Unassigned* and *Locked* staying exclusive. Task multi-assignment is **additive** (§41.6c): new `tasks.assignees` (JSON array, DDL column plus a guarded ALTER) alongside the unchanged `assigned_to`, which is always written as the first holder; when the two disagree a writer that does not know the list has changed the holder, so the single field wins and the stale list is discarded — which is what keeps the PWA correct with no change to it. `getTasksUnified` exposes `assignees`; `taskAssigneeKeys` / `taskAssigneePatch` are the only readers and writers of the pair.
 
+v2.31.4 *(2026-09-02)* — **Two-level organisation, note dragging, full names.** The folder band gains **groups**: a group sits at the level of Department notes and holds folders, giving two levels and no more (§41.4a). A note's `folder` becomes a path — `"Folder"`, `"Group"`, or `"Group/Folder"` — and `department_folders[{dept}]` now holds bare strings (unchanged, what every existing config contains) or `{type, name, folders[]}` objects; reading normalises both, and a groupless config is written back byte-identical. Groups and folders are added, renamed, removed and dragged into any order inside the band, with the Department-notes and Personnel headings as hard stops and a group refused inside a group. Renaming or moving re-paths the notes beneath, children included. **Dragging a note** now files it into a folder or group, and onto a person means hand-over for a personal note (ownership moves) or assignment for a department or global one. The Console screen gains note dragging, which it did not have at all. Personnel lists show **full names** in both clients — two Sams and two Taylors aboard mean a first name is not an identification.
+
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
@@ -7303,7 +7305,19 @@ scope = { level: "crew", department: "engine", owner_crew_id: … } ← one crew
 
 **`crew_id` is the identity key throughout — never `username`.** 97 of the 112 records in `crewconfig.json` carry `username: null`, because most of the crew have no IDMS login; a username can therefore neither address nor distinguish a crew member, and a lookup keyed on one silently collapses the whole roster onto the first null-username record. Event `actor` remains a username (only people who can log in write events), and `assignee_username` rides along on assignment when it exists, so the PWA's alert check — which knows the signed-in user by username alone — keeps working. Notes written before this rule carry `scope.owner_username`, which readers still honour.
 
-**Sections** are the named headers between Department and Personnel, one set per department, stored in `notesconfig.json` under `department_folders[{dept}]` and carried on a note as `folder`. They are added, renamed, and removed from the Notes page itself (§41.11), and both writes are ETag-guarded. Removing a section moves its notes back to Department notes — one `note_edited` each; nothing is deleted. A note is re-filed between any of these places by dragging it onto the target in the sidebar, which emits a single `note_edited` carrying the new `scope` and `folder`.
+**Groups and folders** occupy the band between Department notes and the Personnel heading, one arrangement per department, stored in `notesconfig.json` under `department_folders[{dept}]`. There are exactly **two levels**: a *group* sits at the level of Department notes and may hold folders; a *folder* is either top-level or inside one group. A note records where it lives as a single path string in `folder`:
+
+```
+"Shipyard Prep"           top-level folder
+"Overhauls"               the group itself — notes may sit directly in one
+"Overhauls/Main Engine"   a folder inside that group
+```
+
+The stored array holds either a bare string (a top-level folder — what every config written before groups contains) or `{type, name, folders[]}`. Reading normalises both, so nothing is migrated, and a config that never uses groups is written back byte-identical. A `/` is refused in a name, since it is the path separator.
+
+Groups and folders are added, renamed, removed and **dragged into any order within the band** — the two headings are hard stops, and a group cannot be dropped inside a group, because two levels is the whole design. Renaming or moving carries the notes with it (one `note_edited` each, re-pathing children too); removing moves its notes back to Department notes. Nothing is ever deleted. All config writes are ETag-guarded from both clients.
+
+**Dragging a note** onto a sidebar row files it there. Onto a folder or group it takes that path. Onto a person it means one of two things, settled by what the note is rather than by asking: a **personal note is handed over** — it already lives on somebody's list, so dragging it to another list moves its ownership — while a **department or global note is assigned**, which is the only reading that does not take it away from everyone else.
 
 ### 41.4b Attachment object
 

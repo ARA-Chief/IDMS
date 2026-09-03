@@ -74,7 +74,10 @@
   .tree-item.folder .folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tree-item.folder.dragging { opacity: .4; }
   .tree-item.folder.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
-  .tree-item.add-folder { color: var(--text-muted); font-size: 12.5px; }
+  .tree-item.folder.group { font-weight: 600; color: var(--text-primary); }
+  .tree-item.folder.nested { padding-left: 26px; font-size: 13.5px; }
+  .band-adds { display: flex; gap: 4px; }
+  .tree-item.add-folder { color: var(--text-muted); font-size: 12.5px; flex: 1; }
   .tree-item.add-folder:hover { color: var(--accent); }
   .tree-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary); font-size: 14px; }
   .tree-item:hover { background: var(--bg-2); }
@@ -541,65 +544,160 @@ async function ntSaveConfig(mutate) {
   throw new Error('notesconfig was being edited elsewhere — try again');
 }
 
+// ── Groups and folders (§41.4a) ─────────────────────────────
+// Two levels. A GROUP sits at the level of Department notes and may hold
+// folders; a FOLDER is either top-level or inside one group. A note records
+// where it lives as a single path string in `folder`:
+//
+//   "Shipyard Prep"            top-level folder
+//   "Overhauls"                the group itself — notes may sit directly in one
+//   "Overhauls/Main Engine"    a folder inside that group
+//
+// The stored shape is an ordered array whose entries are either a bare string
+// (a top-level folder, which is what every existing config holds) or an
+// object. Reading normalises both, so nothing has to be migrated.
 function ntSections(deptKey) {
-  return (NT.notesConfig.department_folders || {})[deptKey] || [];
+  var raw = (NT.notesConfig.department_folders || {})[deptKey] || [];
+  return raw.map(function (e) {
+    if (typeof e === 'string') return { type: 'folder', name: e, folders: [] };
+    return {
+      type:    e.type === 'group' ? 'group' : 'folder',
+      name:    e.name,
+      folders: Array.isArray(e.folders) ? e.folders.slice() : []
+    };
+  }).filter(function (e) { return e.name; });
 }
 
-async function ntAddSection() {
-  var name = (prompt('New folder name (this department only):') || '').trim();
-  if (!name) return;
+function ntFolderPath(groupName, folderName) {
+  return groupName ? groupName + '/' + folderName : folderName;
+}
+
+// Every path this entry owns — a group owns its own and its children's, which
+// is what lets a group's count include the notes filed beneath it.
+function ntPathsUnder(entry) {
+  if (entry.type !== 'group') return [entry.name];
+  return [entry.name].concat(entry.folders.map(function (f) { return entry.name + '/' + f; }));
+}
+
+async function ntMutateSections(fn) {
+  await ntSaveConfig(function (cfg) {
+    cfg.department_folders = cfg.department_folders || {};
+    var list = ntSections(NT.dept);
+    var next = fn(list);
+    if (next === false) return false;
+    // Written back in the normalised shape; a top-level folder stays a bare
+    // string so a config that never uses groups reads exactly as it did.
+    cfg.department_folders[NT.dept] = next.map(function (e) {
+      return e.type === 'group'
+        ? { type: 'group', name: e.name, folders: e.folders }
+        : e.name;
+    });
+  });
+}
+
+// Re-file every note under `fromPaths` onto the matching `toPaths`, one
+// appended edit each. Used by rename and remove — nothing is ever deleted.
+async function ntRepathNotes(map) {
+  for (var id in NT.notes) {
+    var n = NT.notes[id];
+    if (n.deleted || (n.scope.department || null) !== NT.dept) continue;
+    if (!Object.prototype.hasOwnProperty.call(map, n.folder || '')) continue;
+    await ntAppendEvent('note_edited', {
+      note_id: id,
+      patch:  { folder: map[n.folder] },
+      before: { folder: n.folder }
+    });
+  }
+}
+
+async function ntAddSection(kind, groupName) {
+  var what = kind === 'group' ? 'group' : 'folder';
+  var name = (prompt('New ' + what + ' name (' + ntDeptLabel(NT.dept) + ' only):') || '').trim();
+  if (!name || name.indexOf('/') >= 0) {
+    if (name) ntToast('A name cannot contain "/".');
+    return;
+  }
   try {
-    await ntSaveConfig(function (cfg) {
-      cfg.department_folders = cfg.department_folders || {};
-      var list = cfg.department_folders[NT.dept] || [];
-      if (list.indexOf(name) >= 0) return false;
-      list.push(name);
-      cfg.department_folders[NT.dept] = list;
+    await ntMutateSections(function (list) {
+      if (groupName) {
+        var g = list.find(function (e) { return e.type === 'group' && e.name === groupName; });
+        if (!g || g.folders.indexOf(name) >= 0) return false;
+        g.folders.push(name);
+        return list;
+      }
+      if (list.some(function (e) { return e.name === name; })) return false;
+      list.push({ type: what, name: name, folders: [] });
+      return list;
     });
     ntRenderAll();
-  } catch (e) { ntToast('Could not add section — ' + e.message); }
+  } catch (e) { ntToast('Could not add — ' + e.message); }
 }
 
-async function ntRenameSection(oldName) {
-  var name = (prompt('Rename folder:', oldName) || '').trim();
-  if (!name || name === oldName) return;
+async function ntRenameSection(path) {
+  var parts = String(path).split('/');
+  var oldName = parts[parts.length - 1];
+  var parent  = parts.length > 1 ? parts[0] : null;
+  var name = (prompt('Rename:', oldName) || '').trim();
+  if (!name || name === oldName || name.indexOf('/') >= 0) {
+    if (name && name.indexOf('/') >= 0) ntToast('A name cannot contain "/".');
+    return;
+  }
   try {
-    await ntSaveConfig(function (cfg) {
-      var list = (cfg.department_folders || {})[NT.dept] || [];
-      var i = list.indexOf(oldName);
-      if (i < 0) return false;
-      list[i] = name;
-      cfg.department_folders[NT.dept] = list;
-    });
-    // Move the notes across with the header, one edit event each.
-    for (var id in NT.notes) {
-      var n = NT.notes[id];
-      if (!n.deleted && n.folder === oldName && (n.scope.department || null) === NT.dept) {
-        await ntAppendEvent('note_edited', { note_id: id, patch: { folder: name }, before: { folder: oldName } });
+    var map = {};
+    await ntMutateSections(function (list) {
+      if (parent) {
+        var g = list.find(function (e) { return e.type === 'group' && e.name === parent; });
+        var i = g ? g.folders.indexOf(oldName) : -1;
+        if (i < 0) return false;
+        g.folders[i] = name;
+        map[parent + '/' + oldName] = parent + '/' + name;
+        return list;
       }
-    }
-    if (NT.view.folder === oldName) NT.view.folder = name;
+      var entry = list.find(function (e) { return e.name === oldName; });
+      if (!entry) return false;
+      entry.name = name;
+      map[oldName] = name;
+      // A group takes its children's paths with it.
+      entry.folders.forEach(function (f) { map[oldName + '/' + f] = name + '/' + f; });
+      return list;
+    });
+    await ntRepathNotes(map);
+    if (map[NT.view.folder]) NT.view.folder = map[NT.view.folder];
     ntRenderAll();
   } catch (e) { ntToast('Could not rename — ' + e.message); }
 }
 
-async function ntRemoveSection(name) {
-  var inSection = [];
+async function ntRemoveSection(path) {
+  var parts = String(path).split('/');
+  var name   = parts[parts.length - 1];
+  var parent = parts.length > 1 ? parts[0] : null;
+  var entry = parent ? null : ntSections(NT.dept).find(function (e) { return e.name === name; });
+  var paths = entry ? ntPathsUnder(entry) : [path];
+
+  var count = 0;
   for (var id in NT.notes) {
     var n = NT.notes[id];
-    if (!n.deleted && n.folder === name && (n.scope.department || null) === NT.dept) inSection.push(id);
+    if (!n.deleted && paths.indexOf(n.folder) >= 0 && (n.scope.department || null) === NT.dept) count++;
   }
-  if (!confirm('Remove the folder "' + name + '"?' +
-      (inSection.length ? '\n\n' + inSection.length + ' note(s) move back to Department notes — nothing is deleted.' : ''))) return;
+  var childNote = entry && entry.type === 'group' && entry.folders.length
+    ? '\n\nIts ' + entry.folders.length + ' folder(s) go with it.' : '';
+  if (!confirm('Remove "' + name + '"?' + childNote +
+      (count ? '\n\n' + count + ' note(s) move back to Department notes — nothing is deleted.' : ''))) return;
+
   try {
-    await ntSaveConfig(function (cfg) {
-      var list = (cfg.department_folders || {})[NT.dept] || [];
-      cfg.department_folders[NT.dept] = list.filter(function (f) { return f !== name; });
+    var map = {};
+    paths.forEach(function (p) { map[p] = null; });
+    await ntMutateSections(function (list) {
+      if (parent) {
+        var g = list.find(function (e) { return e.type === 'group' && e.name === parent; });
+        if (!g) return false;
+        g.folders = g.folders.filter(function (f) { return f !== name; });
+        return list;
+      }
+      return list.filter(function (e) { return e.name !== name; });
     });
-    for (var i = 0; i < inSection.length; i++) {
-      await ntAppendEvent('note_edited', { note_id: inSection[i], patch: { folder: null }, before: { folder: name } });
-    }
-    if (NT.view.folder === name) NT.view = { kind: 'department', owner: null, folder: null };
+    await ntRepathNotes(map);
+    if (paths.indexOf(NT.view.folder) >= 0) NT.view = { kind: 'department', owner: null, folder: null };
     ntRenderAll();
   } catch (e) { ntToast('Could not remove — ' + e.message); }
 }
@@ -867,11 +965,14 @@ function ntRenderTree() {
   h += ntTreeItem({ kind: 'department', owner: null, folder: null },
                   '📋 ' + ntEsc(ntDeptLabel(NT.dept)) + ' notes');
 
-  // Folders, per department. They live strictly between Department notes and
-  // the Personnel heading — those are the hard stops, and reordering happens
-  // inside that band only.
-  h += '<div id="folder-band">' + ntSections(NT.dept).map(ntFolderItem).join('') + '</div>';
-  h += '<div class="tree-item add-folder" onclick="ntAddSection()">＋ Add folder</div>';
+  // Groups and folders, per department. They live strictly between Department
+  // notes and the Personnel heading — those are the hard stops, and every
+  // rearrangement happens inside that band.
+  h += '<div id="folder-band">' + ntSections(NT.dept).map(ntBandEntry).join('') + '</div>';
+  h += '<div class="band-adds">' +
+       '<span class="tree-item add-folder" onclick="ntAddSection(\'folder\')">＋ Add folder</span>' +
+       '<span class="tree-item add-folder" onclick="ntAddSection(\'group\')">＋ Add group</span>' +
+       '</div>';
 
   h += '<div class="tree-head">Personnel</div>';
   var deptCrew = NT.crew.filter(function (c) { return ntDeptKey(c.department) === NT.dept; });
@@ -887,8 +988,10 @@ function ntRenderTree() {
   var active   = deptCrew.filter(function (c) { return c.status === 'active'; }).sort(sorter);
   var inactive = deptCrew.filter(function (c) { return c.status !== 'active'; }).sort(sorter);
 
+  // Full names: two Sams and two Taylors aboard means a first name alone is
+  // not an identification.
   active.forEach(function (c) {
-    var label = '👤 ' + ntEsc(ntShortName(c.crew_id));
+    var label = '👤 ' + ntEsc(ntFullName(c));
     if (c.crew_id === NT.meCrewId) label += ' <span class="me-chip">me</span>';
     h += ntTreeItem({ kind: 'crew', owner: c.crew_id, folder: null }, label);
   });
@@ -900,7 +1003,7 @@ function ntRenderTree() {
     if (NT.showInactive) {
       inactive.forEach(function (c) {
         h += ntTreeItem({ kind: 'crew', owner: c.crew_id, folder: null },
-                        '👤 ' + ntEsc(ntShortName(c.crew_id)));
+                        '👤 ' + ntEsc(ntFullName(c)));
       });
     }
   }
@@ -908,33 +1011,58 @@ function ntRenderTree() {
   document.getElementById('tree').innerHTML = h;
 }
 
-// A folder row: a drop target for notes like any other view, plus rename,
-// remove, and a grip for reordering within the band.
-function ntFolderItem(name) {
-  var counts = ntCounts({ kind: 'department', owner: null, folder: name });
-  var active = NT.view.kind === 'department' && NT.view.folder === name;
+// One top-level entry: a folder row, or a group row followed by its folders.
+function ntBandEntry(entry) {
+  if (entry.type !== 'group') return ntFolderRow(entry.name, null, false);
+  return ntFolderRow(entry.name, null, true) +
+         entry.folders.map(function (f) { return ntFolderRow(f, entry.name, false); }).join('');
+}
+
+// A row in the band: a drop target for notes like any other view, plus rename,
+// remove, and a grip for rearranging. Groups also carry a ＋ that adds a folder
+// inside them.
+function ntFolderRow(name, groupName, isGroup) {
+  var path   = ntFolderPath(groupName, name);
+  var view   = { kind: 'department', owner: null, folder: path };
+  var active = NT.view.kind === 'department' && NT.view.folder === path;
+  var counts = isGroup
+    ? ntCountsUnder(ntSections(NT.dept).find(function (e) { return e.name === name; }))
+    : ntCounts(view);
   var count = counts.open
     ? '<span class="count' + (counts.mine ? ' alert' : '') + '">' + counts.open + '</span>' : '';
-  var view = { kind: 'department', owner: null, folder: name };
-  return '<div class="tree-item folder' + (active ? ' active' : '') + '" draggable="true"' +
-    ' data-folder="' + ntAttr(name) + '"' +
+  var esc = ntAttr(path).replace(/'/g, "\\'");
+
+  return '<div class="tree-item folder' + (isGroup ? ' group' : '') + (groupName ? ' nested' : '') +
+    (active ? ' active' : '') + '" draggable="true"' +
+    ' data-path="' + ntAttr(path) + '" data-group="' + ntAttr(groupName || '') + '"' +
+    ' data-isgroup="' + (isGroup ? '1' : '') + '"' +
     ' data-view=\'' + ntAttr(JSON.stringify(view)) + '\'' +
     ' onclick=\'ntSetView(' + ntAttr(JSON.stringify(view)) + ')\'' +
     ' ondragstart="ntFolderDragStart(event,this)" ondragend="ntFolderDragEnd(this)"' +
     ' ondragover="ntFolderDragOver(event,this)"' +
     ' ondragleave="this.classList.remove(\'drop-before\',\'drop-target\')"' +
     ' ondrop="ntFolderDrop(event,this)">' +
-    '<span class="grip" title="Drag to reorder">⋮⋮</span>' +
-    '<span class="folder-name">' + ntEsc(name) + '</span>' + count +
-    '<span class="sec-edit" title="Rename" onclick="event.stopPropagation();ntRenameSection(\'' + ntAttr(name).replace(/'/g, "\\'") + '\')">✎</span>' +
-    '<span class="sec-edit" title="Remove" onclick="event.stopPropagation();ntRemoveSection(\'' + ntAttr(name).replace(/'/g, "\\'") + '\')">✕</span>' +
+    '<span class="grip" title="Drag to rearrange">⋮⋮</span>' +
+    '<span class="folder-name">' + (isGroup ? '▾ ' : '') + ntEsc(name) + '</span>' + count +
+    (isGroup ? '<span class="sec-edit" title="Add a folder in here" onclick="event.stopPropagation();ntAddSection(\'folder\',\'' + esc + '\')">＋</span>' : '') +
+    '<span class="sec-edit" title="Rename" onclick="event.stopPropagation();ntRenameSection(\'' + esc + '\')">✎</span>' +
+    '<span class="sec-edit" title="Remove" onclick="event.stopPropagation();ntRemoveSection(\'' + esc + '\')">✕</span>' +
     '</div>';
 }
 
+// A group's count is its own notes plus everything in its folders.
+function ntCountsUnder(entry) {
+  if (!entry) return { open: 0, mine: 0 };
+  return ntPathsUnder(entry).reduce(function (acc, p) {
+    var c = ntCounts({ kind: 'department', owner: null, folder: p });
+    return { open: acc.open + c.open, mine: acc.mine + c.mine };
+  }, { open: 0, mine: 0 });
+}
+
 function ntFolderDragStart(ev, el) {
-  NT.dragFolder = el.dataset.folder;
+  NT.dragFolder = { path: el.dataset.path, group: el.dataset.group || null, isGroup: !!el.dataset.isgroup };
   el.classList.add('dragging');
-  try { ev.dataTransfer.setData('text/plain', NT.dragFolder); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {}
+  try { ev.dataTransfer.setData('text/plain', NT.dragFolder.path); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {}
   ev.stopPropagation();
 }
 
@@ -946,10 +1074,13 @@ function ntFolderDragEnd(el) {
   });
 }
 
-// Two different drags land on a folder: another folder being reordered, or a
+// Two different drags land on a band row: another row being rearranged, or a
 // note being re-filed into it. The state says which.
 function ntFolderDragOver(ev, el) {
-  if (NT.dragFolder && NT.dragFolder !== el.dataset.folder) {
+  var d = NT.dragFolder;
+  if (d && d.path !== el.dataset.path) {
+    // A group cannot be dropped into a group — two levels, not a tree.
+    if (d.isGroup && el.dataset.group) return;
     ev.preventDefault();
     el.classList.add('drop-before');
     return;
@@ -959,26 +1090,69 @@ function ntFolderDragOver(ev, el) {
 
 async function ntFolderDrop(ev, el) {
   el.classList.remove('drop-before');
-  if (NT.dragFolder && NT.dragFolder !== el.dataset.folder) {
+  var d = NT.dragFolder;
+  if (d && d.path !== el.dataset.path) {
+    if (d.isGroup && el.dataset.group) return;
     ev.preventDefault();
     ev.stopPropagation();
-    var moved = NT.dragFolder, target = el.dataset.folder;
     NT.dragFolder = null;
+
+    // Where it lands: inside the target's group when the target is nested,
+    // inside the group itself when dropped on a group row, otherwise at the
+    // top level immediately before the target.
+    var targetGroup = el.dataset.group || (el.dataset.isgroup ? el.dataset.path : null);
+    var targetPath  = el.dataset.path;
     try {
-      // Insert immediately before the row it was dropped on.
-      await ntSaveConfig(function (cfg) {
-        var list = (cfg.department_folders || {})[NT.dept] || [];
-        var next = list.filter(function (f) { return f !== moved; });
-        var at = next.indexOf(target);
-        if (at < 0) return false;
-        next.splice(at, 0, moved);
-        cfg.department_folders[NT.dept] = next;
+      var map = {};
+      await ntMutateSections(function (list) {
+        var name = d.path.split('/').pop();
+
+        // Lift it out of wherever it is now.
+        var moved = null;
+        if (d.group) {
+          var src = list.find(function (e) { return e.type === 'group' && e.name === d.group; });
+          if (!src) return false;
+          src.folders = src.folders.filter(function (f) { return f !== name; });
+          moved = { type: 'folder', name: name, folders: [] };
+        } else {
+          var i = list.findIndex(function (e) { return e.name === name; });
+          if (i < 0) return false;
+          moved = list.splice(i, 1)[0];
+        }
+
+        if (targetGroup && !moved.folders.length && moved.type !== 'group') {
+          var g = list.find(function (e) { return e.type === 'group' && e.name === targetGroup; });
+          if (!g) return false;
+          if (g.folders.indexOf(name) < 0) {
+            // Before the target folder when dropped on one, else at the end.
+            var at = el.dataset.group ? g.folders.indexOf(targetPath.split('/').pop()) : -1;
+            if (at < 0) g.folders.push(name); else g.folders.splice(at, 0, name);
+          }
+          map[d.path] = targetGroup + '/' + name;
+        } else {
+          var topName = (targetGroup && el.dataset.isgroup) ? targetGroup : targetPath.split('/')[0];
+          var at2 = list.findIndex(function (e) { return e.name === topName; });
+          list.splice(at2 < 0 ? list.length : at2, 0, moved);
+          map[d.path] = name;
+          // A group carries its folders' paths with it.
+          if (moved.type === 'group') {
+            moved.folders.forEach(function (f) { map[moved.name + '/' + f] = moved.name + '/' + f; });
+          }
+        }
+        return list;
       });
+      // Only notes whose path actually changed need an event.
+      var real = {};
+      Object.keys(map).forEach(function (k) { if (map[k] !== k) real[k] = map[k]; });
+      if (Object.keys(real).length) await ntRepathNotes(real);
+      if (real[NT.view.folder]) NT.view.folder = real[NT.view.folder];
       ntRenderAll();
-    } catch (e) { ntToast('Could not reorder — ' + e.message); }
+    } catch (e) { ntToast('Could not rearrange — ' + e.message); }
     return;
   }
-  ntTreeDrop(ev, el);
+  // Not a rearrangement — a note being filed into this row. Returned rather
+  // than called, so the drop completes before anything awaiting it continues.
+  return ntTreeDrop(ev, el);
 }
 
 // Every tree item is a drop target: dragging a note onto it re-files the note
@@ -1164,20 +1338,34 @@ async function ntTreeDrop(ev, el) {
   try { view = JSON.parse(el.dataset.view); } catch (e) { return; }
   if (ntInView(n, { kind: view.kind, owner: view.owner || null, folder: view.folder || null })) return;
 
-  // Dropping on a person assigns rather than moves. Re-filing a note into
-  // somebody's personal list would take it away from where the work lives;
-  // putting it on their plate is what the gesture means, and the note stays
-  // where it is (§41.6a).
+  // Dropping on a person means one of two things, and which one is settled by
+  // what the note is rather than by asking:
+  //
+  //   a personal note → hand the note itself over. It already lives on
+  //                     somebody's list, so dragging it to another list moves
+  //                     it — that is what dragging between two people means.
+  //   anything else   → put it on their plate. A department or global note
+  //                     belongs where it is, and assigning is the only reading
+  //                     that does not take it away from everyone else.
   if (view.kind === 'crew') {
     var c = ntCrewById(view.owner);
     try {
-      await ntAppendEvent('note_assigned', {
-        note_id: n.note_id,
-        assignee_crew_id: view.owner,
-        assignee_username: (c && c.username) || null
-      });
-      ntToast('Assigned to ' + ntShortName(view.owner));
-    } catch (e) { ntToast('Could not assign — ' + e.message); }
+      if (n.scope.level === 'crew') {
+        await ntAppendEvent('note_edited', {
+          note_id: n.note_id,
+          patch:  { scope: { level: 'crew', department: NT.dept, owner_crew_id: view.owner } },
+          before: { scope: n.scope }
+        });
+        ntToast('Moved to ' + ntShortName(view.owner) + "'s notes");
+      } else {
+        await ntAppendEvent('note_assigned', {
+          note_id: n.note_id,
+          assignee_crew_id: view.owner,
+          assignee_username: (c && c.username) || null
+        });
+        ntToast('Assigned to ' + ntShortName(view.owner));
+      }
+    } catch (e) { ntToast('Could not move — ' + e.message); }
     return;
   }
 
