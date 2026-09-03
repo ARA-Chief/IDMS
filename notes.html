@@ -962,8 +962,11 @@ function ntRenderTree() {
     return '<div class="dept-tab' + (d.key === NT.dept ? ' active' : '') +
            '" onclick="ntSetDept(\'' + ntAttr(d.key) + '\')">' + ntEsc(d.label) + '</div>';
   }).join('') + '</div>';
+  // Department notes doubles as the way out of a group: a folder dragged onto
+  // it returns to the top level. Without that there is no escape once a folder
+  // is inside a group and nothing else sits at the top to drop it before.
   h += ntTreeItem({ kind: 'department', owner: null, folder: null },
-                  '📋 ' + ntEsc(ntDeptLabel(NT.dept)) + ' notes');
+                  '📋 ' + ntEsc(ntDeptLabel(NT.dept)) + ' notes', null, true);
 
   // Groups and folders, per department. They live strictly between Department
   // notes and the Personnel heading — those are the hard stops, and every
@@ -1157,7 +1160,7 @@ async function ntFolderDrop(ev, el) {
 
 // Every tree item is a drop target: dragging a note onto it re-files the note
 // into that view (§41.6 move semantics — one note_edited event).
-function ntTreeItem(view, label, sectionName) {
+function ntTreeItem(view, label, sectionName, acceptsFolders) {
   var counts = ntCounts(view);
   var active = NT.view.kind === view.kind &&
                (NT.view.owner || null) === (view.owner || null) &&
@@ -1171,11 +1174,52 @@ function ntTreeItem(view, label, sectionName) {
   var payload = ntAttr(JSON.stringify(view));
   return '<div class="tree-item' + (active ? ' active' : '') + '"' +
          ' data-view=\'' + payload + '\'' +
+         (acceptsFolders ? ' data-toplevel="1"' : '') +
          ' onclick=\'ntSetView(' + payload + ')\'' +
-         ' ondragover="ntTreeDragOver(event,this)"' +
+         ' ondragover="' + (acceptsFolders ? 'ntTopLevelDragOver' : 'ntTreeDragOver') + '(event,this)"' +
          ' ondragleave="this.classList.remove(\'drop-target\')"' +
-         ' ondrop="ntTreeDrop(event,this)">' +
+         ' ondrop="' + (acceptsFolders ? 'ntTopLevelDrop' : 'ntTreeDrop') + '(event,this)">' +
          label + countHtml + secBtns + '</div>';
+}
+
+// Department notes accepts two kinds of drop: a note (filed at department
+// level) and a folder or group being lifted back out to the top level.
+function ntTopLevelDragOver(ev, el) {
+  if (NT.dragFolder) { ev.preventDefault(); el.classList.add('drop-target'); return; }
+  ntTreeDragOver(ev, el);
+}
+
+async function ntTopLevelDrop(ev, el) {
+  el.classList.remove('drop-target');
+  var d = NT.dragFolder;
+  if (!d) return ntTreeDrop(ev, el);
+
+  ev.preventDefault();
+  ev.stopPropagation();
+  NT.dragFolder = null;
+  if (!d.group) return;                 // already at the top level
+
+  var name = d.path.split('/').pop();
+  try {
+    var map = {};
+    await ntMutateSections(function (list) {
+      var g = list.find(function (e) { return e.type === 'group' && e.name === d.group; });
+      if (!g || g.folders.indexOf(name) < 0) return false;
+      g.folders = g.folders.filter(function (f) { return f !== name; });
+      if (list.some(function (e) { return e.name === name; })) return false;   // name already taken up top
+      list.unshift({ type: 'folder', name: name, folders: [] });
+      map[d.path] = name;
+      return list;
+    });
+    if (Object.keys(map).length) {
+      await ntRepathNotes(map);
+      if (map[NT.view.folder]) NT.view.folder = map[NT.view.folder];
+      ntToast('"' + name + '" moved out of ' + d.group);
+    } else {
+      ntToast('A folder called "' + name + '" already sits at the top level.');
+    }
+    ntRenderAll();
+  } catch (e) { ntToast('Could not move out — ' + e.message); }
 }
 
 function ntSetView(view) {
