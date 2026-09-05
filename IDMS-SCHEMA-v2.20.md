@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.34 — F/V Araho**
+**Version 2.35 — F/V Araho**
+
+v2.35 *(2026-09-05)* — **Procurement built in the Console (§42.12 rewritten from "not built").** `Operations → Procurement` in IDMS-Console 0.8.5, as two renderers of one contract rather than a second system that happens to agree: the same OneDrive event stream, the same TM Master catalogue, and `utils/procurement-reduce.js` mirrored byte-identical into `src/renderer/js/`. New ingest lane `sync-procurement.js` shaped exactly like `sync-notes.js` — raw events into `procurement_events`, whole derived cache rebuilt through the shared reducer, listing-minus-held rather than a cursor seek. New SQLite tables `procurement_items` / `_movements` / `_requisitions` / `_pos`, a `procurement` entry in `DIAG_REGISTRY` with a renderer-delegated rebuild, and Graph helpers including an ETag-guarded write of the `settings` block only. The register is filtered in SQL because 14,487 rows will not go through the renderer, and derived order/requisition lines carry a folded-in `item_name` since the Console holds no in-memory register. Approving a requisition and sending an order are Console-only, being officer actions; nothing is page-only. Adds `_procurement-harness.html`, a standalone page running the real screen, derive and reducer over a local catalogue with writes collected rather than sent.
 
 v2.34 *(2026-09-05)* — **§42.15 new: the TM Master push-back lane, and what the history supports for minimums.** IDMS already exports service reports to TM Master and that lane is being extended into a general reconcile-and-push path; this module must not grow a second one, so its two write-shaped events are recorded as *input* to it — `item_change_proposed` is already a proposal in the ratified sense, and the superseded movement set (§42.14) is precisely the keying worklist a reconcile pass needs. The §42.13 reconciliation question resolves through that lane rather than inside this module. Also records an assessment of **deriving order minimums from history**, measured rather than assumed: 11,835 of 14,487 items (81.7%) show no movement across the three consumption years TM Master exports, and of the 2,652 that moved, the median three-year total is 3 units. The restock interval is a real 16 days (median gap across the 19 offloads in `scheduleconfig.json`), but **`est_delivery_days` is set on 1 item of 14,487**, and with a cycle that short the assumed lead time swings the answer four-fold. The 6,091 completed task records from 2017–2026 do not help: `items_used` is populated on 7 of them, and what was fitted lives in free text. Banding by evidence gives **448 items (3.1%) defensible today**, 408 of them new, and only 8 of the 58 critical-flagged items — critical spares are the slow movers consumption history cannot speak to. 67 of the 448 are already below their proposed minimum. Proposals are computed offline (`data/procurement/proposed-minimums.json`, read by nothing); publishing them as `item_policy_set` events is an officer's decision, not a computation. The standing argument for building it anyway is that issuing stock against a `task_id` is the structured parts-on-job capture `items_used` never got, and `po_sent`-to-first-receipt measures the lead times nobody recorded.
 
@@ -7837,11 +7839,28 @@ Deliberately close to §41's mostly-global stance — the record of who did what
 
 **`browser` is a reserved actor here too** (§41.4d). A shared window may record movements — that is exactly what a receiving station is — but it can never approve a requisition or send an order, because those need a name.
 
-### 42.12 Console side (not built)
+### 42.12 Console side — built (v2.35)
 
-A `procurement` ingest lane mirroring `sync-notes.js`: cursor per year over `data/procurement/events/{YYYY}/`, raw `procurement_events` table, derived `procurement_items`, `procurement_movements`, `procurement_requisitions`, `procurement_pos`. The reducer is **not reimplemented** — `utils/procurement-reduce.js` is mirrored byte-identical into `src/renderer/js/`, the `crew-display.js` / `notes-reduce.js` convention, so two renderers stay honest against one contract.
+`Operations → Procurement` in IDMS-Console 0.8.5. **Two renderers of one contract**, the rule the Notes Hub pair already follows: the same event stream, the same catalogue, and `utils/procurement-reduce.js` mirrored byte-identical into `src/renderer/js/` (the `crew-display.js` convention). Agreement is structural, not a thing anyone has to maintain.
 
-What the Console adds rather than duplicates: spend by category and by supplier over a trip, consumption history feeding `min_qty` suggestions, the join from `sfi_code` to failure history ("this seal is consumed four times a year on this pump"), and printable order documents.
+| Piece | File |
+|---|---|
+| Ingest lane | `src/renderer/js/sync-procurement.js` |
+| Screen | `src/renderer/js/procurement.js` |
+| Reducer mirror | `src/renderer/js/procurement-reduce.js` |
+| Graph helpers | `graph.js` — event stream, catalogue, ETag-guarded `settings` write |
+| Tables, IPC, diagnostics | `src/main/main.js` — `procurement` in `DIAG_REGISTRY` |
+| Harness | `src/renderer/_procurement-harness.html` |
+
+**The lane** is `sync-notes.js` in shape: raw events into `procurement_events`, then the whole derived cache rebuilt through the shared reducer — whole-cache on change, because one derivation path cannot drift from itself. It lists every file and subtracts what it holds rather than seeking past a cursor, for the reason §41's lane does: an event file is named from the timestamp inside it, so a back-dated write sorts below a high-water mark and is lost for good.
+
+**The catalogue** is the input the Notes lane has no equivalent of, and it arrives through the existing conditional-GET path (`graphGetPreferMirror` against the folder listing's eTag), so an unchanged 1.8 MB file costs a listing call and no download.
+
+**SQLite earns its place rather than merely mirroring.** 14,487 items is far too many to hand to the renderer and filter in JavaScript, so `getProcurementItems` filters in SQL, requiring every search term to match somewhere — the way a person searches, where "seal 90" finds the 90 mm shaft seal and nothing else. Derived requisition and order lines carry an `item_name` folded in at derive time, since the Console holds no in-memory register to resolve one from; it is a cache of the reduced item's name and a rename in TM Master reaches it on the next derive.
+
+**What is only on the Console:** approving a requisition and sending an order (§42.11) — officer actions, on the officer's machine, with per-line decisions and trimmed quantities. **What is only on the page:** nothing, deliberately.
+
+Still to come, and the reason the Console is worth having beyond parity: spend by category and supplier over a trip, consumption history feeding `min_qty` proposals (§42.15), the join from `sfi_code` to failure history, and printable order documents.
 
 ### 42.13 Open items
 
