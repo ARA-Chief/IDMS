@@ -36,6 +36,17 @@
     else if (n.assignment === 'assigned') n.assignment = 'assignable';  // last person removed
   }
 
+  // The note type a reader should show. `assignment` carries four values and
+  // only three are ever chosen — 'assigned' is what ticking a person makes of
+  // 'assignable', and the radios read it back as Assignable (§41.6a).
+  function noteType(n) {
+    if (!n) return 'unassigned';
+    if (n.assignees && n.assignees.length) return 'assignable';
+    if (n.assignment === 'assignable') return 'assignable';
+    if (n.assignment === 'equipment' || n.equipment_code) return 'equipment';
+    return 'unassigned';
+  }
+
   function reduce(events) {
     var ordered = events.slice().sort(function (a, b) {
       var ka = sortKey(a), kb = sortKey(b);
@@ -70,12 +81,16 @@
             attachments: (p.attachments || []).slice(),
             author: ev.actor, created: ev.timestamp, updated: ev.timestamp,
             completed: false, completions: [],
-            // Assignment is three-state, and the person list is the third
-            // state rather than a separate field (§41.6a):
+            // Note type, and the person list is the 'assigned' state rather
+            // than a separate field (§41.6a):
             //   'unassigned' — nobody's, and not offered to anyone (default)
             //   'assignable' — open to whoever picks it up (Notes Tray)
             //   'assigned'   — one or more named people
-            assignment: 'unassigned',
+            //   'equipment'  — filed against one asset code (§41.6d)
+            // A creation that already carries a code is equipment-typed on the
+            // spot: an importer or an older writer should not need to know
+            // about a second event to say what it plainly meant.
+            assignment: p.equipment_code ? 'equipment' : 'unassigned',
             assignees: [],            // [{crew_id, username}] — order is assignment order
             assignee: null,           // = assignees[0].crew_id, for single-assignee readers
             assignee_username: null,  // = assignees[0].username
@@ -153,11 +168,22 @@
             syncAssignment(n);
           }
           break;
-        // The two person-less states. Naming a person always wins, so this is
+        // The three person-less types. Naming a person always wins, so this is
         // ignored while anyone is assigned — clear them first.
+        //
+        // 'equipment' carries the code it files the note against; the other two
+        // clear whatever code the note was carrying, because this control is
+        // the note's own answer to what it is. Dragging a note onto a PERSON is
+        // a separate gesture and leaves the code alone (§41.6d).
         case 'note_assignment_set':
           if (n && !n.assignees.length) {
-            n.assignment = p.mode === 'assignable' ? 'assignable' : 'unassigned';
+            if (p.mode === 'equipment') {
+              n.assignment = 'equipment';
+              if (p.equipment_code) n.equipment_code = p.equipment_code;
+            } else {
+              n.assignment = p.mode === 'assignable' ? 'assignable' : 'unassigned';
+              n.equipment_code = null;
+            }
             n.updated = ev.timestamp;
           }
           break;
@@ -248,6 +274,7 @@
 
   var api = {
     reduce: reduce,
+    noteType: noteType,
     stepStruck: stepStruck,
     isAssignedTo: isAssignedTo,
     attachmentExpiry: attachmentExpiry,

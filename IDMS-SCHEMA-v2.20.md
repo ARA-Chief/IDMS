@@ -19,6 +19,8 @@ v2.31.4 *(2026-09-02)* — **Two-level organisation, note dragging, full names.*
 
 v2.31.5 *(2026-09-02)* — **The shared window, and a signalled sign-in expiry.** A notes window left open for anyone to write in now records `actor: "browser"` — shown as **"Browser addition"** — instead of whoever last signed in (§41.4d): it says what is known, that the note came from that window, rather than naming the wrong person. Toggled from the footer, remembered per browser, and pinnable with `?shared=1`. `browser` is a reserved actor and never a crew member. Also: an expired Microsoft sign-in is now a stated condition rather than a red dot that retries forever — already-synced notes stay readable, a banner offers **Sign in again**, and writes refuse with that reason instead of a raw `AADSTS` code (§41.2).
 
+v2.31.6 *(2026-09-05)* — **Note type gains Equipment; notes filed against the register.** The Notes Hub's assignment control becomes a **Note Type** control with three kinds (§41.6a): *Unassigned*, *Assignable* — which is where the **Assign to** crew list now lives — and **Equipment**, which attributes the note to one component of the asset register by its code. The panel below the radios changes with the choice: nothing, the crew list, or an equipment search box. `note_assignment_set` gains `mode: "equipment"` carrying an `equipment_code`, and the two person-less modes clear that code, so the control can never disagree with what the note says it is. The reducer's `assignment` gains a fourth value, `equipment`; a note created with an `equipment_code` and nobody on it reads as equipment-typed without needing a second event. The Notes page reads `config/assets.csv` directly for the picker and the code→name lookup — the first time the field PWA has read that file, which §9 now records; it is a read, cached per browser, and nothing writes to the register. A new collapsed **EQUIPMENT** band at the bottom of the Notes sidebar builds a tree from the dotted codes actually in use (with their ancestors), so a note filed against `601.001.003` is found by walking `601` → `601.001` → `601.001.003`; selecting a node lists that code *and everything under it*, and dragging a note onto a node files it there. Console-side this needed nothing new to *read*: the Maintenance > Equipment screen's **Notes** section already queries `notes.equipment_code`, so an equipment-typed note appears under its component as soon as the ingest lane runs (§41.6d).
+
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
@@ -1610,7 +1612,7 @@ When implemented, `bootstrap.json` will gain a `storage_provider` field (default
 
 **Location:** `Documents/IDMS/config/assets.csv`
 **Edited by:** External (TM-Master export). Replace the file on OneDrive when the asset register changes.
-**Read by:** Console only — ingested into the SQLite `assets` table on manual refresh from the Equipment Setup screen. Never read by the field PWA directly.
+**Read by:** Console — ingested into the SQLite `assets` table on manual refresh from the Equipment Setup screen. Also read directly by the Notes page (§41.6d) for the equipment picker and the code→name lookup, cached per browser; that read was added in v2.31.6 and is the only place the field PWA touches this file. Read-only from both.
 
 This file is the vessel's complete equipment and asset register, exported from TM-Master. IDMS treats it as **read-only** — it is never written to by the console or the field PWA. When the register changes, the operator replaces the file on OneDrive and triggers a refresh.
 
@@ -7288,7 +7290,7 @@ Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 
 | `step_struck` / `step_unstruck` | `{note_id, step_id}` | Multiple strikes of the same step by different actors are all preserved — "struck by A 03:12, confirmed by B 03:14". This is the emergency-checklist timeline. |
 | `note_assigned` | `{note_id, assignee_crew_id, assignee_username?}` | **Adds** one person — a note may be carried by several (§41.6a). Assigner is the envelope `actor`. `assignee_crew_id` is authoritative (§41.4a); `assignee_username` rides along only when that person is also an IDMS login, and the set of those is what the PWA's alert check matches on. |
 | `note_unassigned` | `{note_id, assignee_crew_id?}` | With a crew_id, drops that one person; without, clears everyone. |
-| `note_assignment_set` | `{note_id, mode: "unassigned"\|"assignable"}` | The two person-less states. Ignored while anyone is assigned — naming a person always wins, so the clients clear the plate first. |
+| `note_assignment_set` | `{note_id, mode: "unassigned"\|"assignable"\|"equipment", equipment_code?}` | The three person-less note types (§41.6a). Ignored while anyone is assigned — naming a person always wins, so the clients clear the plate first. `mode: "equipment"` carries the `equipment_code` it files the note against; `unassigned` and `assignable` clear any code the note was carrying, because the radio is the note's answer to what it is. |
 | `note_starred` / `note_unstarred` | `{note_id}` | Shared, not per-user: a star marks a note important for everyone, matching the hub's non-private premise. Starred notes sort above the rest in every view. |
 | `note_reordered` | `{note_id, sort_index}` | Manual ordering, **starred notes only** — everything else stays newest-first. `sort_index` is a float so inserting between two neighbours costs one event instead of reindexing the list. |
 | `note_unarchived` | `{note_id}` | Returns an archived note to its list, and restarts any attachment retention clock (§41.14). |
@@ -7378,15 +7380,17 @@ Submit travels **each client's existing ETag-guarded definition-create path** �
 
 **Assigned Tasks board (Console).** The board lists tasks and *assigned* notes, visually distinct (note rows carry a note glyph, no TM fields). Unassigned notes never appear. Completing a note row from the board appends `note_completed` — it does not touch any task table.
 
-### 41.6a Assignment — three states, several people
+### 41.6a Note type — three kinds, several people
 
-Assignment is one control with three states, in this order:
+One control, headed **Note Type**, with three kinds. The panel *below* the radios changes with the choice, because each kind needs a different question answered — and two of them need none at all:
 
-| State | Meaning | Where it shows |
-|---|---|---|
-| **Unassigned note** (default) | Nobody's, and not offered to anyone. | Its own list only. |
-| **Assignable** | Open to whoever picks it up. | Its own list, plus the **Notes Tray** on the Assigned Tasks board. |
-| **Assigned** — one or more named people | On those people's plates. | Its own list, each assignee's personal list (pinned), and each assignee's card on the Assigned Tasks board. |
+| Kind | Panel below | Meaning | Where it shows |
+|---|---|---|---|
+| **Unassigned note** (default) | nothing | Nobody's, and not offered to anyone. | Its own list only. |
+| **Assignable** | the **Assign to** crew list | Open to whoever picks it up; ticking one or more people is the fourth, derived state — **Assigned**. | Its own list, the **Notes Tray** on the Assigned Tasks board, and — once anyone is ticked — each assignee's personal list (pinned) and their card on that board. |
+| **Equipment** | an equipment search box | Filed against one component of the asset register by its `code` (§41.6d). | Its own list, the **EQUIPMENT** band of the Notes sidebar, and the **Notes** section of that component in Console → Maintenance → Equipment. |
+
+The reducer's `assignment` therefore carries four values — `unassigned`, `assignable`, `assigned`, `equipment` — of which only the first, second and fourth are ever *chosen*: `assigned` is what ticking a person makes of `assignable`. The radios read `assigned` as **Assignable**, which is where the crew list lives.
 
 Naming a person always wins: `note_assignment_set` is ignored while anyone is assigned, and the clients clear the plate before switching to a person-less state, so the control can never disagree with itself. Removing the last assignee leaves the note **assignable** rather than silently unassigned — it was offered work a moment ago, and dropping it off the board entirely is not what removing one name means.
 
@@ -7406,7 +7410,7 @@ The Console's Assigned Tasks board carries notes as well as tasks:
 
 **Dragging** moves work: onto a card to hand it over, onto the matching tray to release it. Dragging from one person's card onto another's cannot know which of two things is meant, so it asks: **Reassign** (take it off the first) or **Add Personnel** (both carry it). The `×` on a row takes *that person* off, leaving anyone else on it — "not mine", not "nobody's". Tasks and notes each refuse the other's tray rather than silently doing nothing.
 
-**Clicking** opens the full picker. For a task that is the assignment modal, where people are now **checkboxes** — several may hold one job — while *Unassigned* and *Locked* remain radio options exclusive with them and each other. For a note it opens the Notes screen, where the three states, comments and attachments live.
+**Clicking** opens the full picker. For a task that is the assignment modal, where people are now **checkboxes** — several may hold one job — while *Unassigned* and *Locked* remain radio options exclusive with them and each other. For a note it opens the Notes screen, where the note type, comments and attachments live.
 
 ### 41.6c Multi-assignee on tasks — the shared-file contract
 
@@ -7418,6 +7422,18 @@ The Console's Assigned Tasks board carries notes as well as tasks:
 | `assignees[]` | Every holder, as assign keys. Absent or empty means "whatever `assigned_to` says". |
 
 Both are written together, `assigned_to` always being `assignees[0]`, so the two agreeing is the normal state. **Disagreement is how a foreign write is detected**: if `assigned_to` names somebody who is not first in the list — including being cleared to null — a writer that does not know about `assignees` has changed the holder since, and the single field wins while the stale list is discarded. That covers a PWA reassignment and a PWA release alike, and it means the PWA needs no change to stay correct. A PWA that later wants to *show* several holders reads `assignees` when it agrees with `assigned_to`; writing it is optional and can follow under the dual-write protocol.
+
+### 41.6d Equipment notes — one register, three surfaces
+
+A note filed against equipment answers "what is this about?" the same way a task does, with a code from `config/assets.csv` (§9) — the TM Master component register, dotted-decimal, 3,857 rows, and the one identifier that never changes for a physical asset.
+
+**The picker.** Choosing **Equipment** opens a search box over the register: type a code fragment or part of a name, pick a row, and the note carries that `code`. The Notes page fetches `assets.csv` itself and keeps a trimmed `code → name` map in `localStorage`; the register is a reference file replaced by hand, so a cache that is a few days old is not a correctness problem, and the page re-reads it on a cache miss or when the cached copy is older than a week. When the file cannot be read, the picker says so and still accepts a code typed in full — an unreachable register must not make a note unfileable.
+
+**Exclusive by choice, not by accident.** Selecting Equipment clears any assignees (the same clear the other two modes already do), and selecting either person-less mode clears the `equipment_code`. Dragging a note onto a *person* is a separate gesture and leaves the code alone: a pump note handed to an oiler is still a pump note, and the detail panel keeps saying so.
+
+**The EQUIPMENT band.** The Notes sidebar carries a band below Personnel, collapsed by default, built from the codes actually in use in that department (plus General-scope notes) *and their ancestors* — so `601.001.003` is reachable by walking `601` → `601.001` → `601.001.003` even when no note is filed at the two upper levels. Selecting a node lists notes at that code **and everything beneath it**, which is what a tree node means; the count on a node follows the same rule. Nodes are drop targets: dragging a note onto one files it against that code. Names come from the cached register; a code with no name still renders, because a missing lookup must not hide a note.
+
+**The Console needs nothing new to read them.** Maintenance → Equipment already has a **Notes** section querying `notes.equipment_code` (with *include sub-components* honouring both TM's `parent_code` tree and the code prefix), fed by the `notes` ingest lane, which has carried `equipment_code` since the lane was written. An equipment-typed note appears under its component on the next sync. The Console's own Notes screen shows the kind and the code but does not offer the picker — the register lives behind a main-process call there, and one picker in the place people file notes is enough.
 
 ### 41.7 Alerts
 
