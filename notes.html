@@ -2127,7 +2127,14 @@ function ntRenderDetail() {
 
   h += '<div class="detail-actions">';
   h += '<button class="btn ghost" onclick="ntAddNoteFiles(\'' + ntAttr(n.note_id) + '\')">＋ Add photo or document</button>';
-  h += '<button class="btn ghost" disabled title="Arrives with the task-integration slice">Promote to Task</button>';
+  // Only an assignable note becomes a task. A task is work somebody carries;
+  // an unassigned note is a record nobody has taken on, and an equipment note
+  // is a record about a machine. Neither has the one thing task creation needs
+  // — a person — so offering the button on them would be an invitation to a
+  // form that cannot be completed.
+  if (kind === 'assignable') {
+    h += '<button class="btn ghost" disabled title="Arrives with the task-integration slice">Promote to Task</button>';
+  }
   h += n.archived
     ? '<button class="btn ghost" onclick="ntUnarchive(\'' + ntAttr(n.note_id) + '\')">Unarchive</button>'
     : '<button class="btn ghost" onclick="ntArchive(\'' + ntAttr(n.note_id) + '\')">Archive</button>';

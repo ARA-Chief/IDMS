@@ -23,6 +23,10 @@ v2.31.5 *(2026-09-02)* — **The shared window, and a signalled sign-in expiry.*
 
 v2.31.6 *(2026-09-05)* — **Note type gains Equipment; notes filed against the register.** The Notes Hub's assignment control becomes a **Note Type** control with three kinds (§41.6a): *Unassigned*, *Assignable* — which is where the **Assign to** crew list now lives — and **Equipment**, which attributes the note to one component of the asset register by its code. The panel below the radios changes with the choice: nothing, the crew list, or an equipment search box. `note_assignment_set` gains `mode: "equipment"` carrying an `equipment_code`, and the two person-less modes clear that code, so the control can never disagree with what the note says it is. The reducer's `assignment` gains a fourth value, `equipment`; a note created with an `equipment_code` and nobody on it reads as equipment-typed without needing a second event. The Notes page reads `config/assets.csv` directly for the picker and the code→name lookup — the first time the field PWA has read that file, which §9 now records; it is a read, cached per browser, and nothing writes to the register. A new collapsed **EQUIPMENT** band at the bottom of the Notes sidebar builds a tree from the dotted codes actually in use (with their ancestors), so a note filed against `601.001.003` is found by walking `601` → `601.001` → `601.001.003`; selecting a node lists that code *and everything under it*, and dragging a note onto a node files it there. Console-side this needed nothing new to *read*: the Maintenance > Equipment screen's **Notes** section already queries `notes.equipment_code`, so an equipment-typed note appears under its component as soon as the ingest lane runs (§41.6d).
 
+v2.31.7 *(2026-09-05)* — **Promotion is for assignable notes only; the two Notes surfaces reconciled.** **Promote to Task** now appears only on an *assignable* note (§41.6). A task is work somebody carries; an unassigned note is a record nobody has taken on and an equipment note is a record about a machine, so offering the action on either was an invitation to a form that cannot be completed. The button is shown, not merely disabled, by note type — identically on both surfaces.
+
+The Console's Notes screen and the notes page had drifted, and everything below closes a gap where the Console was the poorer of the two (§41.2a). Attachments: the Console could read photos and documents but **add neither** — it now has the same ＋ on the add bar (and file-drop onto it), the same **＋ Add photo or document** on a note, and the same **📷 Photo** on the comment box, writing through the identical conventions. Documents were being rendered as photo thumbnails, so a document appeared as an empty box with no name, no size and no way to open it; **Photos and Documents are now separate sections** and a document opens through Graph's pre-signed download URL. An archived note could be archived in the Console but never brought back — **Unarchive** was missing entirely. The detail panel named only the *first* assignee (`n.assignee` is a mirror, not the list), so everyone else carrying a note was invisible; it now names them all, in full, with the shared-note warning. Sidebar counts were wrong twice over: a crew row counted only notes that person *owned* while the view it opened also lists notes *assigned* to them, and `mine` tested the first-assignee mirror so a note you were second on lit nothing — both now use list membership, computed from one query instead of one IPC round trip per row. Also added to the Console: the row **star**, the assignment **pin**, drag-to-reorder for starred notes, the attachment-retention line in the detail panel (which is the one place comment attachments are loaded), and the component's name beside its code. New shared helpers `uploadBinary` and `attachmentDownloadUrl` in the Console's Graph layer.
+
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
@@ -7269,6 +7273,22 @@ The Console is deliberately native, not an embedded webview: it already needs a 
 
 **Built to be left open.** The standalone page is meant to sit in a window of its own all day beside the Console, so it reopens on the department and place it was last on (per user, since a shared tablet has more than one), names that place in the window title with a count of what is waiting for you, and narrows into a side panel: below 780 px the sidebar folds into a ☰ overlay that closes itself once you pick somewhere, and the detail panel slides over rather than squeezing the list. Restoring a place that has since gone — a department removed, a crew member off this vessel — falls back rather than landing on an empty list.
 
+### 41.2a Two renderers, one screen — what may differ, and what may not
+
+The notes page and the Console's Notes screen are two implementations of this section, and they are meant to stay recognisably the *same screen*. Where one grows an affordance the other follows. This is not tidiness: a crew member is told "put it in Notes", and being told that an action exists only on the other surface is how a feature stops being used.
+
+Everything a note *is* renders the same on both: type and assignees, folder, star, pin, equipment code and its name, checklist, photos, documents, comments, archive state, and the attachment-retention line. Every action a note supports is available on both — create with attachments, complete, strike a step, assign, comment with a photo, star, reorder starred, drag to re-file, archive, unarchive, delete.
+
+Three things are deliberately one-sided, and each says so where it sits:
+
+| Only on | What | Why |
+|---|---|---|
+| notes page | The **equipment picker** (§41.6d) | The register is a file the page reads directly; in the Console it is behind a main-process call, and one picker where notes are actually filed is enough. The Console still shows the type and the code, and can clear it. |
+| notes page | The **shared-window author toggle** (§41.4d) | A window left open for anyone has no signed-in person to name. The Console is an officer's signed-in application; there is nobody else it could be. |
+| Console | The **EQUIPMENT band's** richer counterpart, Maintenance → Equipment → **Notes** (§41.6d) | The Console has the whole register, the component tree and TM's own parenthood; the band on the page is the reachable-from-here version of the same idea. |
+
+Two known limits, stated rather than hidden: the Console's *row* retention line is computed from the note's own attachments only, because the derived row carries a comment count and not the comments — the detail panel, which loads them, is correct; and the Console's list is fed by the ingest lane, so a note written on the page appears there on the next sync rather than instantly.
+
 ### 41.3 OneDrive files
 
 ```
@@ -7372,13 +7392,13 @@ Any crew member may comment on any note, with photos. Render newest-last under t
 
 ### 41.6 Task integration — promotion and mirrors
 
-**Promotion.** Any note (any scope) can be **Promoted to Task**. The action prefills the client's existing Task Creation screen:
+**Promotion.** **Promote to Task** is offered on an *assignable* note only — any scope, but only that kind (§41.6a). A task is work somebody carries: an *unassigned* note is a record nobody has taken on, and an *equipment* note is a record about a machine. Neither has the one thing task creation needs, so the action is **absent** on them rather than present and failing. Making a note assignable is the step that says it is work, and it is one click above the button. The action prefills the client's existing Task Creation screen:
 
 | Note field | Task Creation field |
 |---|---|
 | `title` | Job name |
 | `body` + provenance block | Description |
-| `equipment_code` | Equipment picker (pre-selected; if absent, the picker blocks submit as it already does — this is why the equipment tag exists) |
+| `equipment_code` | Equipment picker (pre-selected when the note carries a code; if absent, the picker blocks submit as it already does). **Note:** since the type control clears the code when a note is switched to Assignable (§41.6a), a note promoted today arrives with the picker empty and the promoter fills it in. Carrying the code across that switch is the obvious improvement and is listed in §41.13 — it is not decided, because "this is filed against the main engine" and "this is Sam's job" are different claims and the type control currently makes you pick one. |
 | note + comment photos | Attachments (copied, not referenced) |
 
 The provenance block is plain text appended to the description: `From note {note_id} — {author}, {date}.` followed by the comment transcript, one line per comment: `{author} ({date}): {text} [photo]`. Copied at promote time, so later deletion of the note cannot hollow out the task's history.
@@ -7532,6 +7552,7 @@ When more than one clock applies, the **earliest** due date wins. Un-completing 
 - ~~**[OPEN]** Who may author notes at department level.~~ **Settled (v2.31.1):** anyone, deliberately — mostly-global rules keep the first release clean, and an authorship setup page stays a future option rather than a commitment.
 - **[OPEN]** Whether aggregates ship in the first release or replay-only suffices at initial volumes (41.3).
 - **[NEXT SLICE]** The Console-side attachment purge screen required by §41.14 — the reducer already computes eligibility; nothing purges yet.
+- **[OPEN]** Whether switching a note to **Assignable** should keep its `equipment_code` instead of clearing it (§41.6a). Keeping it would let a promoted note arrive at Task Creation with the equipment picker already filled, which is the job §41.6 gives the tag; clearing it is what an exclusive type control means, and is what dragging a note onto a *person* deliberately does not do. Not urgent while promotion is unbuilt — but it has to be settled before it is.
 - Emergency mode (41.9) is staged after the hub's first online-only release; the service worker work is tracked with PWA-SCHEMA §19.
 
 ---
