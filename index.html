@@ -1216,6 +1216,108 @@
   <!-- Modal overlay host for the Purser Check Out form (built dynamically). -->
   <div id="pu-checkout-modal-host"></div>
 
+  <!-- ── PROCUREMENT HUB (§42) ──
+       A real top-level department, not a synthetic one: it owns
+       procurementconfig.json and an event stream of its own. The hub is the
+       only part that lives here — every tile opens procurement.html, which is
+       where the module actually is, for the same reasons Notes is its own page
+       (this file is already ~11k lines, a storekeeper wants it open in a
+       window all day, and a separate page does not contend for this one). -->
+  <div class="screen" id="screen-proc-home">
+    <header class="topbar">
+      <div class="topbar-left" style="position:relative">
+        <div class="user-avatar" id="pr-home-avatar" onclick="togglePrUserMenu()" style="cursor:pointer">PR</div>
+        <div class="user-info" onclick="togglePrUserMenu()" style="cursor:pointer">
+          <span class="user-name" id="pr-home-username">—</span>
+          <span class="user-role" id="pr-home-role">Procurement · F/T Araho</span>
+        </div>
+        <div id="pr-user-menu" style="display:none;position:absolute;top:44px;left:0;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-md);min-width:200px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Signed in as</div>
+            <div id="pr-user-menu-name" style="font-size:14px;font-weight:500;color:var(--text-secondary)">—</div>
+          </div>
+          <button id="pr-menu-btn-switch-dept" onclick="closePrUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">Switch Department</button>
+          <button onclick="switchUser()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch User</button>
+          <button onclick="signOut()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--danger);cursor:pointer;border-top:1px solid var(--border)">Sign Out</button>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="sync-indicator synced" id="pr-sync-indicator">
+          <span class="sync-dot"></span>
+          <span class="sync-label">Synced</span>
+        </div>
+      </div>
+    </header>
+    <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Procurement</div>
+    <div class="er-hub-grid">
+      <button class="er-hub-tile" onclick="openProcurement('register')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 9h20v14H4z"/><path d="M4 9l2.5-4h15L24 9"/><path d="M11 14h6"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Inventory</div>
+        <div class="er-hub-tile-sub">What we hold, and where</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcurement('checkin')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 4v13"/><path d="M9 12l5 5 5-5"/><path d="M5 21h18"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Check In</div>
+        <div class="er-hub-tile-sub">Receive a delivery</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcurement('low')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 5l10 18H4L14 5z"/><path d="M14 12v5"/><path d="M14 20h.01"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Low Stock</div>
+        <div class="er-hub-tile-sub">Short, counting what is on order</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcurement('reqs')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 4h14v20H7z"/><path d="M11 10h6"/><path d="M11 15h6"/><path d="M11 20h3"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Requisitions</div>
+        <div class="er-hub-tile-sub">Ask for something</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcurement('orders')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 7h18l-1.5 13H6.5L5 7z"/><path d="M10 7V5a4 4 0 018 0v2"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Orders</div>
+        <div class="er-hub-tile-sub">What is on its way</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcProfile()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="10" r="4" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M6 25c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Profile</div>
+        <div class="er-hub-tile-sub">Your crew record</div>
+      </button>
+      <button class="er-hub-tile" onclick="window.location.href='notes.html'">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20.5 4.2l3.3 3.3"/>
+            <path d="M5 23.5l1-4.7L20 4.8a1.9 1.9 0 012.7 0l1.5 1.5a1.9 1.9 0 010 2.7L9.7 22.5l-4.7 1z"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Notes</div>
+        <div class="er-hub-tile-sub notes-tile-sub">Shared scratch pad</div>
+      </button>
+    </div>
+  </div>
+
   <!-- ── FACTORY: LOG EVENTS — SECTION PICKER ── -->
   <div class="screen" id="screen-factory-log-events">
     <div class="subscreen-header">
@@ -2349,6 +2451,9 @@ function showScreen(id) {
   if (id === 'screen-purser-home' && PURSER_ACTIVE) {
     currentDepartment = 'Purser';
   }
+  if (id === 'screen-proc-home' && PROC_ACTIVE) {
+    currentDepartment = 'Procurement';
+  }
 }
 
 // Role gate for the Purser department tile + menu. Driven purely by
@@ -2356,6 +2461,93 @@ function showScreen(id) {
 // departments[] array, so non-Pursers can't see the tile even if mis-tagged.
 function userIsPurser() {
   return ((currentUser && currentUser.role) || '').trim().toLowerCase() === 'purser';
+}
+
+// ── Procurement gate (§42.11) ────────────────
+// The tile is offered to admins, to anyone carrying Procurement on their crew
+// record, and to the approver roles. The authoritative check is in
+// procurement.html against the live config; this one only decides whether the
+// tile is worth showing, and reads a cached copy of the config so an edited
+// approver_roles list reaches the picker on the next sign-in rather than never.
+var PROC_ACTIVE = false;
+var PROC_CFG_CACHE_KEY = 'fw_proccfg';
+var PROC_DEFAULT_ROLES = ['Chief Engineer', 'Admin'];
+
+function procApproverRoles() {
+  try {
+    var c = JSON.parse(localStorage.getItem(PROC_CFG_CACHE_KEY) || 'null');
+    var r = c && c.settings && c.settings.approver_roles;
+    if (Array.isArray(r) && r.length) return r;
+  } catch (e) {}
+  return PROC_DEFAULT_ROLES;
+}
+
+// Fire-and-forget: never on the critical path of a sign-in. The gate uses
+// whatever the last successful read cached, falling back to the defaults.
+function refreshProcurementConfig() {
+  if (!graphToken) return;
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/config/procurementconfig.json:/content';
+  fetch(url, { headers: { Authorization: 'Bearer ' + graphToken }, cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (cfg) {
+      if (cfg) { try { localStorage.setItem(PROC_CFG_CACHE_KEY, JSON.stringify(cfg)); } catch (e) {} }
+    })
+    .catch(function () {});
+}
+
+function userIsProcurement() {
+  if (!currentUser) return false;
+  if ((currentUser.permission_tier || '') === 'admin') return true;
+  if ((currentUser.departments || []).indexOf('Procurement') !== -1) return true;
+  return procApproverRoles().indexOf(currentUser.role) !== -1;
+}
+
+// Every department a user can actually reach, including the role-gated ones
+// that do not appear in departments[]. routeAfterLogin counts these, or a
+// single-department user would be sent straight past the picker and could
+// never reach Purser or Procurement at all.
+function reachableDepartments() {
+  var seen = {}, out = [];
+  (currentUser.departments || []).forEach(function (d) {
+    if (!seen[d]) { seen[d] = true; out.push(d); }
+  });
+  if (userIsPurser() && !seen['Purser']) { seen['Purser'] = true; out.push('Purser'); }
+  if (userIsProcurement() && !seen['Procurement']) { seen['Procurement'] = true; out.push('Procurement'); }
+  return out;
+}
+
+function openProcurement(view) {
+  window.location.href = 'procurement.html' + (view ? '?view=' + encodeURIComponent(view) : '');
+}
+
+function togglePrUserMenu() {
+  var el = document.getElementById('pr-user-menu');
+  if (!el) return;
+  el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+}
+function closePrUserMenu() {
+  var el = document.getElementById('pr-user-menu');
+  if (el) el.style.display = 'none';
+}
+
+function renderProcHubTopbar() {
+  var av = document.getElementById('pr-home-avatar');
+  if (av) av.textContent = currentUser.initials || 'PR';
+  var un = document.getElementById('pr-home-username');
+  if (un) un.textContent = getDisplayFullName(currentUser) || currentUser.name || '—';
+  var mn = document.getElementById('pr-user-menu-name');
+  if (mn) mn.textContent = currentUser.name || currentUser.username || '—';
+  var sd = document.getElementById('pr-menu-btn-switch-dept');
+  if (sd) sd.style.display = (reachableDepartments().length > 1) ? '' : 'none';
+}
+
+function openProcProfile() {
+  currentDepartment = 'Procurement';
+  if (typeof openEngineProfile === 'function') {
+    openEngineProfile('screen-proc-home');
+  } else {
+    showScreen('screen-profile');
+  }
 }
 
 // ════════════════════════════════════════
@@ -2534,7 +2726,13 @@ function routeAfterLogin() {
   // app is read first, then what is waiting for you, so two popups never
   // stack on top of one another.
   try { pwaCheckUpdates(function () { ntaCheckAlerts(true); }); } catch (e) {}
-  depts.length === 1 ? enterDepartment(depts[0]) : showDeptPicker();
+  try { refreshProcurementConfig(); } catch (e) {}
+  // Role-gated departments (Purser, Procurement) do not appear in
+  // departments[], so the count has to include them — otherwise a
+  // single-department user is routed straight past the picker and can never
+  // reach them.
+  var reachable = reachableDepartments();
+  reachable.length === 1 ? enterDepartment(reachable[0]) : showDeptPicker();
 }
 
 // ── DEPARTMENT PICKER ────────────────────
@@ -2580,11 +2778,19 @@ function showDeptPicker() {
     depts.push('Purser');
     seen['Purser'] = true;
   }
+  // Procurement is a real department with its own config and event stream
+  // (§42), but the crew records carry no Procurement department yet, so it is
+  // injected on the role gate the same way until they do.
+  if (userIsProcurement() && !seen['Procurement']) {
+    depts.push('Procurement');
+    seen['Procurement'] = true;
+  }
 
   depts.forEach(function(dept) {
     // Purser is a synthetic, role-gated module — always active when shown
     // (visibility is controlled upstream by userIsPurser, not by ACTIVE_MODULES).
-    var isActive = (dept === 'Purser') || (ACTIVE_MODULES.indexOf(dept) !== -1);
+    var isActive = (dept === 'Purser') || (dept === 'Procurement') ||
+                   (ACTIVE_MODULES.indexOf(dept) !== -1);
     var btn = document.createElement('button');
     btn.style.cssText = [
       'width:100%', 'padding:20px', 'border-radius:var(--radius-lg)',
@@ -2706,6 +2912,7 @@ function deptHomeScreen(dept) {
   if (dept === 'Engine Room') return 'screen-engine-home';
   if (dept === 'Factory')     return 'screen-factory-home';
   if (dept === 'Purser')      return 'screen-purser-home';
+  if (dept === 'Procurement') return 'screen-proc-home';
   return 'screen-home';
 }
 
@@ -2727,9 +2934,23 @@ function enterDepartment(dept) {
     showScreen('screen-purser-home');
     return;
   }
-  // Leaving Purser by selecting a different dept clears the flag so showScreen
-  // doesn't stomp on currentDepartment.
+  // Procurement short-circuits the same way: no dept config, no equipment, no
+  // FMEA, no sync timer. The hub is painted here; the module itself is
+  // procurement.html, which every tile opens.
+  if (dept === 'Procurement') {
+    PROC_ACTIVE = true;
+    PURSER_ACTIVE = false;
+    updateUserDisplay();
+    try { localStorage.setItem('fw_session', JSON.stringify({ user: currentUser, department: dept })); } catch (e) {}
+    renderProcHubTopbar();
+    showScreen('screen-proc-home');
+    return;
+  }
+
+  // Leaving Purser or Procurement by selecting a different dept clears the
+  // flags so showScreen doesn't stomp on currentDepartment.
   PURSER_ACTIVE = false;
+  PROC_ACTIVE = false;
 
   if (ACTIVE_MODULES.indexOf(dept) === -1) {
     document.getElementById('inactive-dept').textContent  = dept;
@@ -7125,6 +7346,7 @@ function switchUser() {
   currentUser       = { username: '', name: '', initials: '', role: '', departments: [] };
   currentDepartment = '';
   PURSER_ACTIVE     = false;
+  PROC_ACTIVE       = false;
   viewingIncidentId = null;
   warningIncidentId = null;
   localStorage.removeItem('fw_active');
@@ -7151,6 +7373,7 @@ function signOut() {
   currentUser       = { username: '', name: '', initials: '', role: '', departments: [] };
   currentDepartment = '';
   PURSER_ACTIVE     = false;
+  PROC_ACTIVE       = false;
   viewingIncidentId = null;
   warningIncidentId = null;
   localStorage.removeItem('fw_active');
@@ -10745,7 +10968,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.10';
+var PWA_VERSION  = '1.11';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {

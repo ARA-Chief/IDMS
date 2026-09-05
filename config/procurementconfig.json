@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "_seam": "locations / categories / units / suppliers are owned by the physical-structure work (IDMS-SCHEMA §42.5). This module reads them and never writes them; only `settings` is written from the PWA, ETag-guarded. Ids are opaque strings, hierarchy is parent_id only, and an id this file does not explain still renders and still counts. Replace the starter entries below freely.",
+  "locations": [
+    { "location_id": "eng-store", "name": "Engine Store", "parent_id": null, "kind": "storeroom" },
+    { "location_id": "workshop", "name": "Workshop", "parent_id": null, "kind": "storeroom" },
+    { "location_id": "deck-store", "name": "Deck Store", "parent_id": null, "kind": "storeroom" },
+    { "location_id": "factory-store", "name": "Factory Store", "parent_id": null, "kind": "storeroom" }
+  ],
+  "categories": [],
+  "units": [
+    { "unit": "ea", "name": "Each", "decimals": 0 },
+    { "unit": "L", "name": "Litre", "decimals": 2 },
+    { "unit": "kg", "name": "Kilogram", "decimals": 2 },
+    { "unit": "m", "name": "Metre", "decimals": 2 },
+    { "unit": "box", "name": "Box", "decimals": 0 },
+    { "unit": "roll", "name": "Roll", "decimals": 0 },
+    { "unit": "set", "name": "Set", "decimals": 0 }
+  ],
+  "suppliers": [],
+  "settings": {
+    "approver_roles": ["Chief Engineer", "Admin"],
+    "default_currency": "USD",
+    "receiving_locations": ["eng-store"],
+    "exception_stale_days": 14
+  }
+}

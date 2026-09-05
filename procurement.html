@@ -1,0 +1,2070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>IDMS Procurement</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-0: #0a1628; --bg-1: #0f1e38; --bg-2: #162440; --bg-3: #1e2f4d;
+    --bg-input: #0f1e38;
+    --accent: #00c2ff; --accent-dim: #0090c0; --accent-glow: rgba(0,194,255,.15);
+    --danger: #ff4d4d; --warning: #ffaa00; --success: #00ff99;
+    --text-primary: #e8f0fe; --text-secondary: #7a90b0; --text-muted: #4a5c78;
+    --border: rgba(255,255,255,.08); --border-accent: rgba(0,194,255,.3);
+    --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px;
+    --font: 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+  }
+
+  html, body { height: 100%; background: var(--bg-0); color: var(--text-primary);
+    font-family: var(--font); font-size: 15px; -webkit-font-smoothing: antialiased; }
+
+  .screen { display: none; height: 100%; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* ── Auth ─────────────────────────────────────────────── */
+  .center-card { margin: auto; width: min(360px,92vw); background: var(--bg-1);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px 28px; text-align: center; }
+  .center-card h1 { font-size: 22px; margin-bottom: 6px; }
+  .center-card .sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 22px; }
+  .err { color: var(--danger); font-size: 13px; min-height: 18px; margin-top: 8px; }
+  .hint { color: var(--text-muted); font-size: 12px; margin-top: 14px; line-height: 1.5; }
+
+  .btn { display: inline-block; width: 100%; padding: 12px 16px; border: none;
+    border-radius: var(--radius-md); background: var(--accent); color: #04263a;
+    font-weight: 600; font-size: 15px; cursor: pointer; font-family: var(--font); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.ghost { background: var(--bg-3); color: var(--text-primary); }
+  .btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn.sm { width: auto; padding: 7px 13px; font-size: 13px; }
+
+  .field { width: 100%; padding: 11px 12px; margin-bottom: 12px; background: var(--bg-input);
+    border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);
+    font-size: 15px; font-family: var(--font); }
+  .field:focus { outline: none; border-color: var(--border-accent); }
+  select.field { appearance: none; }
+
+  /* ── Shell ────────────────────────────────────────────── */
+  #screen-app { flex-direction: row; }
+  .sidebar { width: 240px; flex-shrink: 0; background: var(--bg-1);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .brand { padding: 16px 16px 10px; display: flex; align-items: baseline; gap: 8px; }
+  .brand b { font-size: 17px; letter-spacing: .3px; }
+  .brand span { color: var(--text-muted); font-size: 11px; }
+  .sync-pill { margin-left: auto; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--text-muted); align-self: center; }
+  .sync-pill.ok { background: var(--success); }
+  .sync-pill.warn { background: var(--warning); }
+  .sync-pill.err { background: var(--danger); }
+
+  .nav { flex: 1; padding: 6px 8px 16px; }
+  .nav-head { padding: 14px 8px 4px; color: var(--text-muted); font-size: 11px;
+    letter-spacing: .1em; text-transform: uppercase; }
+  .nav-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+    border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary); font-size: 14px; }
+  .nav-item:hover { background: var(--bg-2); }
+  .nav-item.active { background: var(--bg-3); color: var(--text-primary); }
+  .nav-item .count { margin-left: auto; color: var(--text-muted); font-size: 12px; }
+  .nav-item .count.alert { color: var(--warning); font-weight: 600; }
+  .nav-item .count.bad { color: var(--danger); font-weight: 600; }
+
+  .sidebar-foot { padding: 12px 16px; border-top: 1px solid var(--border);
+    color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+  .sidebar-foot b { color: var(--text-secondary); font-weight: 500; }
+  .sidebar-foot button { background: none; border: none; color: var(--text-muted);
+    cursor: pointer; font-size: 12px; font-family: var(--font); padding: 0; }
+  .sidebar-foot button:hover { color: var(--accent); }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .main-head { padding: 14px 20px 12px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .main-head h2 { font-size: 17px; font-weight: 600; }
+  .main-head .loc { color: var(--text-muted); font-size: 12.5px; }
+  .main-head .spacer { flex: 1; }
+  .icon-btn { background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text-secondary); padding: 6px 10px;
+    font-size: 12.5px; cursor: pointer; font-family: var(--font); }
+  .icon-btn:hover { color: var(--text-primary); border-color: var(--border-accent); }
+  .menu-btn { display: none; }
+
+  .body-wrap { flex: 1; overflow-y: auto; padding: 14px 20px 48px; }
+
+  #reauth-bar { display: none; align-items: center; gap: 12px; padding: 10px 20px;
+    background: rgba(255,170,0,.10); border-bottom: 1px solid rgba(255,170,0,.35); }
+  #reauth-bar .ra-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); flex: none; }
+  #reauth-bar .ra-text { flex: 1; font-size: 12.5px; color: var(--text-secondary); line-height: 1.45; }
+  #reauth-bar .ra-text b { color: var(--text-primary); }
+  #reauth-bar .btn { width: auto; padding: 7px 14px; font-size: 13px; flex: none; }
+
+  /* ── Common bits ──────────────────────────────────────── */
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .toolbar .field { margin-bottom: 0; width: auto; flex: 1; min-width: 160px; padding: 9px 11px; font-size: 14px; }
+  .toolbar select.field { flex: 0 0 auto; min-width: 140px; }
+
+  .card { background: var(--bg-1); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 10px; }
+  .card.click { cursor: pointer; }
+  .card.click:hover { border-color: var(--border-accent); }
+
+  .row { display: flex; align-items: center; gap: 12px; }
+  .row .grow { flex: 1; min-width: 0; }
+  .ttl { font-size: 15px; font-weight: 600; }
+  .sub { color: var(--text-secondary); font-size: 12.5px; margin-top: 3px; line-height: 1.45; }
+  .muted { color: var(--text-muted); }
+  .nowrap { white-space: nowrap; }
+
+  .qty { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .qty.low { color: var(--warning); }
+  .qty.neg { color: var(--danger); }
+  .qty-unit { font-size: 12px; color: var(--text-muted); margin-left: 3px; font-weight: 400; }
+
+  .tag { display: inline-block; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--text-muted); background: var(--bg-2); }
+  .tag.accent { color: var(--accent); border-color: var(--border-accent); background: var(--accent-glow); }
+  .tag.warn { color: var(--warning); border-color: rgba(255,170,0,.35); background: rgba(255,170,0,.10); }
+  .tag.bad { color: var(--danger); border-color: rgba(255,77,77,.35); background: rgba(255,77,77,.10); }
+  .tag.good { color: var(--success); border-color: rgba(0,255,153,.3); background: rgba(0,255,153,.08); }
+
+  .empty { text-align: center; color: var(--text-muted); font-size: 13.5px;
+    padding: 48px 16px; line-height: 1.6; }
+  .empty b { display: block; color: var(--text-secondary); font-size: 15px; margin-bottom: 6px; }
+
+  /* Informational tables scroll inside themselves rather than pushing the page
+     sideways. The check-in lines do NOT use a table — see .ci-line. */
+  .grid-wrap { overflow-x: auto; }
+  table.grid { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.grid th { text-align: left; color: var(--text-muted); font-size: 11px;
+    letter-spacing: .07em; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  table.grid td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.grid td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.grid tr:last-child td { border-bottom: none; }
+
+  /* ── Overlay / modal ──────────────────────────────────── */
+  .overlay { position: fixed; inset: 0; background: rgba(4,10,20,.66); display: flex;
+    z-index: 60; padding: 20px; overflow-y: auto; }
+  .sheet { margin: auto; width: min(620px,96vw); background: var(--bg-1);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px 22px 22px; }
+  .sheet.wide { width: min(880px,96vw); }
+  .sheet h3 { font-size: 17px; margin-bottom: 4px; }
+  .sheet .sheet-sub { color: var(--text-secondary); font-size: 12.5px; margin-bottom: 16px; line-height: 1.5; }
+  .sheet-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .sheet-actions .btn { width: auto; flex: 1; }
+  label.lbl { display: block; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 5px; }
+  .fieldrow { display: flex; gap: 10px; }
+  .fieldrow > div { flex: 1; min-width: 0; }
+
+  .lines { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+  .line { display: flex; gap: 8px; align-items: flex-start; padding: 10px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .line:last-child { border-bottom: none; }
+  .line .field { margin-bottom: 0; padding: 8px 10px; font-size: 13.5px; }
+  .line .f-desc { flex: 3; min-width: 150px; }
+  .line .f-qty { flex: 0 0 88px; }
+  .line .f-unit { flex: 0 0 82px; }
+  .line .f-price { flex: 0 0 96px; }
+  .line .rm { background: none; border: none; color: var(--text-muted); cursor: pointer;
+    font-size: 16px; padding: 6px 4px; line-height: 1; }
+  .line .rm:hover { color: var(--danger); }
+
+  /* ── Check-in lines ───────────────────────────────────────
+     Deliberately not a table. This is the screen someone uses one-handed at a
+     pallet, and the quantity box is the whole point of it — it must never be
+     the column that falls off the right edge of a phone. */
+  .ci-line { display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .ci-line:last-child { border-bottom: none; }
+  .ci-line .ci-name { flex: 1 1 190px; min-width: 0; }
+  .ci-line .ci-name b { font-size: 14.5px; }
+  .ci-line .ci-nums { display: flex; gap: 16px; flex: 0 1 auto; }
+  .ci-line .ci-num { text-align: right; }
+  .ci-line .ci-num .k { display: block; font-size: 10.5px; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--text-muted); }
+  .ci-line .ci-num .v { font-variant-numeric: tabular-nums; font-size: 14px; }
+  .ci-line .ci-in { flex: 0 0 auto; margin-left: auto; text-align: right; }
+  .ci-line .ci-in .k { display: block; font-size: 10.5px; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 3px; }
+  .ci-line .ci-in input { width: 104px; text-align: right; margin: 0;
+    padding: 9px 10px; font-size: 16px; font-variant-numeric: tabular-nums; }
+
+  .toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    background: var(--bg-3); border: 1px solid var(--border-accent); color: var(--text-primary);
+    padding: 11px 18px; border-radius: var(--radius-md); font-size: 13.5px; z-index: 90;
+    max-width: 90vw; text-align: center; }
+
+  @media (max-width: 820px) {
+    .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 70; transform: translateX(-100%);
+      transition: transform .18s ease; box-shadow: 0 0 40px rgba(0,0,0,.5); }
+    .sidebar.open { transform: none; }
+    .menu-btn { display: inline-block; }
+    .body-wrap { padding: 14px 14px 48px; }
+    .main-head { padding: 12px 14px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Microsoft sign-in ── -->
+<div class="screen active" id="screen-msauth">
+  <div class="center-card">
+    <h1>IDMS Procurement</h1>
+    <div class="sub">Stores, requisitions and orders</div>
+    <button class="btn" onclick="pcMsSignIn()">Sign in with Microsoft</button>
+    <div class="err" id="auth-err"></div>
+    <div class="hint">Uses the same Microsoft account and OneDrive folder as the rest of IDMS.</div>
+  </div>
+</div>
+
+<!-- ── IDMS sign-in (only when this browser has never run the PWA) ── -->
+<div class="screen" id="screen-login">
+  <div class="center-card">
+    <h1>Who are you?</h1>
+    <div class="sub">Your IDMS login, so what you record carries your name</div>
+    <select class="field" id="login-user"></select>
+    <input class="field" id="login-pass" type="password" placeholder="Password"
+      onkeydown="if(event.key==='Enter')pcIdmsLogin()">
+    <button class="btn" onclick="pcIdmsLogin()">Continue</button>
+    <div class="err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- ── No access ── -->
+<div class="screen" id="screen-noaccess">
+  <div class="center-card">
+    <h1>Not your department</h1>
+    <div class="sub" id="noaccess-msg">Procurement is limited to the crew who hold stores.</div>
+    <button class="btn ghost" onclick="location.href='index.html'">Back to IDMS</button>
+  </div>
+</div>
+
+<!-- ── App ── -->
+<div class="screen" id="screen-app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <b>Procurement</b><span id="brand-ver">§42</span>
+      <span class="sync-pill" id="sync-pill" title="Sync status"></span>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot">
+      <div>Signed in as <b id="foot-user">—</b></div>
+      <div style="margin-top:6px;display:flex;gap:12px">
+        <button onclick="location.href='index.html'">IDMS</button>
+        <button onclick="location.href='notes.html'">Notes</button>
+        <button onclick="pcSyncNow()">Sync now</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div id="reauth-bar">
+      <span class="ra-dot"></span>
+      <span class="ra-text"><b>The Microsoft sign-in expired.</b> Everything already synced is still
+        readable, but nothing can be recorded until you sign in again.</span>
+      <button class="btn" id="reauth-btn" onclick="pcReconnect()">Sign in again</button>
+    </div>
+    <div class="main-head">
+      <button class="icon-btn menu-btn" onclick="pcToggleSidebar()" aria-label="Menu">☰</button>
+      <div>
+        <h2 id="head-title">Inventory</h2>
+        <div class="loc" id="head-sub">—</div>
+      </div>
+      <div class="spacer"></div>
+      <div id="head-actions"></div>
+    </div>
+    <div class="body-wrap" id="body"></div>
+  </div>
+</div>
+
+<div id="overlay-host"></div>
+<div id="toast-host"></div>
+
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<script src="utils/procurement-reduce.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════
+// IDMS Procurement — standalone page, schema §42.
+// Same origin, MSAL registration and Graph conventions as index.html and
+// notes.html. Storage contract: append-only events under
+//   Documents/IDMS/data/procurement/events/{YYYY}/{iso-compact}-{event_id}.json
+// This page never mutates a shared data file; every action is a new event.
+// The one exception is config/procurementconfig.json → settings, which is a
+// config document and takes the ETag-guarded read-mutate-write (§42.5).
+// ════════════════════════════════════════════════════════════
+
+var ONEDRIVE_BASE = 'Documents/IDMS';
+
+var MSAL_CONFIG = {
+  auth: {
+    clientId:    '5f7c6099-c379-4cfa-ab6a-92bf33b812aa',
+    authority:   'https://login.microsoftonline.com/816c3d02-39d9-4940-9b6f-08b4cf0321ce',
+    redirectUri: 'https://ara-chief.github.io/IDMS/'
+  },
+  cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+};
+var MSAL_SCOPES = ['User.Read', 'Files.ReadWrite', 'offline_access'];
+
+var PC = {
+  msal: null, account: null,
+  user: null,
+  cfg: null, cfgEtag: null,
+  events: [], loadedNames: {},
+  state: { items: {}, requisitions: {}, purchase_orders: {} },
+  view: 'register',
+  sel: null,               // selected item_id / req_id / po_id, per view
+  q: '',                   // register search
+  filterLoc: '', filterCat: '',
+  showArchived: false,
+  reauth: false,
+  _syncing: false
+};
+
+var DEFAULT_CFG = {
+  schema_version: 1, locations: [], categories: [], units: [], suppliers: [],
+  settings: { approver_roles: ['Chief Engineer', 'Admin'], default_currency: 'USD',
+              receiving_locations: [], exception_stale_days: 14 }
+};
+
+// ── Graph plumbing (mirrors notes.html) ─────────────────────
+
+async function pcToken(force) {
+  try {
+    var res = await PC.msal.acquireTokenSilent({
+      scopes: MSAL_SCOPES, account: PC.account, forceRefresh: !!force
+    });
+    if (PC.reauth) pcSetReauth(false);
+    return res.accessToken;
+  } catch (e) {
+    pcSetReauth(true);
+    var err = new Error('Sign-in expired');
+    err.pcReauth = true;
+    throw err;
+  }
+}
+
+function pcSetReauth(on) {
+  if (PC.reauth === on) return;
+  PC.reauth = on;
+  var bar = document.getElementById('reauth-bar');
+  if (bar) bar.style.display = on ? 'flex' : 'none';
+  if (on) pcSetPill('warn');
+}
+
+async function pcReconnect() {
+  var btn = document.getElementById('reauth-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening sign-in…'; }
+  try {
+    var res = await PC.msal.acquireTokenPopup({ scopes: MSAL_SCOPES, account: PC.account });
+    if (res && res.account) PC.account = res.account;
+    pcSetReauth(false);
+    await pcSyncNow();
+    pcToast('Signed back in — up to date.');
+  } catch (e) {
+    pcToast('Could not sign in — ' + pcErrText(e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign in again'; }
+  }
+}
+
+async function pcFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers['Authorization'] = 'Bearer ' + await pcToken(false);
+  var resp = await fetch(url, opts);
+  if (resp.status === 401) {
+    opts.headers['Authorization'] = 'Bearer ' + await pcToken(true);
+    resp = await fetch(url, opts);
+  }
+  return resp;
+}
+
+function pcGraphUrl(path) {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+         encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+}
+
+async function pcGetJson(path) {
+  var resp = await pcFetch(pcGraphUrl(path), { method: 'GET' });
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error('GET ' + path + ' → ' + resp.status);
+  return resp.json();
+}
+
+function pcErrText(e) { return (e && e.message) ? e.message : String(e); }
+
+// ── Boot ────────────────────────────────────────────────────
+
+function pcInit() {
+  try {
+    PC.msal = new msal.PublicClientApplication(MSAL_CONFIG);
+    PC.msal.handleRedirectPromise().then(function () {
+      var accounts = PC.msal.getAllAccounts();
+      if (accounts.length > 0) { PC.account = accounts[0]; pcAfterMsAuth(); }
+    }).catch(pcAuthError);
+  } catch (e) { pcAuthError(e); }
+}
+
+function pcAuthError(e) {
+  document.getElementById('auth-err').textContent = 'Sign-in problem: ' + pcErrText(e);
+}
+
+function pcMsSignIn() {
+  document.getElementById('auth-err').textContent = '';
+  PC.msal.loginPopup({ scopes: MSAL_SCOPES })
+    .then(function (r) { PC.account = r.account; pcAfterMsAuth(); })
+    .catch(pcAuthError);
+}
+
+async function pcAfterMsAuth() {
+  try { await pcToken(false); } catch (e) { pcAuthError(e); return; }
+
+  var saved = pcSavedIdmsUser();
+  if (saved) { PC.user = saved; pcEnterApp(); return; }
+
+  var cfg = await pcGetJson(ONEDRIVE_BASE + '/config/userconfig.json');
+  if (!cfg || !cfg.users) { pcAuthError(new Error('userconfig.json unavailable')); return; }
+  PC._users = cfg.users.filter(function (u) { return u.status !== 'retired'; });
+  document.getElementById('login-user').innerHTML = PC._users.map(function (u, i) {
+    return '<option value="' + i + '">' + pcEsc(u.name || u.username) + '</option>';
+  }).join('');
+  pcShow('screen-login');
+}
+
+// Same three places notes.html reads, in the same order and for the same
+// reason: fw_session is written on entering a department whether or not
+// "remember me" was ticked, so asking fw_user first demands a second sign-in
+// from anyone who did not tick it.
+function pcSavedIdmsUser() {
+  try {
+    var s = JSON.parse(localStorage.getItem('fw_session') || 'null');
+    if (s && s.user && s.user.username) return s.user;
+  } catch (e) {}
+  var keys = ['fw_user', 'nt_user', 'pc_user'];
+  for (var i = 0; i < keys.length; i++) {
+    try {
+      var u = JSON.parse(localStorage.getItem(keys[i]) || 'null');
+      if (u && u.username) return u;
+    } catch (e) {}
+  }
+  return null;
+}
+
+function pcIdmsLogin() {
+  var u = PC._users[Number(document.getElementById('login-user').value)];
+  var pass = document.getElementById('login-pass').value;
+  if (!u || u.password !== pass) {
+    document.getElementById('login-err').textContent = 'Wrong password.';
+    return;
+  }
+  PC.user = { username: u.username, name: u.name, role: u.role,
+              permission_tier: u.permission_tier, departments: u.departments || [] };
+  try { localStorage.setItem('pc_user', JSON.stringify(PC.user)); } catch (e) {}
+  pcEnterApp();
+}
+
+// §42.11. Admin tier, an approver role, or the department on the crew record —
+// the last being the path that takes over once the records carry Procurement.
+function pcHasAccess(user, cfg) {
+  if (!user) return false;
+  if ((user.permission_tier || '') === 'admin') return true;
+  if ((user.departments || []).indexOf('Procurement') !== -1) return true;
+  var roles = ((cfg && cfg.settings && cfg.settings.approver_roles) ||
+               DEFAULT_CFG.settings.approver_roles);
+  return roles.indexOf(user.role) !== -1;
+}
+
+function pcCanApprove() {
+  if (!PC.user) return false;
+  if (PC.user.username === 'browser') return false;   // §41.4d reserved actor
+  if ((PC.user.permission_tier || '') === 'admin') return true;
+  var roles = (PC.cfg && PC.cfg.settings && PC.cfg.settings.approver_roles) ||
+              DEFAULT_CFG.settings.approver_roles;
+  return roles.indexOf(PC.user.role) !== -1;
+}
+
+async function pcEnterApp() {
+  await pcLoadConfig();
+
+  if (!pcHasAccess(PC.user, PC.cfg)) {
+    document.getElementById('noaccess-msg').textContent =
+      (PC.user.name || PC.user.username) + ' is signed in as ' + (PC.user.role || 'crew') +
+      '. Procurement is open to admins, to ' +
+      ((PC.cfg.settings.approver_roles || []).join(' and ') || 'approvers') +
+      ', and to anyone carrying Procurement on their crew record.';
+    pcShow('screen-noaccess');
+    return;
+  }
+
+  pcShow('screen-app');
+  document.getElementById('foot-user').textContent = PC.user.name || PC.user.username;
+
+  try {
+    var v = new URLSearchParams(location.search).get('view');
+    if (v && ['register','low','checkin','reqs','orders','exceptions','settings'].indexOf(v) !== -1) {
+      PC.view = v;
+    }
+  } catch (e) {}
+
+  pcLoadCache();
+  pcRenderAll();
+  pcSyncNow();
+  setInterval(pcSyncNow, 60000);
+}
+
+async function pcLoadConfig() {
+  var cfg = null;
+  try { cfg = await pcGetJson(ONEDRIVE_BASE + '/config/procurementconfig.json'); } catch (e) {}
+  if (!cfg) {
+    // Fall back to the copy served alongside the app, then to the built-in.
+    try {
+      var r = await fetch('config/procurementconfig.json', { cache: 'no-store' });
+      if (r.ok) cfg = await r.json();
+    } catch (e) {}
+  }
+  PC.cfg = cfg || JSON.parse(JSON.stringify(DEFAULT_CFG));
+  if (!PC.cfg.settings) PC.cfg.settings = JSON.parse(JSON.stringify(DEFAULT_CFG.settings));
+  ['locations','categories','units','suppliers'].forEach(function (k) {
+    if (!Array.isArray(PC.cfg[k])) PC.cfg[k] = [];
+  });
+}
+
+// ── Taxonomy lookups — tolerant by contract (§42.5) ─────────
+// An id the config does not explain renders as itself. Nothing may make stock
+// disappear because the storerooms were re-organised.
+
+function pcLocName(id) {
+  if (!id) return 'Unassigned';
+  var l = PC.cfg.locations.filter(function (x) { return x.location_id === id; })[0];
+  return l ? l.name : id;
+}
+function pcLocKnown(id) {
+  if (!id || id === 'unassigned') return true;
+  return PC.cfg.locations.some(function (x) { return x.location_id === id; });
+}
+function pcCatName(id) {
+  if (!id) return '';
+  var c = PC.cfg.categories.filter(function (x) { return x.category_id === id; })[0];
+  return c ? c.name : id;
+}
+function pcSupplierName(id) {
+  if (!id) return '—';
+  var s = PC.cfg.suppliers.filter(function (x) { return x.supplier_id === id; })[0];
+  return s ? s.name : id;
+}
+function pcUnitDecimals(unit) {
+  var u = PC.cfg.units.filter(function (x) { return x.unit === unit; })[0];
+  return (u && typeof u.decimals === 'number') ? u.decimals : 2;
+}
+function pcFmtQty(n, unit) {
+  var v = Number(n) || 0;
+  var d = pcUnitDecimals(unit);
+  var s = (Math.round(v * 1e6) / 1e6).toFixed(d);
+  if (d > 0) s = s.replace(/\.?0+$/, '');
+  return s;
+}
+function pcReceivingDefault() {
+  var r = (PC.cfg.settings.receiving_locations || [])[0];
+  if (r) return r;
+  return (PC.cfg.locations[0] && PC.cfg.locations[0].location_id) || 'unassigned';
+}
+
+// ── Event stream ────────────────────────────────────────────
+
+function pcCacheKey(year) { return 'pc_events_cache_' + year; }
+
+function pcLoadCache() {
+  try {
+    var raw = localStorage.getItem(pcCacheKey(new Date().getFullYear()));
+    if (!raw) return;
+    var evs = JSON.parse(raw);
+    if (!Array.isArray(evs)) return;
+    PC.events = evs;
+    evs.forEach(function (e) { if (e._fn) PC.loadedNames[e._fn] = true; });
+    pcReduce();
+  } catch (e) {}
+}
+
+function pcSaveCache() {
+  try {
+    localStorage.setItem(pcCacheKey(new Date().getFullYear()), JSON.stringify(PC.events));
+  } catch (e) {}   // quota — the stream re-reads from Graph next sync
+}
+
+function pcSetPill(cls) {
+  var p = document.getElementById('sync-pill');
+  if (p) p.className = 'sync-pill ' + (cls || '');
+}
+
+async function pcSyncNow() {
+  if (PC._syncing) return;
+  PC._syncing = true;
+  pcSetPill('');
+  try {
+    var year = String(new Date().getFullYear());
+    var folder = ONEDRIVE_BASE + '/data/procurement/events/' + year;
+    var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+              encodeURIComponent(folder).replace(/%2F/g, '/') +
+              ':/children?$select=name&$top=200';
+    var names = [];
+    while (url) {
+      var resp = await pcFetch(url, { method: 'GET' });
+      if (resp.status === 404) break;             // no events yet this year
+      if (!resp.ok) throw new Error('Event list → ' + resp.status);
+      var page = await resp.json();
+      (page.value || []).forEach(function (it) { if (/\.json$/i.test(it.name)) names.push(it.name); });
+      url = page['@odata.nextLink'] || null;
+    }
+    names.sort();
+    var fresh = names.filter(function (n) { return !PC.loadedNames[n]; });
+    for (var i = 0; i < fresh.length; i++) {
+      var ev = await pcGetJson(folder + '/' + fresh[i]);
+      if (ev && ev.event_id) { ev._fn = fresh[i]; PC.events.push(ev); PC.loadedNames[fresh[i]] = true; }
+    }
+    if (fresh.length) {
+      PC.events.sort(function (a, b) { return (a._fn || '') < (b._fn || '') ? -1 : 1; });
+      pcSaveCache();
+      pcReduce();
+      pcRenderAll();
+    }
+    pcSetPill('ok');
+  } catch (e) {
+    pcSetPill(e && e.pcReauth ? 'warn' : 'err');
+  } finally {
+    PC._syncing = false;
+  }
+}
+
+function pcUuid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    var r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+// One event, one file, guarded on its own name. A retry rebuilds the identical
+// path and 412s into a no-op, which is what makes an interrupted receipt safe
+// to re-run (§42.9).
+async function pcAppendEvent(eventType, payload, opts) {
+  opts = opts || {};
+  var nowIso  = new Date().toISOString();
+  var eventId = pcUuid();
+  var filename = nowIso.replace(/[:.\-]/g, '') + '-' + eventId + '.json';
+  var year = nowIso.slice(0, 4);
+  var path = ONEDRIVE_BASE + '/data/procurement/events/' + year + '/' + filename;
+
+  var eventObj = {
+    schema_version: 1,
+    event_id:   eventId,
+    event_type: eventType,
+    actor:      PC.user.username,
+    timestamp:  nowIso,
+    payload:    payload
+  };
+
+  var resp = await pcFetch(pcGraphUrl(path), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
+    body: JSON.stringify(eventObj, null, 2)
+  });
+  if (resp.status !== 412 && !resp.ok) throw new Error('Event PUT → ' + resp.status);
+
+  eventObj._fn = filename;
+  PC.events.push(eventObj);
+  PC.loadedNames[filename] = true;
+  if (!opts.defer) { pcSaveCache(); pcReduce(); pcRenderAll(); }
+  return eventObj;
+}
+
+function pcReduce() {
+  PC.state = procurementReduce.reduce(PC.events);
+}
+
+// ── Small helpers ───────────────────────────────────────────
+
+function pcEsc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function pcShow(id) {
+  ['screen-msauth','screen-login','screen-noaccess','screen-app'].forEach(function (s) {
+    var el = document.getElementById(s);
+    if (el) el.className = 'screen' + (s === id ? ' active' : '');
+  });
+}
+
+function pcToast(msg) {
+  var host = document.getElementById('toast-host');
+  host.innerHTML = '<div class="toast">' + pcEsc(msg) + '</div>';
+  clearTimeout(pcToast._t);
+  pcToast._t = setTimeout(function () { host.innerHTML = ''; }, 3600);
+}
+
+function pcToggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+
+function pcCloseSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+}
+
+function pcOverlay(html) {
+  document.getElementById('overlay-host').innerHTML =
+    html ? '<div class="overlay" onclick="if(event.target===this)pcCloseOverlay()">' + html + '</div>' : '';
+}
+function pcCloseOverlay() { document.getElementById('overlay-host').innerHTML = ''; }
+
+function pcDate(s) {
+  if (!s) return '—';
+  var d = new Date(s);
+  if (isNaN(d.getTime())) return String(s);
+  return d.toISOString().slice(0, 10);
+}
+
+function pcVal(id) {
+  var el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+function pcNum(id) {
+  var v = pcVal(id);
+  return v === '' ? null : Number(v);
+}
+
+function pcItemsSorted() {
+  return Object.keys(PC.state.items).map(function (k) { return PC.state.items[k]; })
+    .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+}
+
+function pcItemLabel(itemId, fallback) {
+  var it = PC.state.items[itemId];
+  return it ? (it.name || itemId) : (fallback || itemId || '—');
+}
+
+function pcUnitOptions(sel) {
+  var units = PC.cfg.units.length ? PC.cfg.units : [{ unit: 'ea', name: 'Each' }];
+  return units.map(function (u) {
+    return '<option value="' + pcEsc(u.unit) + '"' + (u.unit === sel ? ' selected' : '') + '>' +
+      pcEsc(u.unit) + ' — ' + pcEsc(u.name || u.unit) + '</option>';
+  }).join('');
+}
+
+function pcLocOptions(sel) {
+  var locs = PC.cfg.locations.slice();
+  if (!locs.length) locs = [{ location_id: 'unassigned', name: 'Unassigned' }];
+  // A location the item is holding stock at but the config no longer lists
+  // still has to be selectable, or stock could never be moved out of it.
+  if (sel && !locs.some(function (l) { return l.location_id === sel; })) {
+    locs.push({ location_id: sel, name: sel + ' (not in the current layout)' });
+  }
+  return locs.map(function (l) {
+    return '<option value="' + pcEsc(l.location_id) + '"' + (l.location_id === sel ? ' selected' : '') +
+      '>' + pcEsc(l.name) + '</option>';
+  }).join('');
+}
+
+// ── Render ──────────────────────────────────────────────────
+
+var VIEWS = [
+  { id: 'register',   label: 'Inventory' },
+  { id: 'low',        label: 'Low stock' },
+  { id: 'checkin',    label: 'Check in' },
+  { id: 'reqs',       label: 'Requisitions' },
+  { id: 'orders',     label: 'Orders' },
+  { id: 'exceptions', label: 'Exceptions' },
+  { id: 'settings',   label: 'Settings' }
+];
+
+function pcGo(view) {
+  PC.view = view;
+  PC.sel = null;
+  pcCloseSidebar();
+  pcRenderAll();
+}
+
+function pcCounts() {
+  var items = pcItemsSorted().filter(function (i) { return !i.archived; });
+  var low = items.filter(procurementReduce.isLow).length;
+  var openPos = Object.keys(PC.state.purchase_orders).filter(function (k) {
+    var p = PC.state.purchase_orders[k];
+    return p.status === 'sent' || p.status === 'partial';
+  }).length;
+  var pendingReqs = Object.keys(PC.state.requisitions).filter(function (k) {
+    return PC.state.requisitions[k].status === 'submitted';
+  }).length;
+  var ex = procurementReduce.exceptions(PC.state,
+    { stale_days: PC.cfg.settings.exception_stale_days, locName: pcLocName }).length;
+  return { items: items.length, low: low, openPos: openPos, pendingReqs: pendingReqs, ex: ex };
+}
+
+function pcRenderNav() {
+  var c = pcCounts();
+  var badges = {
+    register: String(c.items),
+    low: c.low ? String(c.low) : '',
+    checkin: c.openPos ? String(c.openPos) : '',
+    reqs: c.pendingReqs ? String(c.pendingReqs) : '',
+    orders: c.openPos ? String(c.openPos) : '',
+    exceptions: c.ex ? String(c.ex) : '',
+    settings: ''
+  };
+  var cls = { low: 'alert', exceptions: 'bad', reqs: 'alert' };
+  document.getElementById('nav').innerHTML =
+    '<div class="nav-head">Stores</div>' +
+    VIEWS.map(function (v) {
+      return '<div class="nav-item' + (PC.view === v.id ? ' active' : '') +
+        '" onclick="pcGo(\'' + v.id + '\')">' + pcEsc(v.label) +
+        (badges[v.id] ? '<span class="count ' + (cls[v.id] || '') + '">' + badges[v.id] + '</span>' : '') +
+        '</div>' +
+        (v.id === 'low' ? '<div class="nav-head">Ordering</div>' : '');
+    }).join('');
+}
+
+function pcRenderAll() {
+  if (!document.getElementById('screen-app').classList.contains('active')) return;
+  pcRenderNav();
+  var fn = {
+    register: pcViewRegister, low: pcViewLow, checkin: pcViewCheckin,
+    reqs: pcViewReqs, orders: pcViewOrders, exceptions: pcViewExceptions,
+    settings: pcViewSettings
+  }[PC.view] || pcViewRegister;
+  fn();
+}
+
+function pcHead(title, sub, actions) {
+  document.getElementById('head-title').textContent = title;
+  document.getElementById('head-sub').textContent = sub || '';
+  document.getElementById('head-actions').innerHTML = actions || '';
+}
+
+// ── View: Inventory register ────────────────────────────────
+
+function pcViewRegister() {
+  if (PC.sel && PC.state.items[PC.sel]) return pcViewItem(PC.state.items[PC.sel]);
+
+  var c = pcCounts();
+  pcHead('Inventory', c.items + ' items · ' + c.low + ' below minimum',
+    '<button class="icon-btn" onclick="pcItemForm(null)">+ New item</button>');
+
+  var catOpts = '<option value="">All categories</option>' + PC.cfg.categories.map(function (c2) {
+    return '<option value="' + pcEsc(c2.category_id) + '"' +
+      (PC.filterCat === c2.category_id ? ' selected' : '') + '>' + pcEsc(c2.name) + '</option>';
+  }).join('');
+  var locOpts = '<option value="">All locations</option>' + PC.cfg.locations.map(function (l) {
+    return '<option value="' + pcEsc(l.location_id) + '"' +
+      (PC.filterLoc === l.location_id ? ' selected' : '') + '>' + pcEsc(l.name) + '</option>';
+  }).join('');
+
+  var html =
+    '<div class="toolbar">' +
+      '<input class="field" id="reg-q" placeholder="Search name, part number, SFI code…" ' +
+        'value="' + pcEsc(PC.q) + '" oninput="PC.q=this.value;pcRenderRegisterList()">' +
+      (PC.cfg.categories.length ? '<select class="field" onchange="PC.filterCat=this.value;pcRenderRegisterList()">' + catOpts + '</select>' : '') +
+      '<select class="field" onchange="PC.filterLoc=this.value;pcRenderRegisterList()">' + locOpts + '</select>' +
+      '<button class="icon-btn" onclick="PC.showArchived=!PC.showArchived;pcRenderAll()">' +
+        (PC.showArchived ? 'Hide archived' : 'Show archived') + '</button>' +
+    '</div><div id="reg-list"></div>';
+
+  document.getElementById('body').innerHTML = html;
+  pcRenderRegisterList();
+}
+
+function pcRenderRegisterList() {
+  var q = PC.q.toLowerCase();
+  var rows = pcItemsSorted()
+    .filter(function (i) { return PC.showArchived ? true : !i.archived; })
+    .filter(function (i) { return !PC.filterCat || i.category_id === PC.filterCat; })
+    .filter(function (i) { return !PC.filterLoc || Number(i.by_location[PC.filterLoc] || 0) !== 0; })
+    .filter(function (i) {
+      if (!q) return true;
+      return (i.name || '').toLowerCase().indexOf(q) !== -1 ||
+             (i.part_number || '').toLowerCase().indexOf(q) !== -1 ||
+             (i.sfi_code || '').toLowerCase().indexOf(q) !== -1 ||
+             (i.barcode || '').toLowerCase().indexOf(q) !== -1;
+    });
+
+  var el = document.getElementById('reg-list');
+  if (!el) return;
+
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty"><b>Nothing here yet</b>' +
+      (PC.q || PC.filterCat || PC.filterLoc
+        ? 'No item matches that. Clear the filters to see the whole register.'
+        : 'Add the first item, or check in a delivery — receiving something new offers to create it.') +
+      '</div>';
+    return;
+  }
+
+  el.innerHTML = rows.map(function (i) {
+    var low = procurementReduce.isLow(i);
+    var neg = i.on_hand < 0;
+    var bits = [];
+    if (i.part_number) bits.push(pcEsc(i.part_number));
+    if (i.sfi_code) bits.push('SFI ' + pcEsc(i.sfi_code));
+    if (i.category_id) bits.push(pcEsc(pcCatName(i.category_id)));
+    var where = Object.keys(i.by_location).filter(function (l) { return Number(i.by_location[l]) !== 0; })
+      .map(function (l) { return pcEsc(pcLocName(l)) + ' ' + pcFmtQty(i.by_location[l], i.unit); });
+    if (where.length) bits.push(where.join(' · '));
+
+    return '<div class="card click" onclick="PC.sel=\'' + pcEsc(i.item_id) + '\';pcRenderAll()">' +
+      '<div class="row">' +
+        '<div class="grow">' +
+          '<div class="ttl">' + pcEsc(i.name || '(unnamed)') +
+            (i.archived ? ' <span class="tag">Archived</span>' : '') +
+            (i.orphan ? ' <span class="tag warn">Needs details</span>' : '') +
+          '</div>' +
+          '<div class="sub">' + (bits.join(' &nbsp;·&nbsp; ') || 'No stock recorded yet') + '</div>' +
+        '</div>' +
+        '<div style="text-align:right">' +
+          '<div class="qty' + (neg ? ' neg' : (low ? ' low' : '')) + '">' + pcFmtQty(i.on_hand, i.unit) +
+            '<span class="qty-unit">' + pcEsc(i.unit) + '</span></div>' +
+          (i.on_order > 0 ? '<div class="sub nowrap">' + pcFmtQty(i.on_order, i.unit) + ' on order</div>' :
+            (low ? '<div class="sub nowrap" style="color:var(--warning)">below min ' + pcFmtQty(i.min_qty, i.unit) + '</div>' : '')) +
+        '</div>' +
+      '</div></div>';
+  }).join('');
+}
+
+// ── View: one item ──────────────────────────────────────────
+
+function pcViewItem(item) {
+  pcHead(item.name || '(unnamed)',
+    [item.part_number ? 'P/N ' + item.part_number : '',
+     item.sfi_code ? 'SFI ' + item.sfi_code : '',
+     pcCatName(item.category_id)].filter(Boolean).join('  ·  ') || 'No part number recorded',
+    '<button class="icon-btn" onclick="PC.sel=null;pcRenderAll()">← Register</button>');
+
+  var low = procurementReduce.isLow(item);
+  var locs = Object.keys(item.by_location);
+
+  var stock =
+    '<div class="card"><div class="row" style="align-items:flex-start;flex-wrap:wrap;gap:24px">' +
+      '<div><div class="sub">On hand</div>' +
+        '<div class="qty' + (item.on_hand < 0 ? ' neg' : (low ? ' low' : '')) + '">' +
+        pcFmtQty(item.on_hand, item.unit) + '<span class="qty-unit">' + pcEsc(item.unit) + '</span></div></div>' +
+      '<div><div class="sub">On order</div><div class="qty">' + pcFmtQty(item.on_order, item.unit) + '</div></div>' +
+      '<div><div class="sub">Approved, not ordered</div><div class="qty">' + pcFmtQty(item.requested, item.unit) + '</div></div>' +
+      '<div><div class="sub">Min / max</div><div class="qty">' +
+        (item.min_qty === null || item.min_qty === undefined ? '—' : pcFmtQty(item.min_qty, item.unit)) + ' / ' +
+        (item.max_qty === null || item.max_qty === undefined ? '—' : pcFmtQty(item.max_qty, item.unit)) + '</div></div>' +
+      '<div class="grow"></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn sm" onclick="pcMoveForm(\'' + item.item_id + '\',\'receipt\')">Receive</button>' +
+        '<button class="btn sm ghost" onclick="pcMoveForm(\'' + item.item_id + '\',\'issue\')">Issue</button>' +
+        '<button class="btn sm ghost" onclick="pcMoveForm(\'' + item.item_id + '\',\'count\')">Count</button>' +
+        '<button class="btn sm ghost" onclick="pcMoveForm(\'' + item.item_id + '\',\'transfer\')">Move</button>' +
+        '<button class="btn sm ghost" onclick="pcMoveForm(\'' + item.item_id + '\',\'adjustment\')">Adjust</button>' +
+      '</div>' +
+    '</div></div>';
+
+  var byLoc = !locs.length ? '' :
+    '<div class="card"><div class="sub" style="margin-bottom:8px">Where it is</div>' +
+    '<div class="grid-wrap"><table class="grid"><tbody>' + locs.map(function (l) {
+      var v = Number(item.by_location[l]);
+      return '<tr><td>' + pcEsc(pcLocName(l)) +
+        (pcLocKnown(l) ? '' : ' <span class="tag warn">not in the current layout</span>') + '</td>' +
+        '<td class="num"' + (v < 0 ? ' style="color:var(--danger)"' : '') + '>' +
+        pcFmtQty(v, item.unit) + ' ' + pcEsc(item.unit) + '</td></tr>';
+    }).join('') + '</tbody></table></div></div>';
+
+  var moves = item.movements.slice().reverse();
+  var ledger = '<div class="card"><div class="sub" style="margin-bottom:8px">Ledger — ' +
+    moves.length + ' movement' + (moves.length === 1 ? '' : 's') + '</div>' +
+    (!moves.length ? '<div class="muted" style="font-size:13px">Nothing recorded yet.</div>' :
+    '<div class="grid-wrap"><table class="grid"><thead><tr><th>When</th><th>What</th><th>Where</th>' +
+    '<th style="text-align:right">Change</th><th>Who</th></tr></thead><tbody>' +
+    moves.map(function (m) {
+      var what = { receipt: 'Received', issue: 'Issued', adjustment: 'Adjusted',
+                   transfer: 'Moved', count: 'Counted' }[m.kind] || m.kind;
+      var detail = [];
+      if (m.po_id) {
+        var po = PC.state.purchase_orders[m.po_id];
+        detail.push('against ' + pcEsc((po && po.po_number) || m.po_id.slice(0, 8)));
+      }
+      if (m.equipment_code) detail.push('for ' + pcEsc(m.equipment_code));
+      if (m.reason) detail.push(pcEsc(m.reason));
+      if (m.kind === 'count') detail.push('book said ' + pcFmtQty(m.book_qty, item.unit));
+      if (m.note) detail.push(pcEsc(m.note));
+      var change = m.kind === 'transfer'
+        ? pcFmtQty(m.qty, item.unit) + ' →'
+        : (m.delta > 0 ? '+' : '') + pcFmtQty(m.delta, item.unit);
+      var where = m.kind === 'transfer'
+        ? pcEsc(pcLocName(m.location_id)) + ' → ' + pcEsc(pcLocName(m.to_location_id))
+        : pcEsc(pcLocName(m.location_id));
+      return '<tr><td class="nowrap">' + pcDate(m.timestamp) + '</td>' +
+        '<td>' + what + (detail.length ? '<div class="sub">' + detail.join(' · ') + '</div>' : '') + '</td>' +
+        '<td>' + where + '</td>' +
+        '<td class="num"' + (m.delta < 0 ? ' style="color:var(--danger)"' : (m.delta > 0 ? ' style="color:var(--success)"' : '')) + '>' +
+          change + '</td>' +
+        '<td class="muted nowrap">' + pcEsc(m.actor || '—') + '</td></tr>';
+    }).join('') + '</tbody></table></div>') + '</div>';
+
+  var footer = '<div style="display:flex;gap:10px;margin-top:6px">' +
+    '<button class="icon-btn" onclick="pcItemForm(\'' + item.item_id + '\')">Edit details</button>' +
+    (item.archived
+      ? '<button class="icon-btn" onclick="pcArchiveItem(\'' + item.item_id + '\',false)">Restore</button>'
+      : '<button class="icon-btn" onclick="pcArchiveItem(\'' + item.item_id + '\',true)">Archive</button>') +
+    '</div>';
+
+  document.getElementById('body').innerHTML = stock + byLoc + ledger + footer;
+}
+
+// ── Item create / edit ──────────────────────────────────────
+
+function pcItemForm(itemId) {
+  var it = itemId ? PC.state.items[itemId] : null;
+  var catOpts = '<option value="">— none —</option>' + PC.cfg.categories.map(function (c) {
+    return '<option value="' + pcEsc(c.category_id) + '"' +
+      (it && it.category_id === c.category_id ? ' selected' : '') + '>' + pcEsc(c.name) + '</option>';
+  }).join('');
+
+  pcOverlay('<div class="sheet"><h3>' + (it ? 'Edit item' : 'New item') + '</h3>' +
+    '<div class="sheet-sub">Name and unit are all that is needed. Minimum and maximum drive the ' +
+      'low-stock list, and an SFI code joins this part to the asset register.</div>' +
+    '<label class="lbl">Name</label>' +
+    '<input class="field" id="if-name" value="' + pcEsc(it ? it.name : '') + '" placeholder="Shaft seal 90mm">' +
+    '<div class="fieldrow">' +
+      '<div><label class="lbl">Unit</label><select class="field" id="if-unit">' +
+        pcUnitOptions(it ? it.unit : 'ea') + '</select></div>' +
+      '<div><label class="lbl">Category</label><select class="field" id="if-cat">' + catOpts + '</select></div>' +
+    '</div>' +
+    '<div class="fieldrow">' +
+      '<div><label class="lbl">Part number</label><input class="field" id="if-pn" value="' +
+        pcEsc(it ? (it.part_number || '') : '') + '"></div>' +
+      '<div><label class="lbl">SFI code</label><input class="field" id="if-sfi" value="' +
+        pcEsc(it ? (it.sfi_code || '') : '') + '" placeholder="360.001"></div>' +
+    '</div>' +
+    '<div class="fieldrow">' +
+      '<div><label class="lbl">Minimum</label><input class="field" id="if-min" type="number" step="any" value="' +
+        (it && it.min_qty !== null && it.min_qty !== undefined ? pcEsc(it.min_qty) : '') + '"></div>' +
+      '<div><label class="lbl">Maximum</label><input class="field" id="if-max" type="number" step="any" value="' +
+        (it && it.max_qty !== null && it.max_qty !== undefined ? pcEsc(it.max_qty) : '') + '"></div>' +
+      '<div><label class="lbl">Home location</label><select class="field" id="if-loc">' +
+        '<option value="">— none —</option>' + pcLocOptions(it ? it.default_location_id : '') + '</select></div>' +
+    '</div>' +
+    '<label class="lbl">Notes</label>' +
+    '<input class="field" id="if-notes" value="' + pcEsc(it ? (it.notes || '') : '') + '">' +
+    '<div class="err" id="if-err"></div>' +
+    '<div class="sheet-actions">' +
+      '<button class="btn ghost" onclick="pcCloseOverlay()">Cancel</button>' +
+      '<button class="btn" id="if-save" onclick="pcItemSave(' + (itemId ? '\'' + itemId + '\'' : 'null') + ')">' +
+        (it ? 'Save' : 'Create') + '</button>' +
+    '</div></div>');
+
+  if (it && it.default_location_id) {
+    var sel = document.getElementById('if-loc');
+    if (sel) sel.value = it.default_location_id;
+  }
+  var n = document.getElementById('if-name');
+  if (n) n.focus();
+}
+
+async function pcItemSave(itemId) {
+  var name = pcVal('if-name');
+  if (!name) { document.getElementById('if-err').textContent = 'A name, at least.'; return; }
+
+  var payload = {
+    item_id: itemId || pcUuid(),
+    name: name,
+    unit: pcVal('if-unit') || 'ea',
+    category_id: pcVal('if-cat') || null,
+    part_number: pcVal('if-pn') || null,
+    sfi_code: pcVal('if-sfi') || null,
+    min_qty: pcNum('if-min'),
+    max_qty: pcNum('if-max'),
+    default_location_id: pcVal('if-loc') || null,
+    notes: pcVal('if-notes') || ''
+  };
+
+  var btn = document.getElementById('if-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await pcAppendEvent(itemId ? 'item_updated' : 'item_created', payload);
+    pcCloseOverlay();
+    PC.sel = payload.item_id;
+    PC.view = 'register';
+    pcRenderAll();
+    pcToast(itemId ? 'Saved.' : 'Item added.');
+  } catch (e) {
+    document.getElementById('if-err').textContent = pcErrText(e);
+    btn.disabled = false; btn.textContent = itemId ? 'Save' : 'Create';
+  }
+}
+
+async function pcArchiveItem(itemId, on) {
+  var it = PC.state.items[itemId];
+  if (on && it && it.on_hand > 0 &&
+      !confirm('This item still shows ' + pcFmtQty(it.on_hand, it.unit) + ' ' + it.unit +
+               ' on hand. Archiving hides it from the register but keeps its history. Continue?')) return;
+  try {
+    await pcAppendEvent(on ? 'item_archived' : 'item_unarchived', { item_id: itemId });
+    pcToast(on ? 'Archived.' : 'Restored.');
+  } catch (e) { pcToast(pcErrText(e)); }
+}
+
+// ── Stock movements ─────────────────────────────────────────
+
+function pcMoveForm(itemId, kind) {
+  var it = PC.state.items[itemId];
+  if (!it) return;
+  var home = it.default_location_id || pcReceivingDefault();
+  var titles = { receipt: 'Receive stock', issue: 'Issue stock', adjustment: 'Adjust stock',
+                 transfer: 'Move stock', count: 'Record a count' };
+  var subs = {
+    receipt: 'Stock arriving without an order behind it. To receive against an order, use Check in.',
+    issue: 'Taken off the shelf. Say what it went on if you know — it never writes to the task record.',
+    adjustment: 'A correction with a reason: damaged, expired, found, lost.',
+    transfer: 'Same stock, somewhere else. Recorded as one movement, so it cannot half-fail.',
+    count: 'What you actually counted. The book quantity and the difference are recorded alongside it.'
+  };
+
+  var qtyLabel = kind === 'count' ? 'Counted quantity' : 'Quantity';
+  var extra = '';
+  if (kind === 'transfer') {
+    extra = '<div><label class="lbl">To</label><select class="field" id="mv-to">' +
+            pcLocOptions('') + '</select></div>';
+  } else if (kind === 'adjustment') {
+    extra = '<div><label class="lbl">Direction</label><select class="field" id="mv-dir">' +
+            '<option value="decrease">Decrease</option><option value="increase">Increase</option>' +
+            '</select></div>';
+  } else if (kind === 'issue') {
+    extra = '<div><label class="lbl">Equipment code (optional)</label>' +
+            '<input class="field" id="mv-eq" placeholder="360.001"></div>';
+  } else if (kind === 'receipt') {
+    extra = '<div><label class="lbl">Unit cost (optional)</label>' +
+            '<input class="field" id="mv-cost" type="number" step="any"></div>';
+  }
+
+  pcOverlay('<div class="sheet"><h3>' + titles[kind] + '</h3>' +
+    '<div class="sheet-sub">' + pcEsc(it.name) + ' — ' + subs[kind] + '</div>' +
+    '<div class="fieldrow">' +
+      '<div><label class="lbl">' + qtyLabel + ' (' + pcEsc(it.unit) + ')</label>' +
+        '<input class="field" id="mv-qty" type="number" step="any" min="0" inputmode="decimal"></div>' +
+      '<div><label class="lbl">' + (kind === 'transfer' ? 'From' : 'Location') + '</label>' +
+        '<select class="field" id="mv-loc">' + pcLocOptions(home) + '</select></div>' +
+      extra +
+    '</div>' +
+    (kind === 'adjustment'
+      ? '<label class="lbl">Reason</label><input class="field" id="mv-reason" placeholder="Damaged in fitting">'
+      : '<label class="lbl">Note (optional)</label><input class="field" id="mv-note">') +
+    '<div class="err" id="mv-err"></div>' +
+    '<div class="sheet-actions">' +
+      '<button class="btn ghost" onclick="pcCloseOverlay()">Cancel</button>' +
+      '<button class="btn" id="mv-save" onclick="pcMoveSave(\'' + itemId + '\',\'' + kind + '\')">Record</button>' +
+    '</div></div>');
+
+  var el = document.getElementById('mv-qty');
+  if (el) el.focus();
+}
+
+async function pcMoveSave(itemId, kind) {
+  var it = PC.state.items[itemId];
+  var qty = pcNum('mv-qty');
+  var err = document.getElementById('mv-err');
+
+  if (qty === null || !isFinite(qty) || qty < 0) { err.textContent = 'A quantity, please.'; return; }
+  if (qty === 0 && kind !== 'count') { err.textContent = 'Nothing to record.'; return; }
+  if (kind === 'adjustment' && !pcVal('mv-reason')) {
+    err.textContent = 'An adjustment needs a reason — otherwise it is an unexplained hole in the ledger.';
+    return;
+  }
+
+  var loc = pcVal('mv-loc');
+  var payload = {
+    movement_id: pcUuid(), item_id: itemId, kind: kind,
+    location_id: loc, qty: Math.abs(qty)
+  };
+  if (kind === 'count') { payload.counted_qty = Math.abs(qty); payload.qty = Math.abs(qty); }
+  if (kind === 'transfer') {
+    payload.to_location_id = pcVal('mv-to');
+    if (payload.to_location_id === loc) { err.textContent = 'That is where it already is.'; return; }
+  }
+  if (kind === 'adjustment') {
+    payload.direction = pcVal('mv-dir');
+    payload.reason = pcVal('mv-reason');
+  }
+  if (kind === 'issue') {
+    payload.equipment_code = pcVal('mv-eq') || null;
+    var here = Number(it.by_location[loc] || 0);
+    if (qty > here && !confirm('The book shows ' + pcFmtQty(here, it.unit) + ' ' + it.unit + ' at ' +
+        pcLocName(loc) + '. Issuing ' + pcFmtQty(qty, it.unit) +
+        ' will take it negative, which flags for a count. Record it anyway?')) return;
+  }
+  if (kind === 'receipt') {
+    var cost = pcNum('mv-cost');
+    if (cost !== null) { payload.unit_cost = cost; payload.currency = PC.cfg.settings.default_currency; }
+  }
+  var note = pcVal('mv-note');
+  if (note) payload.note = note;
+
+  var btn = document.getElementById('mv-save');
+  btn.disabled = true; btn.textContent = 'Recording…';
+  try {
+    await pcAppendEvent('stock_movement', payload);
+    pcCloseOverlay();
+    pcToast('Recorded.');
+  } catch (e) {
+    err.textContent = pcErrText(e);
+    btn.disabled = false; btn.textContent = 'Record';
+  }
+}
+
+// ── View: Low stock ─────────────────────────────────────────
+
+function pcViewLow() {
+  var low = pcItemsSorted().filter(function (i) { return !i.archived && procurementReduce.isLow(i); });
+  pcHead('Low stock', low.length + ' below minimum, counting what is already on order',
+    low.length ? '<button class="icon-btn" onclick="pcReqFromLow()">Raise a requisition for these</button>' : '');
+
+  if (!low.length) {
+    document.getElementById('body').innerHTML =
+      '<div class="empty"><b>Nothing is short</b>Every item with a minimum set has enough on hand, ' +
+      'or enough on the way. Items without a minimum never appear here.</div>';
+    return;
+  }
+
+  document.getElementById('body').innerHTML =
+    '<div class="grid-wrap"><table class="grid"><thead><tr><th>Item</th><th style="text-align:right">On hand</th>' +
+    '<th style="text-align:right">On order</th><th style="text-align:right">Min</th>' +
+    '<th style="text-align:right">Suggest</th><th></th></tr></thead><tbody>' +
+    low.map(function (i) {
+      return '<tr><td><b>' + pcEsc(i.name) + '</b>' +
+        (i.part_number ? '<div class="sub">' + pcEsc(i.part_number) + '</div>' : '') + '</td>' +
+        '<td class="num" style="color:var(--warning)">' + pcFmtQty(i.on_hand, i.unit) + '</td>' +
+        '<td class="num">' + pcFmtQty(i.on_order, i.unit) + '</td>' +
+        '<td class="num">' + pcFmtQty(i.min_qty, i.unit) + '</td>' +
+        '<td class="num"><b>' + pcFmtQty(procurementReduce.suggestedOrderQty(i), i.unit) + '</b> ' +
+          pcEsc(i.unit) + '</td>' +
+        '<td class="num"><button class="icon-btn" onclick="PC.view=\'register\';PC.sel=\'' +
+          pcEsc(i.item_id) + '\';pcRenderAll()">Open</button></td></tr>';
+    }).join('') + '</tbody></table></div>';
+}
+
+function pcReqFromLow() {
+  var low = pcItemsSorted().filter(function (i) { return !i.archived && procurementReduce.isLow(i); });
+  pcReqForm(low.map(function (i) {
+    return { line_id: pcUuid(), item_id: i.item_id, description: '',
+             qty: procurementReduce.suggestedOrderQty(i), unit: i.unit, notes: '' };
+  }));
+}
+
+// ── View: Requisitions ──────────────────────────────────────
+
+var REQ_TAG = { draft: '', submitted: 'accent', approved: 'good', rejected: 'bad',
+                ordered: 'accent', closed: '', cancelled: '' };
+
+function pcViewReqs() {
+  if (PC.sel && PC.state.requisitions[PC.sel]) return pcViewReq(PC.state.requisitions[PC.sel]);
+
+  var reqs = Object.keys(PC.state.requisitions).map(function (k) { return PC.state.requisitions[k]; })
+    .sort(function (a, b) { return String(b.created_at || '').localeCompare(String(a.created_at || '')); });
+
+  pcHead('Requisitions', reqs.length + ' raised · ' +
+    reqs.filter(function (r) { return r.status === 'submitted'; }).length + ' waiting on a decision',
+    '<button class="icon-btn" onclick="pcReqForm(null)">+ New requisition</button>');
+
+  if (!reqs.length) {
+    document.getElementById('body').innerHTML =
+      '<div class="empty"><b>Nothing requested</b>A requisition is somebody saying <i>we need this</i>. ' +
+      'It is a different act from ordering, which is why it has its own list.</div>';
+    return;
+  }
+
+  document.getElementById('body').innerHTML = reqs.map(function (r) {
+    var pending = r.status === 'submitted';
+    return '<div class="card click" onclick="PC.sel=\'' + pcEsc(r.req_id) + '\';pcRenderAll()">' +
+      '<div class="row"><div class="grow">' +
+        '<div class="ttl">' + r.lines.length + ' line' + (r.lines.length === 1 ? '' : 's') +
+          ' &nbsp;<span class="tag ' + (REQ_TAG[r.status] || '') + '">' + r.status + '</span>' +
+          (pending && pcCanApprove() ? ' <span class="tag warn">needs you</span>' : '') + '</div>' +
+        '<div class="sub">' + pcEsc(r.requested_by || '—') + ' · ' + pcDate(r.created_at) +
+          (r.need_by ? ' · needed by ' + pcDate(r.need_by) : '') +
+          (r.department ? ' · ' + pcEsc(r.department) : '') + '</div>' +
+        '<div class="sub muted">' + pcEsc(r.lines.slice(0, 3).map(function (l) {
+            return (l.item_id ? pcItemLabel(l.item_id) : l.description) + ' ×' + l.qty;
+          }).join(', ')) + (r.lines.length > 3 ? ' …' : '') + '</div>' +
+      '</div></div></div>';
+  }).join('');
+}
+
+function pcViewReq(r) {
+  pcHead('Requisition', r.status + ' · raised by ' + (r.requested_by || '—') + ' on ' + pcDate(r.created_at),
+    '<button class="icon-btn" onclick="PC.sel=null;pcRenderAll()">← Requisitions</button>');
+
+  var canDecide = pcCanApprove() && r.status === 'submitted';
+  var mine = r.requested_by === PC.user.username;
+
+  var head = '<div class="card"><div class="row" style="gap:24px;flex-wrap:wrap">' +
+    '<div><div class="sub">Status</div><div><span class="tag ' + (REQ_TAG[r.status] || '') + '">' + r.status + '</span></div></div>' +
+    '<div><div class="sub">Needed by</div><div>' + pcDate(r.need_by) + '</div></div>' +
+    '<div><div class="sub">Priority</div><div>' + pcEsc(r.priority || 'normal') + '</div></div>' +
+    '<div><div class="sub">Department</div><div>' + pcEsc(r.department || '—') + '</div></div>' +
+    '</div>' +
+    (r.justification ? '<div class="sub" style="margin-top:10px">' + pcEsc(r.justification) + '</div>' : '') +
+    (r.decision_comment ? '<div class="sub" style="margin-top:10px">Decision note: ' +
+      pcEsc(r.decision_comment) + ' — ' + pcEsc(r.decided_by || '') + '</div>' : '') +
+    '</div>';
+
+  var lines = '<div class="card"><div class="grid-wrap"><table class="grid"><thead><tr><th>Line</th>' +
+    '<th style="text-align:right">Asked</th><th style="text-align:right">Approved</th>' +
+    '<th style="text-align:right">Ordered</th><th style="text-align:right">Received</th>' +
+    (canDecide ? '<th>Decision</th>' : '') + '</tr></thead><tbody>' +
+    r.lines.map(function (l, idx) {
+      var label = l.item_id ? pcItemLabel(l.item_id) : (l.description || '(no description)');
+      return '<tr><td><b>' + pcEsc(label) + '</b>' +
+        (!l.item_id ? ' <span class="tag">new part</span>' : '') +
+        (l.notes ? '<div class="sub">' + pcEsc(l.notes) + '</div>' : '') +
+        (l.decision && !canDecide ? '<div class="sub"><span class="tag ' +
+          (l.decision === 'approved' ? 'good' : 'bad') + '">' + l.decision + '</span></div>' : '') + '</td>' +
+        '<td class="num">' + l.qty + ' ' + pcEsc(l.unit || '') + '</td>' +
+        '<td class="num">' + (l.qty_approved === null ? '—' : l.qty_approved) + '</td>' +
+        '<td class="num">' + l.ordered_qty + '</td>' +
+        '<td class="num">' + l.received_qty + '</td>' +
+        (canDecide
+          ? '<td><select class="field" style="margin:0;padding:6px 8px;font-size:13px" id="rd-' + idx + '">' +
+            '<option value="approved">Approve</option><option value="rejected">Reject</option></select>' +
+            '<input class="field" style="margin:6px 0 0;padding:6px 8px;font-size:13px" id="rq-' + idx +
+            '" type="number" step="any" value="' + l.qty + '" title="Quantity approved"></td>'
+          : '') +
+        '</tr>';
+    }).join('') + '</tbody></table></div></div>';
+
+  var actions = '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+  if (r.status === 'draft' && mine) {
+    actions += '<button class="btn sm" onclick="pcReqSubmit(\'' + r.req_id + '\')">Submit for approval</button>' +
+               '<button class="icon-btn" onclick="pcReqForm(null,\'' + r.req_id + '\')">Edit lines</button>';
+  }
+  if (canDecide) {
+    actions += '<button class="btn sm" onclick="pcReqDecide(\'' + r.req_id + '\',\'approved\')">Record decision</button>' +
+               '<button class="icon-btn" onclick="pcReqDecide(\'' + r.req_id + '\',\'rejected\')">Reject everything</button>';
+  }
+  if (r.status === 'approved' && pcCanApprove()) {
+    actions += '<button class="btn sm" onclick="pcPoFromReq(\'' + r.req_id + '\')">Raise an order for the approved lines</button>';
+  }
+  if (r.status !== 'cancelled' && r.status !== 'closed' && (mine || pcCanApprove())) {
+    actions += '<button class="icon-btn" onclick="pcReqCancel(\'' + r.req_id + '\')">Cancel</button>';
+  }
+  actions += '</div>';
+
+  document.getElementById('body').innerHTML = head + lines + actions;
+}
+
+function pcReqForm(prefillLines, editReqId) {
+  var existing = editReqId ? PC.state.requisitions[editReqId] : null;
+  var lines = prefillLines || (existing ? existing.lines.map(function (l) {
+    return { line_id: l.line_id, item_id: l.item_id, description: l.description,
+             qty: l.qty, unit: l.unit, notes: l.notes };
+  }) : [{ line_id: pcUuid(), item_id: null, description: '', qty: 1, unit: 'ea', notes: '' }]);
+
+  PC._reqLines = lines;
+
+  pcOverlay('<div class="sheet wide"><h3>' + (existing ? 'Edit requisition' : 'New requisition') + '</h3>' +
+    '<div class="sheet-sub">Name an item already in the register, or just describe what is needed — ' +
+      'a part that has never been aboard is the normal case, and it becomes an item when it arrives.</div>' +
+    '<div class="fieldrow">' +
+      '<div><label class="lbl">Department</label><input class="field" id="rf-dept" value="' +
+        pcEsc(existing ? (existing.department || '') : (PC.user.departments || [])[0] || '') + '"></div>' +
+      '<div><label class="lbl">Needed by</label><input class="field" id="rf-need" type="date" value="' +
+        (existing && existing.need_by ? pcDate(existing.need_by) : '') + '"></div>' +
+      '<div><label class="lbl">Priority</label><select class="field" id="rf-pri">' +
+        ['normal','urgent','routine'].map(function (p) {
+          return '<option value="' + p + '"' +
+            (existing && existing.priority === p ? ' selected' : '') + '>' + p + '</option>';
+        }).join('') + '</select></div>' +
+    '</div>' +
+    '<label class="lbl">Why (optional)</label>' +
+    '<input class="field" id="rf-just" value="' + pcEsc(existing ? (existing.justification || '') : '') + '">' +
+    '<label class="lbl">Lines</label><div class="lines" id="rf-lines"></div>' +
+    '<button class="icon-btn" style="margin-top:8px" onclick="pcReqAddLine()">+ Add a line</button>' +
+    '<div class="err" id="rf-err"></div>' +
+    '<div class="sheet-actions">' +
+      '<button class="btn ghost" onclick="pcCloseOverlay()">Cancel</button>' +
+      '<button class="btn" id="rf-save" onclick="pcReqSave(' +
+        (editReqId ? '\'' + editReqId + '\'' : 'null') + ')">Save as draft</button>' +
+    '</div></div>');
+  pcRenderReqLines();
+}
+
+function pcRenderReqLines() {
+  var itemOpts = function (sel) {
+    return '<option value="">— describe it —</option>' +
+      pcItemsSorted().filter(function (i) { return !i.archived; }).map(function (i) {
+        return '<option value="' + pcEsc(i.item_id) + '"' + (sel === i.item_id ? ' selected' : '') +
+          '>' + pcEsc(i.name) + '</option>';
+      }).join('');
+  };
+  document.getElementById('rf-lines').innerHTML = PC._reqLines.map(function (l, i) {
+    return '<div class="line">' +
+      '<select class="field f-desc" onchange="pcReqLineSet(' + i + ',\'item_id\',this.value)">' +
+        itemOpts(l.item_id) + '</select>' +
+      (l.item_id ? '' : '<input class="field f-desc" placeholder="What is it?" value="' +
+        pcEsc(l.description) + '" oninput="PC._reqLines[' + i + '].description=this.value">') +
+      '<input class="field f-qty" type="number" step="any" min="0" value="' + pcEsc(l.qty) +
+        '" oninput="PC._reqLines[' + i + '].qty=Number(this.value)">' +
+      '<select class="field f-unit" onchange="PC._reqLines[' + i + '].unit=this.value">' +
+        pcUnitOptions(l.unit) + '</select>' +
+      '<button class="rm" onclick="pcReqRmLine(' + i + ')" title="Remove">×</button>' +
+      '</div>';
+  }).join('');
+}
+
+function pcReqLineSet(i, k, v) {
+  PC._reqLines[i][k] = v || null;
+  if (k === 'item_id' && v) {
+    var it = PC.state.items[v];
+    if (it) { PC._reqLines[i].unit = it.unit; PC._reqLines[i].description = ''; }
+  }
+  pcRenderReqLines();
+}
+function pcReqAddLine() {
+  PC._reqLines.push({ line_id: pcUuid(), item_id: null, description: '', qty: 1, unit: 'ea', notes: '' });
+  pcRenderReqLines();
+}
+function pcReqRmLine(i) {
+  PC._reqLines.splice(i, 1);
+  if (!PC._reqLines.length) pcReqAddLine(); else pcRenderReqLines();
+}
+
+async function pcReqSave(editReqId) {
+  var lines = PC._reqLines.filter(function (l) {
+    return (l.item_id || l.description) && Number(l.qty) > 0;
+  });
+  if (!lines.length) {
+    document.getElementById('rf-err').textContent = 'At least one line with a quantity.';
+    return;
+  }
+  var payload = {
+    req_id: editReqId || pcUuid(),
+    department: pcVal('rf-dept') || null,
+    need_by: pcVal('rf-need') || null,
+    priority: pcVal('rf-pri') || 'normal',
+    justification: pcVal('rf-just') || '',
+    lines: lines
+  };
+  var btn = document.getElementById('rf-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await pcAppendEvent(editReqId ? 'requisition_updated' : 'requisition_created', payload);
+    pcCloseOverlay();
+    PC.view = 'reqs'; PC.sel = payload.req_id;
+    pcRenderAll();
+    pcToast('Saved as a draft — submit it when it is ready.');
+  } catch (e) {
+    document.getElementById('rf-err').textContent = pcErrText(e);
+    btn.disabled = false; btn.textContent = 'Save as draft';
+  }
+}
+
+async function pcReqSubmit(reqId) {
+  try {
+    await pcAppendEvent('requisition_submitted', { req_id: reqId });
+    pcToast('Submitted for approval.');
+  } catch (e) { pcToast(pcErrText(e)); }
+}
+
+async function pcReqDecide(reqId, headline) {
+  var r = PC.state.requisitions[reqId];
+  if (!r) return;
+  var lineDecisions = {};
+  if (headline === 'approved') {
+    r.lines.forEach(function (l, idx) {
+      var sel = document.getElementById('rd-' + idx);
+      var qty = document.getElementById('rq-' + idx);
+      var d = sel ? sel.value : 'approved';
+      lineDecisions[l.line_id] = {
+        decision: d,
+        qty_approved: d === 'approved' ? Number(qty ? qty.value : l.qty) : 0
+      };
+    });
+  }
+  var comment = prompt('A note on the decision (optional):', '') || '';
+  try {
+    await pcAppendEvent('requisition_decided', {
+      req_id: reqId, decision: headline,
+      line_decisions: headline === 'approved' ? lineDecisions : null,
+      comment: comment
+    });
+    pcToast(headline === 'approved' ? 'Decision recorded.' : 'Rejected.');
+  } catch (e) { pcToast(pcErrText(e)); }
+}
+
+async function pcReqCancel(reqId) {
+  var why = prompt('Cancel this requisition — why?', '');
+  if (why === null) return;
+  try {
+    await pcAppendEvent('requisition_cancelled', { req_id: reqId, reason: why });
+    pcToast('Cancelled.');
+  } catch (e) { pcToast(pcErrText(e)); }
+}
+
+// ── View: Purchase orders ───────────────────────────────────
+
+var PO_TAG = { draft: '', sent: 'accent', partial: 'warn', received: 'good',
+               cancelled: '', closed: '' };
+
+function pcViewOrders() {
+  if (PC.sel && PC.state.purchase_orders[PC.sel]) return pcViewPo(PC.state.purchase_orders[PC.sel]);
+
+  var pos = Object.keys(PC.state.purchase_orders).map(function (k) { return PC.state.purchase_orders[k]; })
+    .sort(function (a, b) { return String(b.created_at || '').localeCompare(String(a.created_at || '')); });
+
+  pcHead('Purchase orders', pos.length + ' orders · ' +
+    pos.filter(function (p) { return p.status === 'sent' || p.status === 'partial'; }).length + ' still outstanding',
+    pcCanApprove() ? '<button class="icon-btn" onclick="pcPoForm(null)">+ New order</button>' : '');
+
+  if (!pos.length) {
+    document.getElementById('body').innerHTML =
+      '<div class="empty"><b>No orders yet</b>An order is usually raised from an approved requisition, ' +
+      'which keeps the link back to whoever asked for the part.</div>';
+    return;
+  }
+
+  document.getElementById('body').innerHTML = pos.map(function (p) {
+    var outstanding = p.lines.filter(function (l) { return !l.cancelled && l.outstanding_qty > 0; }).length;
+    return '<div class="card click" onclick="PC.sel=\'' + pcEsc(p.po_id) + '\';pcRenderAll()">' +
+      '<div class="row"><div class="grow">' +
+        '<div class="ttl">' + pcEsc(p.po_number || p.po_id.slice(0, 8)) +
+          ' &nbsp;<span class="tag ' + (PO_TAG[p.status] || '') + '">' + p.status + '</span></div>' +
+        '<div class="sub">' + pcEsc(pcSupplierName(p.supplier_id)) + ' · ' + p.lines.length + ' lines' +
+          (p.expected_date ? ' · expected ' + pcDate(p.expected_date) : '') + '</div>' +
+      '</div>' +
+      (outstanding ? '<div style="text-align:right"><div class="qty low">' + outstanding + '</div>' +
+        '<div class="sub nowrap">lines outstanding</div></div>' : '') +
+      '</div></div>';
+  }).join('');
+}
+
+function pcViewPo(p) {
+  pcHead(p.po_number || ('Order ' + p.po_id.slice(0, 8)),
+    pcSupplierName(p.supplier_id) + ' · ' + p.status +
+      (p.expected_date ? ' · expected ' + pcDate(p.expected_date) : ''),
+    '<button class="icon-btn" onclick="PC.sel=null;pcRenderAll()">← Orders</button>');
+
+  var lines = '<div class="card"><div class="grid-wrap"><table class="grid"><thead><tr><th>Line</th>' +
+    '<th style="text-align:right">Ordered</th><th style="text-align:right">Received</th>' +
+    '<th style="text-align:right">Outstanding</th><th>Status</th></tr></thead><tbody>' +
+    p.lines.map(function (l) {
+      var label = l.item_id ? pcItemLabel(l.item_id, l.description) : (l.description || '(no description)');
+      var tag = { open: '', partial: 'warn', received: 'good', over: 'warn', cancelled: '' }[l.status] || '';
+      return '<tr><td><b>' + pcEsc(label) + '</b>' +
+        (l.unit_price !== null ? '<div class="sub">' + pcEsc(p.currency || '') + ' ' + l.unit_price + ' each</div>' : '') + '</td>' +
+        '<td class="num">' + l.qty_ordered + ' ' + pcEsc(l.unit || '') + '</td>' +
+        '<td class="num">' + l.received_qty + '</td>' +
+        '<td class="num">' + (l.outstanding_qty || 0) + '</td>' +
+        '<td><span class="tag ' + tag + '">' + l.status + '</span></td></tr>';
+    }).join('') + '</tbody></table></div></div>';
+
+  var actions = '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+  if (p.status === 'draft' && pcCanApprove()) {
+    actions += '<button class="btn sm" onclick="pcPoSend(\'' + p.po_id + '\')">Mark as sent</button>';
+  }
+  if (p.status === 'sent' || p.status === 'partial') {
+    actions += '<button class="btn sm" onclick="PC.view=\'checkin\';PC.sel=\'' + p.po_id + '\';pcRenderAll()">Check in a delivery</button>';
+  }
+  if (pcCanApprove() && p.status !== 'cancelled' && p.status !== 'closed') {
+    actions += '<button class="icon-btn" onclick="pcPoClose(\'' + p.po_id + '\')">Close it out</button>' +
+               '<button class="icon-btn" onclick="pcPoCancel(\'' + p.po_id + '\')">Cancel</button>';
+  }
+  actions += '</div>';
+
+  var notes = p.notes ? '<div class="card"><div class="sub">' + pcEsc(p.notes) + '</div></div>' : '';
+  document.getElementById('body').innerHTML = lines + notes + actions;
+}
+
+function pcPoFromReq(reqId) {
+  var r = PC.state.requisitions[reqId];
+  if (!r) return;
+  var lines = r.lines.filter(function (l) {
+    return l.decision === 'approved' && l.qty_approved > l.ordered_qty;
+  }).map(function (l) {
+    return { line_id: pcUuid(), item_id: l.item_id, description: l.description,
+             qty_ordered: l.qty_approved - l.ordered_qty, unit: l.unit,
+             unit_price: null, req_id: reqId, req_line_id: l.line_id };
+  });
+  if (!lines.length) { pcToast('Every approved line is already on an order.'); return; }
+  pcPoForm(lines);
+}
+
+function pcPoForm(prefillLines) {
+  PC._poLines = prefillLines || [{ line_id: pcUuid(), item_id: null, description: '',
+                                   qty_ordered: 1, unit: 'ea', unit_price: null }];
+  var supOpts = '<option value="">— none —</option>' + PC.cfg.suppliers.map(function (s) {
+    return '<option value="' + pcEsc(s.supplier_id) + '">' + pcEsc(s.name) + '</option>';
+  }).join('');
+
+  pcOverlay('<div class="sheet wide"><h3>New purchase order</h3>' +
+    '<div class="sheet-sub">The order number is whatever is written on the paperwork — it is for finding ' +
+      'the order later, not for identifying it.</div>' +
+    '<div class="fieldrow">' +
+      '<div><label class="lbl">Order number</label><input class="field" id="pf-num" placeholder="PO-1041"></div>' +
+      '<div><label class="lbl">Supplier</label><select class="field" id="pf-sup">' + supOpts + '</select></div>' +
+      '<div><label class="lbl">Expected</label><input class="field" id="pf-exp" type="date"></div>' +
+    '</div>' +
+    '<label class="lbl">Lines</label><div class="lines" id="pf-lines"></div>' +
+    '<button class="icon-btn" style="margin-top:8px" onclick="pcPoAddLine()">+ Add a line</button>' +
+    '<label class="lbl" style="margin-top:14px">Notes</label><input class="field" id="pf-notes">' +
+    '<div class="err" id="pf-err"></div>' +
+    '<div class="sheet-actions">' +
+      '<button class="btn ghost" onclick="pcCloseOverlay()">Cancel</button>' +
+      '<button class="btn" id="pf-save" onclick="pcPoSave()">Create order</button>' +
+    '</div></div>');
+  pcRenderPoLines();
+}
+
+function pcRenderPoLines() {
+  var itemOpts = function (sel) {
+    return '<option value="">— describe it —</option>' +
+      pcItemsSorted().filter(function (i) { return !i.archived; }).map(function (i) {
+        return '<option value="' + pcEsc(i.item_id) + '"' + (sel === i.item_id ? ' selected' : '') +
+          '>' + pcEsc(i.name) + '</option>';
+      }).join('');
+  };
+  document.getElementById('pf-lines').innerHTML = PC._poLines.map(function (l, i) {
+    return '<div class="line">' +
+      '<select class="field f-desc" onchange="pcPoLineSet(' + i + ',this.value)">' + itemOpts(l.item_id) + '</select>' +
+      (l.item_id ? '' : '<input class="field f-desc" placeholder="What is it?" value="' +
+        pcEsc(l.description) + '" oninput="PC._poLines[' + i + '].description=this.value">') +
+      '<input class="field f-qty" type="number" step="any" min="0" value="' + pcEsc(l.qty_ordered) +
+        '" oninput="PC._poLines[' + i + '].qty_ordered=Number(this.value)">' +
+      '<select class="field f-unit" onchange="PC._poLines[' + i + '].unit=this.value">' +
+        pcUnitOptions(l.unit) + '</select>' +
+      '<input class="field f-price" type="number" step="any" placeholder="price" value="' +
+        (l.unit_price === null || l.unit_price === undefined ? '' : pcEsc(l.unit_price)) +
+        '" oninput="PC._poLines[' + i + '].unit_price=this.value===\'\'?null:Number(this.value)">' +
+      '<button class="rm" onclick="pcPoRmLine(' + i + ')" title="Remove">×</button>' +
+      '</div>';
+  }).join('');
+}
+
+function pcPoLineSet(i, v) {
+  PC._poLines[i].item_id = v || null;
+  if (v) {
+    var it = PC.state.items[v];
+    if (it) { PC._poLines[i].unit = it.unit; PC._poLines[i].description = ''; }
+  }
+  pcRenderPoLines();
+}
+function pcPoAddLine() {
+  PC._poLines.push({ line_id: pcUuid(), item_id: null, description: '',
+                     qty_ordered: 1, unit: 'ea', unit_price: null });
+  pcRenderPoLines();
+}
+function pcPoRmLine(i) {
+  PC._poLines.splice(i, 1);
+  if (!PC._poLines.length) pcPoAddLine(); else pcRenderPoLines();
+}
+
+async function pcPoSave() {
+  var lines = PC._poLines.filter(function (l) {
+    return (l.item_id || l.description) && Number(l.qty_ordered) > 0;
+  });
+  if (!lines.length) { document.getElementById('pf-err').textContent = 'At least one line with a quantity.'; return; }
+
+  var payload = {
+    po_id: pcUuid(),
+    po_number: pcVal('pf-num') || null,
+    supplier_id: pcVal('pf-sup') || null,
+    currency: PC.cfg.settings.default_currency || null,
+    expected_date: pcVal('pf-exp') || null,
+    notes: pcVal('pf-notes') || '',
+    lines: lines
+  };
+  var btn = document.getElementById('pf-save');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    await pcAppendEvent('po_created', payload);
+    pcCloseOverlay();
+    PC.view = 'orders'; PC.sel = payload.po_id;
+    pcRenderAll();
+    pcToast('Order created as a draft — mark it sent once it has gone.');
+  } catch (e) {
+    document.getElementById('pf-err').textContent = pcErrText(e);
+    btn.disabled = false; btn.textContent = 'Create order';
+  }
+}
+
+async function pcPoSend(poId) {
+  try {
+    await pcAppendEvent('po_sent', { po_id: poId, sent_via: null });
+    pcToast('Marked as sent — the lines are now quantities we are owed.');
+  } catch (e) { pcToast(pcErrText(e)); }
+}
+async function pcPoCancel(poId) {
+  var why = prompt('Cancel this order — why?', '');
+  if (why === null) return;
+  try {
+    await pcAppendEvent('po_cancelled', { po_id: poId, reason: why });
+    pcToast('Cancelled.');
+  } catch (e) { pcToast(pcErrText(e)); }
+}
+async function pcPoClose(poId) {
+  var why = prompt('Close this order out. What did not arrive, and why are we stopping waiting?', '');
+  if (why === null) return;
+  try {
+    await pcAppendEvent('po_closed', { po_id: poId, reason: why });
+    pcToast('Closed. What did arrive stays received.');
+  } catch (e) { pcToast(pcErrText(e)); }
+}
+
+// ── View: Check in ──────────────────────────────────────────
+// §42.9. Built for somebody standing at a pallet with a phone in one hand.
+
+function pcViewCheckin() {
+  var open = Object.keys(PC.state.purchase_orders)
+    .map(function (k) { return PC.state.purchase_orders[k]; })
+    .filter(function (p) { return p.status === 'sent' || p.status === 'partial'; })
+    .sort(function (a, b) { return String(b.sent_at || '').localeCompare(String(a.sent_at || '')); });
+
+  if (PC.sel && PC.state.purchase_orders[PC.sel]) return pcCheckinLines(PC.state.purchase_orders[PC.sel]);
+
+  pcHead('Check in', open.length + ' orders outstanding',
+    '<button class="icon-btn" onclick="pcCheckinNoPo()">Arrived without an order</button>');
+
+  if (!open.length) {
+    document.getElementById('body').innerHTML =
+      '<div class="empty"><b>Nothing outstanding</b>Every order has arrived in full. ' +
+      'Stores that turn up without paperwork can still be checked in — use the button above.</div>';
+    return;
+  }
+
+  document.getElementById('body').innerHTML = open.map(function (p) {
+    var out = p.lines.filter(function (l) { return !l.cancelled && l.outstanding_qty > 0; });
+    return '<div class="card click" onclick="PC.sel=\'' + pcEsc(p.po_id) + '\';pcRenderAll()">' +
+      '<div class="row"><div class="grow">' +
+        '<div class="ttl">' + pcEsc(p.po_number || p.po_id.slice(0, 8)) +
+          ' &nbsp;<span class="tag ' + (PO_TAG[p.status] || '') + '">' + p.status + '</span></div>' +
+        '<div class="sub">' + pcEsc(pcSupplierName(p.supplier_id)) +
+          (p.sent_at ? ' · sent ' + pcDate(p.sent_at) : '') +
+          (p.expected_date ? ' · expected ' + pcDate(p.expected_date) : '') + '</div>' +
+      '</div><div style="text-align:right"><div class="qty">' + out.length + '</div>' +
+        '<div class="sub nowrap">lines to come</div></div></div></div>';
+  }).join('');
+}
+
+function pcCheckinLines(p) {
+  pcHead('Check in — ' + (p.po_number || p.po_id.slice(0, 8)),
+    pcSupplierName(p.supplier_id) + ' · outstanding quantities are filled in, so "it all came" is one tap',
+    '<button class="icon-btn" onclick="PC.sel=null;pcRenderAll()">← Orders</button>');
+
+  var live = p.lines.filter(function (l) { return !l.cancelled; });
+
+  document.getElementById('body').innerHTML =
+    '<div class="card"><div class="fieldrow" style="max-width:420px">' +
+      '<div><label class="lbl">Received into</label><select class="field" id="ci-loc">' +
+        pcLocOptions(pcReceivingDefault()) + '</select></div>' +
+    '</div></div>' +
+    '<div class="card" style="padding:0">' +
+    live.map(function (l, idx) {
+      var label = l.item_id ? pcItemLabel(l.item_id, l.description) : (l.description || '(no description)');
+      var done = l.outstanding_qty <= 0;
+      return '<div class="ci-line">' +
+        '<div class="ci-name"><b>' + pcEsc(label) + '</b>' +
+          (!l.item_id ? '<div class="sub"><span class="tag">not in the register — it will be created</span></div>' : '') +
+        '</div>' +
+        '<div class="ci-nums">' +
+          '<div class="ci-num"><span class="k">Ordered</span><span class="v">' +
+            l.qty_ordered + ' ' + pcEsc(l.unit || '') + '</span></div>' +
+          '<div class="ci-num"><span class="k">Already in</span><span class="v">' + l.received_qty + '</span></div>' +
+          '<div class="ci-num"><span class="k">Outstanding</span><span class="v"' +
+            (l.outstanding_qty > 0 ? ' style="color:var(--warning)"' : '') + '>' + l.outstanding_qty + '</span></div>' +
+        '</div>' +
+        '<div class="ci-in"><span class="k">Receiving now</span>' +
+          '<input class="field" id="ci-' + idx + '" type="number" step="any" min="0" ' +
+          'inputmode="decimal" value="' + (done ? '' : l.outstanding_qty) + '"></div>' +
+        '</div>';
+    }).join('') + '</div>' +
+    '<div class="err" id="ci-err"></div>' +
+    '<div style="display:flex;gap:10px">' +
+      '<button class="btn sm" id="ci-save" onclick="pcCheckinCommit(\'' + p.po_id + '\')">Receive it</button>' +
+      '<button class="icon-btn" onclick="pcCheckinNone(\'' + p.po_id + '\')">Clear the quantities</button>' +
+    '</div>' +
+    '<div class="sub muted" style="margin-top:12px;max-width:620px">A short shipment is just a smaller ' +
+      'number — the line stays outstanding and nothing needs closing. More than was ordered is recorded ' +
+      'as what actually arrived, and flagged on the exceptions list.</div>';
+}
+
+function pcCheckinNone(poId) {
+  var p = PC.state.purchase_orders[poId];
+  p.lines.filter(function (l) { return !l.cancelled; }).forEach(function (l, idx) {
+    var el = document.getElementById('ci-' + idx);
+    if (el) el.value = '';
+  });
+}
+
+async function pcCheckinCommit(poId) {
+  var p = PC.state.purchase_orders[poId];
+  var loc = pcVal('ci-loc');
+  var live = p.lines.filter(function (l) { return !l.cancelled; });
+  var err = document.getElementById('ci-err');
+
+  var todo = [];
+  live.forEach(function (l, idx) {
+    var el = document.getElementById('ci-' + idx);
+    var v = el ? Number(el.value) : 0;
+    if (!el || !isFinite(v) || v <= 0) return;
+    todo.push({ line: l, qty: v });
+  });
+
+  if (!todo.length) { err.textContent = 'Nothing entered to receive.'; return; }
+
+  var over = todo.filter(function (t) { return t.qty > t.line.outstanding_qty; });
+  if (over.length && !confirm(over.length + ' line(s) are more than was outstanding. ' +
+      'That is recorded as what arrived and flagged for review. Go ahead?')) return;
+
+  var btn = document.getElementById('ci-save');
+  btn.disabled = true; btn.textContent = 'Receiving…';
+  err.textContent = '';
+
+  // One movement per line, written one at a time. An interruption leaves the
+  // lines already written; re-running shows the reduced outstanding quantities,
+  // so the retry receives the remainder rather than doubling the delivery.
+  var done = 0;
+  try {
+    for (var i = 0; i < todo.length; i++) {
+      var t = todo[i];
+      var itemId = t.line.item_id;
+
+      // A line that was never in the register becomes an item on arrival —
+      // this is how the register grows without anyone populating it (§42.8).
+      if (!itemId) {
+        itemId = pcUuid();
+        await pcAppendEvent('item_created', {
+          item_id: itemId,
+          name: t.line.description || 'Received item',
+          unit: t.line.unit || 'ea',
+          default_location_id: loc
+        }, { defer: true });
+        // Only the authored fields go into the event — received quantities and
+        // statuses are derived and must never be written back (rule 2). The
+        // reducer takes just `item_id` from this, because the order is already
+        // sent and its quantities are frozen.
+        await pcAppendEvent('po_updated', {
+          po_id: poId,
+          lines: p.lines.map(function (l) {
+            return {
+              line_id: l.line_id,
+              item_id: l.line_id === t.line.line_id ? itemId : l.item_id,
+              description: l.description,
+              qty_ordered: l.qty_ordered,
+              unit: l.unit,
+              unit_price: l.unit_price,
+              req_id: l.req_id,
+              req_line_id: l.req_line_id
+            };
+          })
+        }, { defer: true });
+        t.line.item_id = itemId;
+      }
+
+      await pcAppendEvent('stock_movement', {
+        movement_id: pcUuid(),
+        item_id: itemId,
+        kind: 'receipt',
+        qty: t.qty,
+        location_id: loc,
+        po_id: poId,
+        po_line_id: t.line.line_id,
+        unit_cost: (t.line.unit_price === null || t.line.unit_price === undefined) ? null : t.line.unit_price,
+        currency: p.currency || null
+      }, { defer: true });
+      done++;
+    }
+    pcSaveCache(); pcReduce();
+    PC.sel = null; PC.view = 'checkin';
+    pcRenderAll();
+    pcToast(done + ' line' + (done === 1 ? '' : 's') + ' received into ' + pcLocName(loc) + '.');
+  } catch (e) {
+    pcSaveCache(); pcReduce(); pcRenderAll();
+    err.textContent = done + ' of ' + todo.length + ' lines were recorded before this failed: ' +
+      pcErrText(e) + ' — run it again and it will pick up the rest.';
+    btn.disabled = false; btn.textContent = 'Receive it';
+  }
+}
+
+function pcCheckinNoPo() {
+  var items = pcItemsSorted().filter(function (i) { return !i.archived; });
+  if (!items.length) {
+    pcToast('Add an item first — then it can be received.');
+    pcItemForm(null);
+    return;
+  }
+  pcOverlay('<div class="sheet"><h3>Received without an order</h3>' +
+    '<div class="sheet-sub">Stores bought ashore, a part handed over by a rider. Legitimate, and ' +
+      'recorded as exactly that — a receipt with no order behind it.</div>' +
+    '<label class="lbl">Item</label>' +
+    '<select class="field" id="np-item">' + items.map(function (i) {
+      return '<option value="' + pcEsc(i.item_id) + '">' + pcEsc(i.name) + '</option>';
+    }).join('') + '</select>' +
+    '<div class="fieldrow">' +
+      '<div><label class="lbl">Quantity</label><input class="field" id="np-qty" type="number" step="any" min="0"></div>' +
+      '<div><label class="lbl">Into</label><select class="field" id="np-loc">' +
+        pcLocOptions(pcReceivingDefault()) + '</select></div>' +
+    '</div>' +
+    '<label class="lbl">Where it came from</label><input class="field" id="np-note" placeholder="Bought in Dutch Harbor">' +
+    '<div class="err" id="np-err"></div>' +
+    '<div class="sheet-actions">' +
+      '<button class="btn ghost" onclick="pcCloseOverlay()">Cancel</button>' +
+      '<button class="btn" id="np-save" onclick="pcCheckinNoPoSave()">Receive</button>' +
+    '</div></div>');
+}
+
+async function pcCheckinNoPoSave() {
+  var qty = pcNum('np-qty');
+  if (qty === null || !(qty > 0)) { document.getElementById('np-err').textContent = 'A quantity, please.'; return; }
+  var btn = document.getElementById('np-save');
+  btn.disabled = true; btn.textContent = 'Receiving…';
+  try {
+    await pcAppendEvent('stock_movement', {
+      movement_id: pcUuid(), item_id: pcVal('np-item'), kind: 'receipt',
+      qty: qty, location_id: pcVal('np-loc'), note: pcVal('np-note') || null
+    });
+    pcCloseOverlay();
+    pcToast('Received.');
+  } catch (e) {
+    document.getElementById('np-err').textContent = pcErrText(e);
+    btn.disabled = false; btn.textContent = 'Receive';
+  }
+}
+
+// ── View: Exceptions ────────────────────────────────────────
+
+function pcViewExceptions() {
+  var ex = procurementReduce.exceptions(PC.state,
+    { stale_days: PC.cfg.settings.exception_stale_days, locName: pcLocName });
+  pcHead('Exceptions', ex.length + ' thing' + (ex.length === 1 ? '' : 's') + ' needing a person', '');
+
+  if (!ex.length) {
+    document.getElementById('body').innerHTML =
+      '<div class="empty"><b>Nothing to look at</b>No negative stock, no over-receipts, ' +
+      'no overdue orders, and nothing approved that has been sitting unordered.</div>';
+    return;
+  }
+
+  var sevTag = { high: 'bad', medium: 'warn', low: '' };
+  document.getElementById('body').innerHTML = ex.map(function (e) {
+    var go = e.item_id ? "PC.view='register';PC.sel='" + e.item_id + "'"
+           : e.po_id ? "PC.view='orders';PC.sel='" + e.po_id + "'"
+           : e.req_id ? "PC.view='reqs';PC.sel='" + e.req_id + "'" : '';
+    return '<div class="card click" onclick="' + go + ';pcRenderAll()">' +
+      '<div class="row"><div class="grow">' +
+        '<div class="ttl">' + pcEsc(e.label) +
+          ' &nbsp;<span class="tag ' + (sevTag[e.severity] || '') + '">' +
+          pcEsc(e.kind.replace(/_/g, ' ')) + '</span></div>' +
+        '<div class="sub">' + pcEsc(e.detail) + '</div>' +
+      '</div></div></div>';
+  }).join('');
+}
+
+// ── View: Settings ──────────────────────────────────────────
+
+function pcViewSettings() {
+  var s = PC.cfg.settings;
+  var editable = pcCanApprove();
+  pcHead('Settings', 'Storerooms, categories, units and suppliers are read from procurementconfig.json — ' +
+    'this page never writes them', '');
+
+  document.getElementById('body').innerHTML =
+    '<div class="card"><div class="ttl">Approval and receiving</div>' +
+    '<div class="sub" style="margin-bottom:14px">The only part of the config this page writes, ' +
+      'ETag-guarded so a Console edit at the same moment cannot be clobbered.</div>' +
+    '<div class="fieldrow" style="max-width:640px">' +
+      '<div><label class="lbl">Approver roles (comma separated)</label>' +
+        '<input class="field" id="st-roles" value="' + pcEsc((s.approver_roles || []).join(', ')) +
+        '"' + (editable ? '' : ' disabled') + '></div>' +
+      '<div><label class="lbl">Currency</label><input class="field" id="st-cur" value="' +
+        pcEsc(s.default_currency || '') + '"' + (editable ? '' : ' disabled') + '></div>' +
+    '</div>' +
+    '<div class="fieldrow" style="max-width:640px">' +
+      '<div><label class="lbl">Default receiving location</label>' +
+        '<select class="field" id="st-recv"' + (editable ? '' : ' disabled') + '>' +
+        pcLocOptions((s.receiving_locations || [])[0] || '') + '</select></div>' +
+      '<div><label class="lbl">Chase approved lines after (days)</label>' +
+        '<input class="field" id="st-stale" type="number" min="1" value="' +
+        pcEsc(s.exception_stale_days || 14) + '"' + (editable ? '' : ' disabled') + '></div>' +
+    '</div>' +
+    '<div class="err" id="st-err"></div>' +
+    (editable ? '<button class="btn sm" id="st-save" onclick="pcSettingsSave()">Save settings</button>'
+              : '<div class="sub muted">Only approvers can change these.</div>') +
+    '</div>' +
+
+    '<div class="card"><div class="ttl">Taxonomy</div>' +
+    '<div class="sub" style="margin-bottom:12px">Owned by the physical-structure work (§42.5). ' +
+      'Ids are opaque, hierarchy is <code>parent_id</code>, and an id this file does not explain still ' +
+      'renders and still counts — re-organising the storerooms can never hide stock.</div>' +
+    '<div class="grid-wrap"><table class="grid"><tbody>' +
+      '<tr><td>Locations</td><td class="num">' + PC.cfg.locations.length + '</td></tr>' +
+      '<tr><td>Categories</td><td class="num">' + PC.cfg.categories.length + '</td></tr>' +
+      '<tr><td>Units</td><td class="num">' + PC.cfg.units.length + '</td></tr>' +
+      '<tr><td>Suppliers</td><td class="num">' + PC.cfg.suppliers.length + '</td></tr>' +
+    '</tbody></table></div></div>' +
+
+    '<div class="card"><div class="ttl">This device</div>' +
+    '<div class="sub">' + PC.events.length + ' events replayed · ' +
+      Object.keys(PC.state.items).length + ' items · ' +
+      Object.keys(PC.state.requisitions).length + ' requisitions · ' +
+      Object.keys(PC.state.purchase_orders).length + ' orders</div></div>';
+}
+
+// The one ETag-guarded read-mutate-write on this page (§42.5), same shape as
+// the notesconfig write: re-read, merge only `settings`, PUT at that ETag, and
+// on a 412 re-read and try once more.
+async function pcSettingsSave() {
+  var btn = document.getElementById('st-save');
+  var err = document.getElementById('st-err');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  err.textContent = '';
+
+  var next = {
+    approver_roles: pcVal('st-roles').split(',').map(function (x) { return x.trim(); }).filter(Boolean),
+    default_currency: pcVal('st-cur') || 'USD',
+    receiving_locations: pcVal('st-recv') ? [pcVal('st-recv')] : [],
+    exception_stale_days: Number(pcNum('st-stale')) || 14
+  };
+
+  var path = ONEDRIVE_BASE + '/config/procurementconfig.json';
+  var base = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+             encodeURIComponent(path).replace(/%2F/g, '/');
+  try {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      var etag = null, doc = null;
+      var meta = await pcFetch(base + '?select=eTag', { method: 'GET' });
+      if (meta.ok) {
+        etag = (await meta.json()).eTag || null;
+        var got = await pcFetch(base + ':/content', { method: 'GET' });
+        if (got.ok) { try { doc = await got.json(); } catch (e2) { doc = null; } }
+      } else if (meta.status !== 404) {
+        throw new Error('Config read → ' + meta.status);
+      }
+      if (!doc) doc = JSON.parse(JSON.stringify(DEFAULT_CFG));
+      doc.settings = Object.assign({}, doc.settings || {}, next);
+
+      var headers = { 'Content-Type': 'application/json' };
+      if (etag) headers['If-Match'] = etag; else headers['If-None-Match'] = '*';
+      var put = await pcFetch(base + ':/content', {
+        method: 'PUT', headers: headers, body: JSON.stringify(doc, null, 2)
+      });
+      if (put.ok) {
+        PC.cfg = doc;
+        pcRenderAll();
+        pcToast('Settings saved.');
+        return;
+      }
+      if (put.status !== 412 && put.status !== 409) throw new Error('Config write → ' + put.status);
+      // 412/409 — somebody else wrote it between the read and the PUT. Loop.
+    }
+    throw new Error('The config kept changing underneath — try again.');
+  } catch (e) {
+    err.textContent = pcErrText(e);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save settings';
+  }
+}
+
+// ── Go ──────────────────────────────────────────────────────
+pcInit();
+</script>
+</body>
+</html>

@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.31 — F/V Araho**
+**Version 2.32 — F/V Araho**
+
+v2.32 *(2026-09-05)* — **Procurement & Inventory specified and built in the PWA (§42, new).** Stores and ordering as one closed loop — hold, need, order, arrive — replacing the "To Order" list that has lived in Microsoft To-Do and, since PWA v1.10, as an Engine Room notes folder. Same architecture as §41: one append-only OneDrive event stream under `data/procurement/events/{YYYY}/`, a pure reducer (`utils/procurement-reduce.js`) mirrored byte-identical into the Console when its lane is built, and a standalone same-origin page (`procurement.html`) reached from a hub screen in `index.html`. **Procurement is a new top-level department**, role-gated (`permission_tier: "admin"`, `settings.approver_roles`, or `"Procurement"` in `departments[]`) until the crew records carry the department. Four governing rules: on-hand is never authored, only derived from movements and counts; one fact writes one event (there is no `po_received` — receipt is a `stock_movement` carrying `po_line_id`, and order progress is derived from it); items are archived, never deleted; and the taxonomy — storerooms, bins, categories, units, suppliers — is config owned elsewhere, read tolerantly, so no reshuffle of the storerooms can hide stock. Movements are one event type with a `kind` discriminator (receipt / issue / adjustment / transfer / count) and an always-positive `qty`, `direction` carrying the only sign in the system. Requisitions separate *we need this* from *we have ordered this*, support free-text lines for parts never yet aboard, and record per-line approval decisions in one event. Receiving supports partial, over- and no-PO receipts, is idempotent under interruption, and writes one movement per line. Low stock counts `on_hand + on_order` against `min_qty`, which is the specific defence against ordering the same part twice. Issuing a part to a job references `task_id` / `equipment_code` but **never** writes to `task_records`, TM Master or job history — §41's boundary, restated. New config file `config/procurementconfig.json` (locations, categories, units, suppliers, settings), registered in the §1 File Location Map; its `settings` block is the only part the PWA writes, ETag-guarded.
 
 v2.31 *(2026-09-02)* — **Notes Hub specified (§41, new); §34 Messages superseded.** Adds the full contract for the Notes Hub: a shared, non-private, event-sourced notes surface — an in-house Microsoft To-Do — acting as the go-between for the PWA and the Console. One OneDrive append-only event stream under `data/notes/events/{YYYY}/` (envelope per `docs/architecture.md`, same pattern as the Phase 4/5 event logs), rendered by two implementations over three surfaces: a standalone page in this repo (same origin and MSAL registration as the PWA — also usable as a browser window kept open beside other work), a PWA screen sharing that same code, and a native Console screen fed from the SQLite derived cache by a new `notes` ingest lane. Notes carry a single-line title, optional photo(s), optional body, an optional SFI equipment tag, and an optional `steps[]` checklist; anyone can read, author (including department level, for now — mostly-global rules by design), comment (with photos, reusing the rounds-comment attachment conventions), assign, and promote. Promotion prefills the existing Task Creation screen and submits through each client's *existing ETag-guarded* definition-create path (v2.31 supersedes an earlier working plan for a proposal-inbox: both Console and PWA creates have been guarded since Phase 6 Stage 0, so no new write lane is needed). After promotion the note converts to a task-mirror wrapper — department-level notes can also import tasks directly as mirrors — and a mirror's strike fires the existing `reported_complete` action, never a second completion state: **notes never touch `task_records`, TM Master, or job history.** Deletion is a tombstone event (authors their own, department heads any; Archive is the default on notes carrying others' comments). Alerts are derived (assigned-to-me + department-head-flagged group alerts), acknowledged per user via `alert_acked` events, surfaced as one summary popup at login (both `routeAfterLogin` branches) and on sync diffs. Emergency checklist templates (Blackout Recovery, Boundary Isolation) instantiate under deterministic note ids (`{template_id}-{local date}`) so independently-offline devices converge on one note without de-duplication; a 60-minute reconciliation window handles boundary cases via Console-emitted `note_merged` events. Offline generation makes the service worker a stated prerequisite of the emergency stage (not of the hub's first release). The hub records who did what, when — it never authorizes, and it is explicitly not LOTO. §34 Messages is superseded in place (group alerts cover broadcast; comments cover threaded discussion; person-to-person direct messaging is dropped). §31 Rough Log gains a cross-reference for the display-time daily digest of completed assigned notes. New config file `config/notesconfig.json` (department heads, department folders, checklist templates), registered in the §1 File Location Map.
 
@@ -987,6 +989,7 @@ v2.1 — Navigation restructure. Sidebar groups renamed and reorganised. Stabili
 39. [OEE Module](#39-oee-module)
 40. [tripanalyticsconfig.json](#40-tripanalyticsconfigjson)
 41. [Notes Hub](#41--notes-hub)
+42. [Procurement & Inventory](#42--procurement--inventory)
 
 ---
 
@@ -1014,6 +1017,7 @@ Documents/IDMS/
 │   ├── fmeaconfig.json             ← Factory production FMEA failure mode registry
 │   ├── tripanalyticsconfig.json    ← Trip Analytics module config (ports, map colours, offload estimator, active trip)
 │   ├── notesconfig.json            ← Notes Hub: department heads, department folders, checklist templates (§41)
+│   ├── procurementconfig.json      ← Procurement: storerooms/bins, categories, units, suppliers, settings (§42)
 │   ├── userprefs-{username}.json   ← Per-user PWA preferences (keypad side, colour mode) — one file per user
 │   └── shells/
 │       ├── factoryshell.json       ← Factory module behaviour
@@ -1048,11 +1052,16 @@ Documents/IDMS/
 │   │   └── active/                 ← {username}.json (per-user active task state)
 │   ├── schedule/
 │   │   └── notifications/          ← schedule-notification-{YYYY-MM-DD}.json (audit log mirrors)
-│   └── notes/
+│   ├── notes/
+│   │   ├── events/
+│   │   │   └── {YYYY}/             ← {iso}-{event_id}.json — Notes Hub append-only event stream (§41)
+│   │   └── aggregates/
+│   │       └── {YYYY}/             ← notes-aggregate-{YYYY}.json (Console-derived cold-start cache, ETag-republished)
+│   └── procurement/
 │       ├── events/
-│       │   └── {YYYY}/             ← {iso}-{event_id}.json — Notes Hub append-only event stream (§41)
+│       │   └── {YYYY}/             ← {iso}-{event_id}.json — Procurement append-only event stream (§42)
 │       └── aggregates/
-│           └── {YYYY}/             ← notes-aggregate-{YYYY}.json (Console-derived cold-start cache, ETag-republished)
+│           └── {YYYY}/             ← procurement-aggregate-{YYYY}.json (Console-derived cold-start cache, future)
 │
 └── console.lock                    ← Active console heartbeat file
 ```
@@ -7524,6 +7533,277 @@ When more than one clock applies, the **earliest** due date wins. Un-completing 
 - **[OPEN]** Whether aggregates ship in the first release or replay-only suffices at initial volumes (41.3).
 - **[NEXT SLICE]** The Console-side attachment purge screen required by §41.14 — the reducer already computes eligibility; nothing purges yet.
 - Emergency mode (41.9) is staged after the hub's first online-only release; the service worker work is tracked with PWA-SCHEMA §19.
+
+---
+
+## §42 — Procurement & Inventory
+
+**Status:** Spec ratified 2026-09-05 (v2.32). PWA built; Console lane not built.
+**Files:** `procurement.html` + `utils/procurement-reduce.js` (this repo); Procurement hub screen in `index.html`; `src/renderer/js/procurement.js` + `sync-procurement.js` (Console — future).
+**Location:** PWA: **Procurement**, a role-gated top-level department. Console: Operations → Procurement (future).
+
+### 42.1 Overview
+
+Stores and ordering for the vessel, as one closed loop: what we hold, what we need, what we ordered, what arrived. It replaces the "To Order" list that has been living in Microsoft To-Do (and, since v1.10, as an Engine Room notes folder — see §41), which records an intention to buy something and nothing else: not whether it was ordered, not whether it arrived, not whether we already had one on the shelf behind it.
+
+Four governing rules, stated once and enforced everywhere:
+
+1. **On-hand quantity is never authored — it is always derived.** No event writes a stock level. Every event records a *movement* (received, issued, adjusted, transferred) or a *count*, and the level is their sum. This is what makes the register auditable: every unit on the shelf traces to the event that put it there, and a wrong number is corrected by recording the correction, never by overwriting the history that produced it.
+
+2. **One fact, one event.** Receiving against a purchase order writes one movement carrying `po_line_id`; the order line's progress is *derived* from the movements that reference it, never stored a second time. Same reasoning as §41's rule that a task mirror holds no completion state of its own — two stores of one fact will diverge, and then neither can be trusted.
+
+3. **Items are archived, never deleted.** A part that leaves the register still owns the movements, receipts and orders that mention it. Deletion would orphan the history that justifies the spend.
+
+4. **The taxonomy is config, and it belongs to somebody else.** Storerooms, bins, categories, part numbering and the supplier list live in `procurementconfig.json` (§42.5), which this module *reads*. Items reference taxonomy entries by id, and an id the config does not explain renders as itself rather than disappearing. That tolerance is deliberate: the physical structure is being worked out separately and will change shape more than once, and no reshuffle of the storerooms may ever hide stock.
+
+### 42.2 Surfaces
+
+| Surface | Implementation | Data path |
+|---|---|---|
+| PWA — Procurement department | `procurement.html`, same origin and MSAL registration as `index.html` (the §41 Notes pattern) | Graph direct, event replay + poll |
+| ↳ department hub | `screen-proc-home` in `index.html` — tiles route into `procurement.html?view=…` | — |
+| Console: Operations → Procurement | Native renderer screen (future) | SQLite derived cache via a `procurement` ingest lane |
+
+The module is its own page for the same three reasons Notes is: `index.html` is already ~11k lines and every screen added to it is paid for by everyone on every load; a storekeeper wants the register open in a window all day while working the shelves; and a page of its own can be worked on without contending for the single file every other module also lives in.
+
+**Procurement is a real department, not a synthetic one.** Unlike Purser (role-gated hub, no config of its own), Procurement appears in the department picker on its own terms, carries `procurementconfig.json`, and owns an event stream. It is *gated* by role rather than by `departments[]` membership (§42.11) only because the crew records have no Procurement department to put anyone in yet.
+
+### 42.3 OneDrive files
+
+```
+data/procurement/
+├── events/
+│   └── {YYYY}/                 ← {iso}-{event_id}.json — single append-only stream, all event types
+└── aggregates/
+    └── {YYYY}/                 ← procurement-aggregate-{YYYY}.json — Console-derived cold-start cache (future)
+
+config/procurementconfig.json   ← locations, categories, units, suppliers, approval and reorder settings
+```
+
+One stream, all event types, exactly as §41.3 and the Phase 5 observation log: filenames `{iso}-{event_id}.json` with `:`, `.` and `-` stripped from the timestamp so lex-sort is chrono-sort, written `If-None-Match: *` so a retry 412s into a no-op. Per-item and per-order grouping happens in derived state, keyed by `item_id` / `req_id` / `po_id` in the payloads.
+
+**Why the stream and not a state file.** `fuelstate.json` (§25) is the counter-example worth naming: it holds current tank volumes and a correction log beside them, and every direct edit has to be reconciled against the transfers that also move the number. Stock has more writers than tanks do — anyone can take a part off a shelf — and there is no moment when they are all ashore. An append-only stream lets two people receive from the same pallet at the same time on different phones without a lock and without a lost update, which is the actual working condition on a receiving day.
+
+### 42.4 Event envelope and types
+
+Envelope is the standard one (`docs/architecture.md`, identical to §41.4):
+
+```json
+{
+  "schema_version": 1,
+  "event_id":   "uuid",
+  "event_type": "stock_movement",
+  "actor":      "wostara",
+  "timestamp":  "2026-09-05T18:22:04.117Z",
+  "payload":    { }
+}
+```
+
+| Event | Payload | Notes |
+|---|---|---|
+| `item_created` | `{item_id, name, unit, category_id?, part_number?, sfi_code?, barcode?, min_qty?, max_qty?, reorder_qty?, default_location_id?, suppliers?, notes?}` | `item_id`, `name` and `unit` are the only required fields. Everything else can be filled in later, from the shelf. |
+| `item_updated` | `{item_id, …changed fields only}` | Sparse patch. Absent key = unchanged; explicit `null` = cleared. |
+| `item_archived` / `item_unarchived` | `{item_id, reason?}` | Hides from pickers and the default register view; stock history and order references survive (rule 3). Archiving an item still holding stock is allowed but warned. |
+| `stock_movement` | see §42.7 | The only event that changes a quantity. `kind` discriminates receipt / issue / adjustment / transfer / count. |
+| `requisition_created` | `{req_id, department?, need_by?, priority?, justification?, lines: [line]}` | Requester is the envelope `actor`. May be created with lines or empty. |
+| `requisition_updated` | `{req_id, …changed header fields, lines?}` | Whole-`lines` replacement while `draft`; header-only once submitted. |
+| `requisition_submitted` | `{req_id}` | draft → submitted. Locks the lines against edit by anyone but an approver. |
+| `requisition_decided` | `{req_id, decision: "approved"\|"rejected", line_decisions?, comment?}` | One event carries the whole decision, per-line approvals included — an approval that silently drops a line is the failure mode this prevents. `line_decisions` is `{[line_id]: {decision, qty_approved?}}`; absent means every line takes the header decision. |
+| `requisition_cancelled` | `{req_id, reason?}` | Requester or an approver. Terminal. |
+| `po_created` | `{po_id, po_number?, supplier_id?, currency?, expected_date?, lines: [po_line], notes?}` | `po_line.req_line_id` links back to the requisition line it satisfies; that link is what closes the loop for the person who asked. |
+| `po_updated` | `{po_id, …changed header fields, lines?}` | Whole-`lines` replacement while `draft`. Once sent, header and `expected_date` only — quantities change by cancelling and re-raising, so what was actually ordered stays legible. **One exception:** a line's `item_id` may still be set on a sent order when it was previously unset, because naming which item a line refers to is a link rather than a change to what was ordered. This is the path a free-text line takes when it is received and becomes a real item (§42.9); without it the stock would be right and the order line would never point at it, so `on_order` would silently miss. |
+| `po_sent` | `{po_id, sent_via?, sent_at?}` | draft → sent. From here the lines are quantities we are owed. |
+| `po_cancelled` | `{po_id, reason?, line_ids?}` | Whole order, or named lines. Cancelled lines stop counting toward `on_order`. |
+| `po_closed` | `{po_id, reason?}` | Manual close for an order that will never fully arrive — short shipment written off, supplier discontinued the part. Distinct from cancellation: what did arrive stays received. |
+
+There is deliberately **no `po_received` event.** Receipt is `stock_movement` with `kind: "receipt"` and a `po_line_id`; an order line's received quantity is the sum of movements pointing at it, and its status follows from that sum (§42.9). Rule 2.
+
+### 42.5 The taxonomy seam — `procurementconfig.json`
+
+This file is the boundary between this module and the physical-structure work. **This module reads it and never writes it**, with the single exception of the `settings` block below. Shape:
+
+```json
+{
+  "schema_version": 1,
+  "locations": [
+    { "location_id": "eng-store",   "name": "Engine Store", "parent_id": null,        "kind": "storeroom" },
+    { "location_id": "eng-store-a3","name": "Rack A3",      "parent_id": "eng-store", "kind": "bin" }
+  ],
+  "categories": [
+    { "category_id": "seals", "name": "Seals & Packing", "parent_id": null, "sfi_hint": "360" }
+  ],
+  "units": [
+    { "unit": "ea", "name": "Each",  "decimals": 0 },
+    { "unit": "L",  "name": "Litre", "decimals": 2 }
+  ],
+  "suppliers": [
+    { "supplier_id": "acme", "name": "Acme Marine", "email": "", "phone": "", "account_ref": "" }
+  ],
+  "settings": {
+    "approver_roles": ["Chief Engineer", "Admin"],
+    "default_currency": "USD",
+    "receiving_locations": ["eng-store"],
+    "exception_stale_days": 14
+  }
+}
+```
+
+**What this module guarantees to the taxonomy work:**
+
+- `location_id`, `category_id`, `supplier_id` and `unit` are **opaque strings**. Nothing parses them, infers hierarchy from them, or requires a particular format.
+- Hierarchy is expressed *only* by `parent_id`, and only for display and roll-up. Stock is held at whatever location an item's movements name — a storeroom or a bin, indifferently — so the taxonomy may deepen later without restating a single movement.
+- **An unknown id is rendered, not dropped.** An item at `location_id: "eng-store-a3"` when the config no longer lists that bin shows as `eng-store-a3` marked as not in the current layout, and its stock still counts toward the item total. Re-organising the storerooms can never make stock vanish from the register.
+- Lists may be empty. With no `locations[]` the module runs with a single implicit location (`"unassigned"`); with no `categories[]` items are simply uncategorised. The register is usable before the taxonomy exists.
+- Extra fields are preserved on read and ignored — the taxonomy work may add whatever it needs.
+
+**`settings` is the only block this module writes**, from the Procurement settings screen, via the ETag-guarded read-mutate-write used for `notesconfig.json` (§41.3). Locations, categories, units and suppliers are never written from the PWA.
+
+### 42.6 The item record
+
+Derived, not stored — this is the shape `reduceProcurement()` returns per item:
+
+| Field | Source | Notes |
+|---|---|---|
+| `item_id` | create | UUID, canonical identity. |
+| `name`, `unit`, `notes` | create / update | `unit` is a key into `units[]`; an unknown unit displays raw. |
+| `part_number` | create / update | Manufacturer or supplier part number. **Not unique** — two suppliers sell the same seal under two numbers, and one number gets reused across suppliers. Search matches it; nothing keys on it. |
+| `sfi_code` | create / update | Optional join to the asset register (§9). The universal join key across IDMS — set it and the item joins failure history, task records and the vault corpus for free. |
+| `barcode` | create / update | Optional; reserved for scanning (§42.13). |
+| `category_id`, `default_location_id` | create / update | Taxonomy references (§42.5). |
+| `min_qty`, `max_qty`, `reorder_qty` | create / update | Reorder policy (§42.10). All optional; absent `min_qty` means the item never raises a low-stock flag. |
+| `suppliers[]` | create / update | `[{supplier_id, supplier_part_number?, last_price?, currency?, lead_time_days?}]`. Ordered — first is preferred. |
+| `by_location` | movements | `{[location_id]: qty}`. A location reaching zero is retained at `0` rather than removed, so "we used to keep them in A3" stays visible. |
+| `on_hand` | movements | Sum of `by_location`. |
+| `on_order` | PO lines | Ordered less received, over open (`sent`, `partial`) lines only. |
+| `requested` | requisition lines | Approved-but-not-yet-ordered quantity. |
+| `last_movement_at`, `last_count_at` | movements | `last_count_at` drives the cycle-count view (§42.10). |
+| `archived` | archive events | |
+
+### 42.7 Stock movements
+
+One event type, one place where the arithmetic lives:
+
+```json
+{
+  "movement_id": "uuid",
+  "item_id":     "uuid",
+  "kind":        "receipt | issue | adjustment | transfer | count",
+  "qty":         12,
+  "location_id": "eng-store",
+  "to_location_id": null,
+  "direction":   null,
+  "counted_qty": null,
+  "po_id": null, "po_line_id": null,
+  "task_id": null, "equipment_code": null,
+  "unit_cost": null, "currency": null,
+  "reason": null, "note": null
+}
+```
+
+**`qty` is always a positive magnitude. `kind` decides what it does.** No signed quantities anywhere except through `direction`, because a sign convention silently inverted is the classic way an inventory ledger goes quietly wrong and stays wrong.
+
+| `kind` | Effect | Required | Notes |
+|---|---|---|---|
+| `receipt` | `+qty` at `location_id` | `qty`, `location_id` | `po_id` + `po_line_id` when receiving against an order (§42.9). Without them it is a direct receipt — stores bought ashore, a part handed over by a rider — which is legitimate and recorded as such. `unit_cost` optional. |
+| `issue` | `−qty` at `location_id` | `qty`, `location_id` | `task_id` and/or `equipment_code` optionally say what it went on; both are free-standing references, and §41's boundary holds — issuing a part **never** writes to `task_records`, TM Master or job history. |
+| `adjustment` | `±qty` at `location_id` per `direction` | `qty`, `location_id`, `direction`, `reason` | `direction` is `"increase"` or `"decrease"`. `reason` is required: damage, expiry, found, lost. An adjustment without a reason is an unexplained hole in the ledger. |
+| `transfer` | `−qty` at `location_id`, `+qty` at `to_location_id` | `qty`, `location_id`, `to_location_id` | One event, both halves — a transfer recorded as two events can half-fail. |
+| `count` | sets `location_id` to `counted_qty` | `counted_qty`, `location_id` | Records what was physically counted. The reducer stores the implied `variance` (`counted_qty` − book quantity at that point in the replay) on the derived movement, so the count reads as "counted 12, book said 15, −3" rather than as a bare correction. |
+
+**Negative on-hand is permitted and flagged, never blocked.** An issue that takes a location below zero means the book is wrong, not that the part is still on the shelf; refusing the entry would teach the crew to stop recording issues, which costs far more than a temporary negative. It surfaces on the exceptions list until a count clears it.
+
+**Over-receipt is permitted and flagged.** Receiving 12 against an order line for 10 records 12, because 12 is what arrived.
+
+### 42.8 Requisitions
+
+A requisition is somebody saying *we need this*, which is a different act from *we have ordered this* — and keeping the two apart is most of the value of the module.
+
+```
+req_id, department?, need_by?, priority?, justification?
+lines[]: { line_id, item_id?, description?, qty, unit?, notes? }
+```
+
+`item_id` **or** `description` — a line may name an item already in the register, or describe something that has never been aboard. Free-text lines are the normal case for a first order and must not be second-class: at receipt, a free-text line offers to create the item, which is how the register grows without anyone having to sit down and populate it.
+
+Status: `draft → submitted → approved | rejected → ordered → closed`, plus `cancelled` from any non-terminal state.
+
+- `approved` becomes `ordered` when every approved line is covered by a PO line, and `closed` when every one of those PO lines is fully received. Both are derived — there is no event that says "ordered", because the PO already said it.
+- Partial approval is normal: `line_decisions` approves three of five lines, and the requisition sits `approved` with two rejected lines still visible alongside their rejection.
+- `qty_approved` may be less than `qty` requested. The requester sees both.
+
+### 42.9 Purchase orders and receiving
+
+```
+po_id, po_number?, supplier_id?, currency?, expected_date?, notes?
+lines[]: { line_id, item_id?, description?, qty_ordered, unit?, unit_price?, req_line_id? }
+```
+
+`po_number` is the human reference — the supplier's or the office's, whatever is written on the paperwork. Display and search only; `po_id` is identity.
+
+**Derived line status**, from receipts referencing `po_line_id`:
+
+| Received | Line status |
+|---|---|
+| 0 | `open` |
+| 0 < received < ordered | `partial` |
+| received ≥ ordered | `received` (`over` when strictly greater) |
+| line cancelled | `cancelled` |
+
+**Order status** is the roll-up: `draft`, `sent`, `partial` (some line has a receipt, not all lines complete), `received` (every non-cancelled line complete), `cancelled`, `closed`.
+
+**Receiving (check-in)** is the module's busiest screen, and it is built for a person standing at a pallet with a phone in one hand:
+
+1. Pick the order — open orders first, most recently sent at the top, searchable by `po_number` or supplier. **Or "no order"**, for stores that arrive without paperwork.
+2. Each line shows ordered, already received, and outstanding, with the outstanding quantity pre-filled, so the common case — it all came — is one tap per line.
+3. One receiving location for the whole delivery, defaulted from `settings.receiving_locations`, overridable per line.
+4. Optional unit cost per line, defaulted from the order.
+5. Commit writes **one `stock_movement` per line with a non-zero quantity** — never one event for the whole delivery, because the lines are separate facts and one of them may later turn out to be wrong on its own.
+
+A short shipment is simply a smaller quantity: the line goes `partial` and stays on the outstanding list. Nothing needs to be said about the rest, and nobody has to remember to come back and close anything.
+
+**Idempotency.** A receipt commit interrupted part-way leaves the lines it already wrote; re-running it shows the reduced outstanding quantities, so the retry receives the remainder rather than doubling the delivery. Movement events are individually `If-None-Match: *` guarded on their own `movement_id`, so a retried *identical* write 412s into a no-op.
+
+### 42.10 Reorder, low stock and counting
+
+**Low stock is `on_hand + on_order < min_qty`.** Including what is already on order is the whole point: the failure this module exists to stop is ordering a second time because nobody could see the first order is on its way. Items with no `min_qty` never appear.
+
+**Suggested order quantity** is `max_qty − (on_hand + on_order)` where `max_qty` is set, otherwise `reorder_qty`, otherwise the shortfall against `min_qty`. It is a suggestion in a pre-filled field, never an automatic order.
+
+**Cycle counting.** The register sorts by `last_count_at` ascending, so the least recently verified stock is what the count view offers first. There is no annual stock-take mode: a count is a `stock_movement` like any other, and counting ten items on a quiet afternoon is the intended shape.
+
+**Exceptions list** — one screen, the things that need a human: negative on-hand, over-receipts, orders past `expected_date` with outstanding lines, approved requisition lines older than `settings.exception_stale_days` with no PO, and items below minimum with nothing on order.
+
+### 42.11 Permissions
+
+Deliberately close to §41's mostly-global stance — the record of who did what is the oversight — with one real gate, because approving spend is not the same as recording a shelf.
+
+| Action | Who |
+|---|---|
+| Read everything | Anyone with the Procurement department |
+| Create/edit items, all stock movements, counts | Anyone with the Procurement department |
+| Raise and submit a requisition | Anyone |
+| **Approve or reject a requisition** | `settings.approver_roles`, plus `permission_tier: "admin"` |
+| Create, send, cancel or close a PO | Approvers |
+| Edit `settings` | Approvers |
+
+**Department gate.** Procurement is offered to `permission_tier: "admin"`, to roles listed in `settings.approver_roles`, and to any user carrying `"Procurement"` in `departments[]` — the last being the path that takes over once the crew records have the department. Same shape as `userIsPurser()`, generalised.
+
+**`browser` is a reserved actor here too** (§41.4d). A shared window may record movements — that is exactly what a receiving station is — but it can never approve a requisition or send an order, because those need a name.
+
+### 42.12 Console side (not built)
+
+A `procurement` ingest lane mirroring `sync-notes.js`: cursor per year over `data/procurement/events/{YYYY}/`, raw `procurement_events` table, derived `procurement_items`, `procurement_movements`, `procurement_requisitions`, `procurement_pos`. The reducer is **not reimplemented** — `utils/procurement-reduce.js` is mirrored byte-identical into `src/renderer/js/`, the `crew-display.js` / `notes-reduce.js` convention, so two renderers stay honest against one contract.
+
+What the Console adds rather than duplicates: spend by category and by supplier over a trip, consumption history feeding `min_qty` suggestions, the join from `sfi_code` to failure history ("this seal is consumed four times a year on this pump"), and printable order documents.
+
+### 42.13 Open items
+
+- **[SEAM]** `procurementconfig.json` locations / categories / units / suppliers are owned by the physical-structure work. §42.5 is this module's read contract against it; the shapes there are a proposal and may be replaced, provided ids stay opaque strings and hierarchy stays `parent_id`.
+- **[OPEN]** Whether `sfi_code` on an item should be single or a list. Single for now — a gasket used on three pumps is the case that will decide it.
+- **[OPEN]** Costs are recorded (`unit_cost`, `currency`) but nothing converts currency or reconciles to an invoice. Spend reporting is Console work and needs a decision on whether IDMS is ever the financial record or always a shadow of one.
+- **[FUTURE]** Barcode scanning at receipt and issue. `barcode` is on the item record for it; the camera path and the offline queue are the §19 service-worker lift, shared with §41.9.
+- **[FUTURE]** Reserving stock against an approved requisition or a scheduled task, which is what would make `available` differ from `on_hand`.
+- **[FUTURE]** Consumption-driven `min_qty` suggestions from movement history, and lead-time-aware reorder points.
 
 ---
 
