@@ -8,6 +8,29 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.12 — 2026-09-05
+
+- **Procurement now shows the real stores register** — all 14,487 items from TM
+  Master, in the 664 places aboard they are actually stowed, from the Engine
+  Store down to a numbered bin in the Fwd Shop.
+- The register is too big to scroll, so it opens on the decks: tap Maindeck to
+  see its 6,448 items, or search by name, part number, stock tag or ITM number.
+- **TM Master stays the book of record.** What an item *is* — its name,
+  supplier, part number, where it lives — is read from TM Master and never
+  changed here. Spot something wrong and **Propose a correction** records it
+  with your name on it for an officer to key in.
+- **What you do with stock is yours.** Receiving, issuing, moving and counting
+  are recorded here as they happen and layered on top of the TM Master figures,
+  so the shelf does not have to wait for the next export.
+- **Minimums can be set from the app.** Only 602 of the 14,487 items have one in
+  TM Master, so the low-stock list was nearly empty. Set a minimum, a maximum or
+  an SFI code on any item and it is IDMS's own — clear it and TM Master's
+  value comes back.
+- Items the export never counted show **—** rather than 0, because unknown is
+  not the same as none, and they never raise a false shortage.
+- The register is kept on the device after the first load, so opening
+  Procurement does not re-download it every time.
+
 ## 1.11 — 2026-09-05
 
 - **Procurement** is a new department on the picker, for anyone holding stores.

@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.32 — F/V Araho**
+**Version 2.33 — F/V Araho**
+
+v2.33 *(2026-09-05)* — **Procurement wired to the real item master (§42.14, new; §42.5 superseded in place).** The vessel already has a register — 14,487 items and a 664-node stowage tree in TM Master, mirrored into the Engineering Vault at `50 Procurement/` — so the module stops inventing one. **TM Master is the system of record for what an item *is*; IDMS owns what it *does*.** A new builder, `tools/build-procurement-catalogue.py`, projects the Vault notes into `data/procurement/catalogue.json` (~1.8 MB, columnar and dictionary-encoded — the naïve shape is 4.6 MB) plus a lazily-fetched `catalogue-detail.json`; nothing writes to the Vault. The reducer gains `hydrateCatalogue()` and takes the catalogue as a **baseline**: quantities as at `baseline_at`, with movements applied only where `timestamp > baseline_at` — earlier ones stay in the ledger, marked, but move nothing, because the export already absorbed them. `in_stock: null` means unknown, not zero (2,181 items), and never raises a shortage. Because 13,885 of 14,487 items carry no minimum, IDMS keeps its **own policy overlay** — `min_qty`, `max_qty`, `reorder_qty`, `sfi_code`, `barcode`, `notes` via a new `item_policy_set` event, read through `effective()`, cleared back to TM Master by writing null. Edits to TM-owned fields become `item_change_proposed` events: recorded, shown, **never applied** — an officer changes TM Master and the next export carries it back. `on_order` now sums TM Master's outstanding (1,255 items) and this module's own open orders, kept apart in the derived state. The register screen is search-first with a deck browse and a 300-row cap, and line pickers are searches rather than 14,487-option dropdowns. The catalogue is cached in IndexedDB and re-fetched only on an eTag change. `procurementconfig.json` keeps only `settings`; its taxonomy arrays remain as a fallback for a vessel with no TM export.
 
 v2.32 *(2026-09-05)* — **Procurement & Inventory specified and built in the PWA (§42, new).** Stores and ordering as one closed loop — hold, need, order, arrive — replacing the "To Order" list that has lived in Microsoft To-Do and, since PWA v1.10, as an Engine Room notes folder. Same architecture as §41: one append-only OneDrive event stream under `data/procurement/events/{YYYY}/`, a pure reducer (`utils/procurement-reduce.js`) mirrored byte-identical into the Console when its lane is built, and a standalone same-origin page (`procurement.html`) reached from a hub screen in `index.html`. **Procurement is a new top-level department**, role-gated (`permission_tier: "admin"`, `settings.approver_roles`, or `"Procurement"` in `departments[]`) until the crew records carry the department. Four governing rules: on-hand is never authored, only derived from movements and counts; one fact writes one event (there is no `po_received` — receipt is a `stock_movement` carrying `po_line_id`, and order progress is derived from it); items are archived, never deleted; and the taxonomy — storerooms, bins, categories, units, suppliers — is config owned elsewhere, read tolerantly, so no reshuffle of the storerooms can hide stock. Movements are one event type with a `kind` discriminator (receipt / issue / adjustment / transfer / count) and an always-positive `qty`, `direction` carrying the only sign in the system. Requisitions separate *we need this* from *we have ordered this*, support free-text lines for parts never yet aboard, and record per-line approval decisions in one event. Receiving supports partial, over- and no-PO receipts, is idempotent under interruption, and writes one movement per line. Low stock counts `on_hand + on_order` against `min_qty`, which is the specific defence against ordering the same part twice. Issuing a part to a job references `task_id` / `equipment_code` but **never** writes to `task_records`, TM Master or job history — §41's boundary, restated. New config file `config/procurementconfig.json` (locations, categories, units, suppliers, settings), registered in the §1 File Location Map; its `settings` block is the only part the PWA writes, ETag-guarded.
 
@@ -1068,6 +1070,8 @@ Documents/IDMS/
 │   └── procurement/
 │       ├── events/
 │       │   └── {YYYY}/             ← {iso}-{event_id}.json — Procurement append-only event stream (§42)
+│       ├── catalogue.json      ← TM Master item master + stowage tree, projected (§42.14). Generated.
+│       ├── catalogue-detail.json ← specification / remarks / maker detail, fetched lazily (§42.14)
 │       └── aggregates/
 │           └── {YYYY}/             ← procurement-aggregate-{YYYY}.json (Console-derived cold-start cache, future)
 │
@@ -7640,6 +7644,8 @@ Envelope is the standard one (`docs/architecture.md`, identical to §41.4):
 |---|---|---|
 | `item_created` | `{item_id, name, unit, category_id?, part_number?, sfi_code?, barcode?, min_qty?, max_qty?, reorder_qty?, default_location_id?, suppliers?, notes?}` | `item_id`, `name` and `unit` are the only required fields. Everything else can be filled in later, from the shelf. |
 | `item_updated` | `{item_id, …changed fields only}` | Sparse patch. Absent key = unchanged; explicit `null` = cleared. |
+| `item_policy_set` | `{item_id, min_qty?, max_qty?, reorder_qty?, sfi_code?, barcode?, notes?}` | IDMS's own reorder policy over a mirrored item (§42.14). Sparse: an absent key is unchanged, an explicit `null` clears back to whatever TM Master says. Never a name, a supplier or a part number — those are TM Master's to state. |
+| `item_change_proposed` | `{item_id, proposal_id, fields, reason?}` | A correction to a field TM Master owns. Recorded against the item and shown with its author, **never applied** (§42.14). An officer makes the change in TM Master and the next export carries it back. |
 | `item_archived` / `item_unarchived` | `{item_id, reason?}` | Hides from pickers and the default register view; stock history and order references survive (rule 3). Archiving an item still holding stock is allowed but warned. |
 | `stock_movement` | see §42.7 | The only event that changes a quantity. `kind` discriminates receipt / issue / adjustment / transfer / count. |
 | `requisition_created` | `{req_id, department?, need_by?, priority?, justification?, lines: [line]}` | Requester is the envelope `actor`. May be created with lines or empty. |
@@ -7656,6 +7662,8 @@ Envelope is the standard one (`docs/architecture.md`, identical to §41.4):
 There is deliberately **no `po_received` event.** Receipt is `stock_movement` with `kind: "receipt"` and a `po_line_id`; an order line's received quantity is the sum of movements pointing at it, and its status follows from that sum (§42.9). Rule 2.
 
 ### 42.5 The taxonomy seam — `procurementconfig.json`
+
+> **Superseded in v2.33 by §42.14.** The taxonomy this section anticipated turned out to exist already, in TM Master, and to be far larger than a hand-kept config: 14,487 items across a 664-node stowage tree. Locations, categories, units and suppliers now arrive in the generated catalogue (§42.14); `procurementconfig.json` keeps only its `settings` block, and its taxonomy arrays remain as a fallback for a vessel with no TM Master export at all. **The tolerance rules below still hold and are what made the switch cheap** — ids stayed opaque strings, hierarchy stayed `parent_id`, and an unrecognised id still renders and still counts.
 
 This file is the boundary between this module and the physical-structure work. **This module reads it and never writes it**, with the single exception of the `settings` block below. Shape:
 
@@ -7835,12 +7843,104 @@ What the Console adds rather than duplicates: spend by category and by supplier 
 
 ### 42.13 Open items
 
-- **[SEAM]** `procurementconfig.json` locations / categories / units / suppliers are owned by the physical-structure work. §42.5 is this module's read contract against it; the shapes there are a proposal and may be replaced, provided ids stay opaque strings and hierarchy stays `parent_id`.
+- ~~**[SEAM]** `procurementconfig.json` locations / categories / units / suppliers are owned by the physical-structure work.~~ **Settled (v2.33):** the taxonomy is TM Master's, projected through the catalogue — §42.14. The tolerance rules written for the config are what made the switch cheap.
+- **[OPEN]** The reconciliation lane. A fresh export supersedes movements older than it, so a count recorded aboard and never keyed into TM Master is lost from the arithmetic (§42.14). Today that shows up only as a divergence on the exceptions screen; whether the Console should emit a keying worklist from the superseded movements is undecided.
+- **[OPEN]** Whether the 138 units of measure should ever be reconciled. `Each`, `EA`, `PCE` and `pcs` are the same unit under four names, which makes any cross-item quantity roll-up meaningless. Normalising is TM Master's job, not this module's, but somebody has to decide it is worth doing.
 - **[OPEN]** Whether `sfi_code` on an item should be single or a list. Single for now — a gasket used on three pumps is the case that will decide it.
 - **[OPEN]** Costs are recorded (`unit_cost`, `currency`) but nothing converts currency or reconciles to an invoice. Spend reporting is Console work and needs a decision on whether IDMS is ever the financial record or always a shadow of one.
 - **[FUTURE]** Barcode scanning at receipt and issue. `barcode` is on the item record for it; the camera path and the offline queue are the §19 service-worker lift, shared with §41.9.
 - **[FUTURE]** Reserving stock against an approved requisition or a scheduled task, which is what would make `available` differ from `on_hand`.
 - **[FUTURE]** Consumption-driven `min_qty` suggestions from movement history, and lead-time-aware reorder points.
+
+### 42.14 The catalogue — TM Master as the item master
+
+**This supersedes the working assumption in §42.5 that the taxonomy would be a hand-kept config file.** The vessel already has an item master: 14,487 items and a 664-node stowage tree in TM Master, exported and mirrored into the Engineering Vault at `50 Procurement/` as one note per item and one per stowage node. That is the register. This module does not get to invent a second one.
+
+Two rules follow, and neither is negotiable:
+
+1. **TM Master is the system of record for what an item *is*** — its name, unit, supplier, part numbers, stowage, compliance flags. This module reads a projection of it and **never writes back**. That is the ratified rule for TM Master writes across IDMS, not a limitation of this screen.
+2. **The vessel still owns what it *does*.** Movements, counts, requisitions and orders are IDMS's own event stream, layered on the TM Master baseline. Stock on the shelf changes far faster than an export cycle, and a register that could only be as fresh as the last export would be useless on a receiving day.
+
+#### The pipeline
+
+```
+TM Master  ──export──▶  Vault notes (status: mirror)  ──project──▶  catalogue JSON  ──▶  procurement.html
+            (xlsx)      50 Procurement/50.3, 50.4        tools/build-procurement-catalogue.py
+```
+
+The second hop is `tools/build-procurement-catalogue.py` in this repo. It reads the Vault notes and writes only into the IDMS OneDrive folder — nothing writes to the Vault, which is what keeps the corpus a corpus. Rerun it after every fresh export:
+
+```
+python tools/build-procurement-catalogue.py [--vault PATH] [--out PATH] [--dry-run]
+```
+
+#### Files
+
+```
+data/procurement/
+├── catalogue.json          ← ~1.8 MB. Everything needed to search, list and count.
+└── catalogue-detail.json   ← ~2.1 MB. Specification, remarks, maker detail — fetched
+                              lazily, on the first item anybody opens.
+```
+
+**Columnar and dictionary-encoded.** A `fields` header plus rows of values, with the low-cardinality columns (`uom`, `item_type`, `item_category`, `supplier`, `currency`) replaced by indexes into tables shipped alongside. Repeating forty key names and the string `"Spare part"` across 14,487 objects is most of the file otherwise — the naïve encoding is 4.6 MB, this one is 1.8. Boolean flags are packed into one integer per row against `flag_bits`. Both clients decode through `procurementReduce.hydrateCatalogue()` so neither has to know the encoding.
+
+**Six columns are dropped**, listed in `never_populated`: `material_group`, `dangerous_goods`, `dangerous_goods_class`, `ihm_status`, `hs_code`, `hs_description`. The export carries them on every row and fills them on none.
+
+**Caching.** The catalogue is held in IndexedDB, not `localStorage` — it would not fit, and it would be evicted against the event cache. On open, the cached copy renders immediately; one small Graph metadata request then compares eTags and the full file is re-fetched only when it has actually changed, which is once per export. A vessel that cannot reach OneDrive keeps working from the cached copy, labelled as one.
+
+#### `baseline_at`, and what a movement means
+
+The catalogue's quantities describe TM Master **at the moment the export was taken**, carried as `baseline_at`. The reducer seeds `by_location` from `in_stock` at the item's default stowage, then applies movements — but **only those with `timestamp > baseline_at`**. Anything at or before it was already absorbed into the exported figure, so applying it again would double-count. Such movements stay in the ledger, greyed and marked *already in the baseline*, and are counted in `superseded_movements`; the history reads continuously even where the arithmetic stops.
+
+A consequence worth stating plainly: **a fresh export supersedes the movements older than it.** If a count recorded here has not yet been keyed into TM Master when the next export is taken, the export wins and the count is lost from the arithmetic. That divergence is the reconciliation report — the shelf said X, TM Master says Y — and is exactly what the exceptions screen is for.
+
+**`in_stock: null` means unknown, not zero.** 2,181 items carry no stock figure in the export. They render as `—`, never as `0`, and never raise a low-stock flag; reporting 2,181 phantom shortages would bury the 152 real ones.
+
+#### The policy overlay
+
+**13,885 of the 14,487 items carry no minimum at all** — only 602 have one. A register nobody can set a minimum on is a register nobody can act on, and minimums must not require an officer to open TM Master. So IDMS keeps its own reorder policy over the mirror, in `item_policy_set` events:
+
+| Field | Owner |
+|---|---|
+| `min_qty`, `max_qty`, `reorder_qty` | **IDMS** — policy, not fact. Overlay wins; clear it and TM Master's value returns. |
+| `sfi_code` | **IDMS** — the export carries none, and this is the join to the asset register (§9), task records and failure history. |
+| `barcode`, `notes` | **IDMS** |
+| everything else | **TM Master** — read here, corrected there |
+
+`procurementReduce.effective(item, field)` is the only correct way to read one of these: overlay first, then the mirror. The UI marks an overlaid value so nobody mistakes it for TM Master's.
+
+#### Proposals
+
+An edit to a TM-owned field is recorded as an `item_change_proposed` event and **never applied**. It shows on the item with who asked, when, and why; an officer makes the change in TM Master and the next export carries it back. A legacy `item_updated` against a mirrored item is treated the same way rather than being silently applied or silently dropped.
+
+#### Local items
+
+An item created here that TM Master has never heard of — stores bought ashore, a part received against a free-text order line — is a normal `item_created` with `source: 'local'`, and works exactly as §42.6 describes. `item_created` against an id the catalogue already supplies is ignored, so a stale local create can never rewrite a mirrored item.
+
+#### `on_order`, from two places
+
+TM Master reports 1,255 items on order at baseline; this module raises orders of its own. They are kept apart as `on_order_tm` and the derived PO remainder, and added for `on_order`. Collapsing them would make it impossible to tell an order raised aboard from one raised ashore.
+
+#### What the register says right now
+
+| | |
+|---|---|
+| Items | 14,487 |
+| Stowage locations | 664, across 10 decks and shore stores |
+| No stowage recorded | 2,864 |
+| No stock figure in the export | 2,181 |
+| Negative on hand | 35 |
+| No minimum set | 13,885 |
+| On order in TM Master | 1,255 |
+| Critical occurrences | 58 |
+| Blocked | 689 |
+
+#### Source data this module does not correct
+
+- **One shifted row.** `ITM-04387` carries a maker name in `OnOrder` and a part number in `Price`. The builder coerces non-numeric values in numeric columns to unknown and reports them; the fix belongs in TM Master.
+- **138 distinct units of measure**, including `Each`, `EA`, `PCE` and `pcs` all meaning the same thing. Displayed as written. Quietly normalising somebody else's vocabulary is how a register stops matching the shelf label.
+- **Stowage is a path, not a code.** `Maindeck\Fwd Shop\SH 5\5-2`. Lists show the last segment; the item screen shows the whole path.
 
 ---
 

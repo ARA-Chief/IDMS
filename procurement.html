@@ -170,6 +170,53 @@
     font-size: 16px; padding: 6px 4px; line-height: 1; }
   .line .rm:hover { color: var(--danger); }
 
+  /* ── Register at 14,000 items ─────────────────────────────
+     The register is not a list you scroll. It is a thing you search, or walk
+     into from a deck, and the count line always says what you are looking at. */
+  .reg-count { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5; }
+  .link-btn { background: none; border: none; color: var(--accent); cursor: pointer;
+    font-size: 13px; font-family: var(--font); padding: 0 2px; }
+  .link-btn:hover { text-decoration: underline; }
+  .mono-id { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    font-size: 12px; color: var(--text-muted); }
+
+  .deck-grid { display: grid; gap: 10px; margin-bottom: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .deck-tile { text-align: left; background: var(--bg-1); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 14px 16px; cursor: pointer;
+    color: var(--text-primary); font-family: var(--font); }
+  .deck-tile:hover { border-color: var(--border-accent); }
+  .deck-name { font-size: 14px; font-weight: 600; margin-bottom: 8px; line-height: 1.3; }
+  .deck-count { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: var(--accent); line-height: 1; }
+  .deck-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+  .quick-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ── Mirrored-item panels ─────────────────────────────────
+     What TM Master says is presented as quotation, not as this app's own
+     assertion — the left rule is the visual difference between the two. */
+  .mirror { border-left: 3px solid var(--accent-dim); }
+  .mirror-note { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 10px; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px 20px; margin-top: 10px; }
+  .kv .k { font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--text-muted); display: block; margin-bottom: 2px; }
+  .kv .v { font-size: 14px; word-break: break-word; }
+  .policy-chip { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--accent); border: 1px solid var(--border-accent); border-radius: 3px;
+    padding: 1px 5px; margin-left: 6px; background: var(--accent-glow); }
+
+  /* ── Item picker (a searchable input, not a 14,000-option select) ── */
+  .picker { position: relative; flex: 3; min-width: 170px; }
+  .picker-results { position: absolute; z-index: 20; left: 0; right: 0; top: 100%;
+    background: var(--bg-2); border: 1px solid var(--border-accent);
+    border-radius: var(--radius-sm); max-height: 260px; overflow-y: auto; margin-top: 2px; }
+  .picker-hit { padding: 8px 10px; cursor: pointer; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+  .picker-hit:last-child { border-bottom: none; }
+  .picker-hit:hover { background: var(--bg-3); }
+  .picker-hit .ph-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+  .picker-none { padding: 10px; font-size: 12.5px; color: var(--text-muted); }
+
   /* ── Check-in lines ───────────────────────────────────────
      Deliberately not a table. This is the screen someone uses one-handed at a
      pallet, and the quantity box is the whole point of it — it must never be
@@ -315,11 +362,19 @@ var PC = {
   view: 'register',
   sel: null,               // selected item_id / req_id / po_id, per view
   q: '',                   // register search
-  filterLoc: '', filterCat: '',
+  filterLoc: '', filterDeck: '', filterFlag: '',
   showArchived: false,
   reauth: false,
-  _syncing: false
+  _syncing: false,
+
+  // §42.14 — the TM Master baseline.
+  catalogue: null,         // hydrated: { baseline_at, items, locations, counts }
+  catStatus: 'none',       // none | cached | fresh | stale | failed
+  catBuiltAt: null,
+  detail: null             // catalogue-detail.json, fetched on first item opened
 };
+
+var REGISTER_CAP = 300;    // rows rendered at once; 14,487 will not go on a page
 
 var DEFAULT_CFG = {
   schema_version: 1, locations: [], categories: [], units: [], suppliers: [],
@@ -509,8 +564,125 @@ async function pcEnterApp() {
 
   pcLoadCache();
   pcRenderAll();
+  pcLoadCatalogue().then(pcRenderAll);
   pcSyncNow();
   setInterval(pcSyncNow, 60000);
+}
+
+// ── The catalogue (§42.14) ──────────────────────────────────
+// 14,487 items is about 1.8 MB, which is not a thing to re-download on a
+// vessel's connection every time somebody opens the register. It is cached in
+// IndexedDB (localStorage would not hold it, and would be evicted against the
+// event cache anyway) and re-fetched only when the file on OneDrive has
+// actually changed — one small metadata request per session decides that.
+var PC_DB = 'idms-procurement', PC_STORE = 'catalogue';
+
+function pcIdb() {
+  return new Promise(function (resolve, reject) {
+    if (!window.indexedDB) return reject(new Error('no IndexedDB'));
+    var req = indexedDB.open(PC_DB, 1);
+    req.onupgradeneeded = function () {
+      if (!req.result.objectStoreNames.contains(PC_STORE)) req.result.createObjectStore(PC_STORE);
+    };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
+  });
+}
+
+function pcIdbGet(key) {
+  return pcIdb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var r = db.transaction(PC_STORE, 'readonly').objectStore(PC_STORE).get(key);
+      r.onsuccess = function () { resolve(r.result || null); };
+      r.onerror = function () { reject(r.error); };
+    });
+  });
+}
+
+function pcIdbPut(key, value) {
+  return pcIdb().then(function (db) {
+    return new Promise(function (resolve, reject) {
+      var tx = db.transaction(PC_STORE, 'readwrite');
+      tx.objectStore(PC_STORE).put(value, key);
+      tx.oncomplete = function () { resolve(true); };
+      tx.onerror = function () { reject(tx.error); };
+    });
+  });
+}
+
+function pcCatPath()       { return ONEDRIVE_BASE + '/data/procurement/catalogue.json'; }
+function pcCatDetailPath() { return ONEDRIVE_BASE + '/data/procurement/catalogue-detail.json'; }
+
+async function pcCatEtag(path) {
+  var base = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+             encodeURIComponent(path).replace(/%2F/g, '/');
+  var r = await pcFetch(base + '?select=eTag,lastModifiedDateTime,size', { method: 'GET' });
+  if (!r.ok) return null;
+  var meta = await r.json();
+  return meta.eTag || meta.lastModifiedDateTime || null;
+}
+
+async function pcLoadCatalogue() {
+  var cached = null;
+  try { cached = await pcIdbGet('catalogue'); } catch (e) {}
+  if (cached && cached.doc) {
+    PC.catalogue = procurementReduce.hydrateCatalogue(cached.doc);
+    PC.catBuiltAt = cached.doc.built_at || null;
+    PC.catStatus = 'cached';
+    pcReduce();
+  }
+
+  var etag = null;
+  try { etag = await pcCatEtag(pcCatPath()); } catch (e) {}
+
+  // Nothing on OneDrive: either the builder has never been run, or we are
+  // offline. A cached copy still works; without one the register is empty and
+  // says so rather than pretending there is no stock aboard.
+  if (etag === null) {
+    PC.catStatus = cached ? 'stale' : 'failed';
+    return;
+  }
+  if (cached && cached.etag === etag) { PC.catStatus = 'fresh'; return; }
+
+  try {
+    var doc = await pcGetJson(pcCatPath());
+    if (!doc) { PC.catStatus = cached ? 'stale' : 'failed'; return; }
+    PC.catalogue = procurementReduce.hydrateCatalogue(doc);
+    PC.catBuiltAt = doc.built_at || null;
+    PC.catStatus = 'fresh';
+    pcReduce();
+    try { await pcIdbPut('catalogue', { etag: etag, doc: doc }); } catch (e) {}
+  } catch (e) {
+    PC.catStatus = cached ? 'stale' : 'failed';
+  }
+}
+
+// Long text and maker detail, wanted only once somebody opens an item.
+async function pcEnsureDetail() {
+  if (PC.detail) return PC.detail;
+  var cached = null;
+  try { cached = await pcIdbGet('detail'); } catch (e) {}
+  var etag = null;
+  try { etag = await pcCatEtag(pcCatDetailPath()); } catch (e) {}
+  if (cached && (etag === null || cached.etag === etag)) {
+    PC.detail = cached.doc; return PC.detail;
+  }
+  try {
+    var doc = await pcGetJson(pcCatDetailPath());
+    if (doc) {
+      PC.detail = doc;
+      try { await pcIdbPut('detail', { etag: etag, doc: doc }); } catch (e) {}
+    }
+  } catch (e) {
+    PC.detail = (cached && cached.doc) || null;
+  }
+  return PC.detail;
+}
+
+function pcDetailFor(itemId) {
+  if (!PC.detail || !PC.detail.items) return null;
+  var n = String(itemId || '').replace(/^ITM-0*/, '');
+  return PC.detail.items[n] || null;
 }
 
 async function pcLoadConfig() {
@@ -534,14 +706,44 @@ async function pcLoadConfig() {
 // An id the config does not explain renders as itself. Nothing may make stock
 // disappear because the storerooms were re-organised.
 
+// Locations come from the catalogue (TM Master's own stowage tree, 664 of them
+// across 10 decks); `procurementconfig.json` is the fallback for a vessel with
+// no export yet. Either way an id nothing explains renders as itself.
+function pcLocations() {
+  return (PC.catalogue && PC.catalogue.locations) || null;
+}
+
 function pcLocName(id) {
-  if (!id) return 'Unassigned';
+  if (!id || id === 'unassigned') return 'No stowage recorded';
+  var locs = pcLocations();
+  if (locs && locs[id]) return locs[id].path || id;
   var l = PC.cfg.locations.filter(function (x) { return x.location_id === id; })[0];
   return l ? l.name : id;
 }
+
+// The last segment, for lists where the full path is too long to read.
+function pcLocShort(id) {
+  var full = pcLocName(id);
+  // Stowage paths are the export's own Windows-style `Deck\Room\Shelf\Bin`.
+  var parts = String(full).split('\\');
+  return parts[parts.length - 1] || full;
+}
+
 function pcLocKnown(id) {
   if (!id || id === 'unassigned') return true;
+  var locs = pcLocations();
+  if (locs) return !!locs[id];
   return PC.cfg.locations.some(function (x) { return x.location_id === id; });
+}
+
+function pcDecks() {
+  var locs = pcLocations();
+  if (!locs) return [];
+  var out = [];
+  Object.keys(locs).forEach(function (k) {
+    if (!locs[k].parent_id) out.push(locs[k]);
+  });
+  return out.sort(function (a, b) { return (b.items_deep || 0) - (a.items_deep || 0); });
 }
 function pcCatName(id) {
   if (!id) return '';
@@ -553,6 +755,10 @@ function pcSupplierName(id) {
   var s = PC.cfg.suppliers.filter(function (x) { return x.supplier_id === id; })[0];
   return s ? s.name : id;
 }
+// The export carries 138 distinct units of measure, with 'Each', 'EA', 'PCE'
+// and 'pcs' all present and all meaning the same thing. That is TM Master's
+// vocabulary and it is displayed as written — quietly normalising somebody
+// else's data is how a register stops matching the shelf label.
 function pcUnitDecimals(unit) {
   var u = PC.cfg.units.filter(function (x) { return x.unit === unit; })[0];
   return (u && typeof u.decimals === 'number') ? u.decimals : 2;
@@ -564,8 +770,22 @@ function pcFmtQty(n, unit) {
   if (d > 0) s = s.replace(/\.?0+$/, '');
   return s;
 }
+// Where a delivery lands unless somebody says otherwise. A configured value
+// wins, but only if it is a place that still exists — the seeded default from
+// before the TM Master layout arrived names a storeroom that was never in it.
 function pcReceivingDefault() {
   var r = (PC.cfg.settings.receiving_locations || [])[0];
+  if (r && pcLocKnown(r)) return r;
+  var locs = pcLocations();
+  if (locs) {
+    // The busiest space on the biggest deck is the least surprising default.
+    var best = null;
+    Object.keys(locs).forEach(function (k) {
+      if (locs[k].depth !== 2) return;             // a room, not a deck or a bin
+      if (!best || locs[k].items_deep > best.items_deep) best = locs[k];
+    });
+    if (best) return best.location_id;
+  }
   if (r) return r;
   return (PC.cfg.locations[0] && PC.cfg.locations[0].location_id) || 'unassigned';
 }
@@ -679,7 +899,7 @@ async function pcAppendEvent(eventType, payload, opts) {
 }
 
 function pcReduce() {
-  PC.state = procurementReduce.reduce(PC.events);
+  PC.state = procurementReduce.reduce(PC.events, PC.catalogue);
 }
 
 // ── Small helpers ───────────────────────────────────────────
@@ -752,17 +972,28 @@ function pcUnitOptions(sel) {
   }).join('');
 }
 
+// 664 stowage locations in a dropdown, ordered by path so the tree reads in
+// order. A location the item is holding stock at but the layout no longer lists
+// still has to be selectable, or stock could never be moved out of it.
 function pcLocOptions(sel) {
-  var locs = PC.cfg.locations.slice();
-  if (!locs.length) locs = [{ location_id: 'unassigned', name: 'Unassigned' }];
-  // A location the item is holding stock at but the config no longer lists
-  // still has to be selectable, or stock could never be moved out of it.
-  if (sel && !locs.some(function (l) { return l.location_id === sel; })) {
-    locs.push({ location_id: sel, name: sel + ' (not in the current layout)' });
+  var locs = pcLocations();
+  var rows;
+  if (locs) {
+    rows = Object.keys(locs).map(function (k) { return locs[k]; })
+      .sort(function (a, b) { return String(a.path).localeCompare(String(b.path)); })
+      .map(function (l) { return { id: l.location_id, label: l.path, depth: l.depth || 1 }; });
+  } else {
+    rows = PC.cfg.locations.map(function (l) {
+      return { id: l.location_id, label: l.name, depth: 1 };
+    });
   }
-  return locs.map(function (l) {
-    return '<option value="' + pcEsc(l.location_id) + '"' + (l.location_id === sel ? ' selected' : '') +
-      '>' + pcEsc(l.name) + '</option>';
+  if (!rows.length) rows = [{ id: 'unassigned', label: 'No stowage recorded', depth: 1 }];
+  if (sel && !rows.some(function (r) { return r.id === sel; })) {
+    rows.unshift({ id: sel, label: pcLocName(sel) + ' (not in the current layout)', depth: 1 });
+  }
+  return rows.map(function (r) {
+    return '<option value="' + pcEsc(r.id) + '"' + (r.id === sel ? ' selected' : '') + '>' +
+      pcEsc(r.label) + '</option>';
   }).join('');
 }
 
@@ -845,121 +1076,350 @@ function pcHead(title, sub, actions) {
 function pcViewRegister() {
   if (PC.sel && PC.state.items[PC.sel]) return pcViewItem(PC.state.items[PC.sel]);
 
-  var c = pcCounts();
-  pcHead('Inventory', c.items + ' items · ' + c.low + ' below minimum',
+  pcHead('Inventory', pcRegisterSubtitle(),
     '<button class="icon-btn" onclick="pcItemForm(null)">+ New item</button>');
 
-  var catOpts = '<option value="">All categories</option>' + PC.cfg.categories.map(function (c2) {
-    return '<option value="' + pcEsc(c2.category_id) + '"' +
-      (PC.filterCat === c2.category_id ? ' selected' : '') + '>' + pcEsc(c2.name) + '</option>';
-  }).join('');
-  var locOpts = '<option value="">All locations</option>' + PC.cfg.locations.map(function (l) {
-    return '<option value="' + pcEsc(l.location_id) + '"' +
-      (PC.filterLoc === l.location_id ? ' selected' : '') + '>' + pcEsc(l.name) + '</option>';
+  var flagOpts = [
+    ['', 'Everything'],
+    ['low', 'Below minimum'],
+    ['critical', 'Critical spares'],
+    ['onorder', 'On order'],
+    ['negative', 'Negative on hand'],
+    ['unplaced', 'No stowage recorded'],
+    ['nomin', 'No minimum set'],
+    ['blocked', 'Blocked in TM Master'],
+    ['local', 'Added in IDMS']
+  ].map(function (o) {
+    return '<option value="' + o[0] + '"' + (PC.filterFlag === o[0] ? ' selected' : '') +
+      '>' + o[1] + '</option>';
   }).join('');
 
-  var html =
+  var deckOpts = '<option value="">All decks</option>' + pcDecks().map(function (d) {
+    return '<option value="' + pcEsc(d.location_id) + '"' +
+      (PC.filterDeck === d.location_id ? ' selected' : '') + '>' +
+      pcEsc(d.path) + ' (' + d.items_deep + ')</option>';
+  }).join('');
+
+  document.getElementById('body').innerHTML =
     '<div class="toolbar">' +
-      '<input class="field" id="reg-q" placeholder="Search name, part number, SFI code…" ' +
-        'value="' + pcEsc(PC.q) + '" oninput="PC.q=this.value;pcRenderRegisterList()">' +
-      (PC.cfg.categories.length ? '<select class="field" onchange="PC.filterCat=this.value;pcRenderRegisterList()">' + catOpts + '</select>' : '') +
-      '<select class="field" onchange="PC.filterLoc=this.value;pcRenderRegisterList()">' + locOpts + '</select>' +
-      '<button class="icon-btn" onclick="PC.showArchived=!PC.showArchived;pcRenderAll()">' +
-        (PC.showArchived ? 'Hide archived' : 'Show archived') + '</button>' +
+      '<input class="field" id="reg-q" placeholder="Search name, part number, stock tag, ITM number…" ' +
+        'value="' + pcEsc(PC.q) + '" oninput="pcRegSearch(this.value)">' +
+      (pcDecks().length
+        ? '<select class="field" onchange="PC.filterDeck=this.value;PC.filterLoc=&quot;&quot;;pcRenderAll()">' +
+          deckOpts + '</select>' : '') +
+      '<select class="field" onchange="PC.filterFlag=this.value;pcRenderAll()">' + flagOpts + '</select>' +
     '</div><div id="reg-list"></div>';
 
-  document.getElementById('body').innerHTML = html;
   pcRenderRegisterList();
 }
 
-function pcRenderRegisterList() {
-  var q = PC.q.toLowerCase();
-  var rows = pcItemsSorted()
-    .filter(function (i) { return PC.showArchived ? true : !i.archived; })
-    .filter(function (i) { return !PC.filterCat || i.category_id === PC.filterCat; })
-    .filter(function (i) { return !PC.filterLoc || Number(i.by_location[PC.filterLoc] || 0) !== 0; })
-    .filter(function (i) {
-      if (!q) return true;
-      return (i.name || '').toLowerCase().indexOf(q) !== -1 ||
-             (i.part_number || '').toLowerCase().indexOf(q) !== -1 ||
-             (i.sfi_code || '').toLowerCase().indexOf(q) !== -1 ||
-             (i.barcode || '').toLowerCase().indexOf(q) !== -1;
-    });
+function pcRegisterSubtitle() {
+  var cat = PC.catalogue;
+  if (!cat) {
+    return PC.catStatus === 'failed'
+      ? 'No catalogue loaded — the register is whatever has been added here'
+      : 'Loading the register…';
+  }
+  var bits = [Object.keys(PC.state.items).length.toLocaleString() + ' items',
+              Object.keys(cat.locations).length + ' stowage locations'];
+  if (cat.generated) bits.push('TM Master as of ' + cat.generated);
+  if (PC.catStatus === 'stale') bits.push('offline copy');
+  return bits.join(' · ');
+}
 
+var _regTimer = null;
+function pcRegSearch(v) {
+  PC.q = v;
+  clearTimeout(_regTimer);            // 14k rows: filter on a pause, not per keystroke
+  _regTimer = setTimeout(pcRenderRegisterList, 140);
+}
+
+// The filter, in one place, so the list and the count above it can never
+// disagree about what matched.
+function pcRegisterMatches() {
+  var q = PC.q.trim().toLowerCase();
+  var terms = q ? q.split(/\s+/) : [];
+  var locs = pcLocations();
+  var deckWanted = (PC.filterDeck && locs && locs[PC.filterDeck]) ? locs[PC.filterDeck].deck : null;
+  var flag = PC.filterFlag;
+
+  var out = [];
+  var items = PC.state.items;
+  for (var id in items) {
+    if (!Object.prototype.hasOwnProperty.call(items, id)) continue;
+    var i = items[id];
+    if (i.archived && !PC.showArchived) continue;
+
+    if (deckWanted) {
+      var l = locs[i.default_location_id];
+      if (!l || l.deck !== deckWanted) continue;
+    }
+    if (PC.filterLoc && i.default_location_id !== PC.filterLoc) continue;
+
+    if (flag === 'low' && !procurementReduce.isLow(i)) continue;
+    if (flag === 'critical' && !i.critical) continue;
+    if (flag === 'onorder' && !(i.on_order > 0)) continue;
+    if (flag === 'negative' && !(i.on_hand < 0)) continue;
+    if (flag === 'unplaced' && i.default_location_id) continue;
+    if (flag === 'nomin' && procurementReduce.effective(i, 'min_qty')) continue;
+    if (flag === 'blocked' && !i.blocked) continue;
+    if (flag === 'local' && i.source !== 'local') continue;
+
+    if (terms.length) {
+      var hay = (i.item_id + ' ' + i.name + ' ' + (i.part_number || '') + ' ' +
+                 (i.stock_tag || '') + ' ' + (i.tm_item_no || '') + ' ' +
+                 (procurementReduce.effective(i, 'sfi_code') || '')).toLowerCase();
+      var miss = false;
+      for (var t = 0; t < terms.length; t++) {
+        if (hay.indexOf(terms[t]) === -1) { miss = true; break; }
+      }
+      if (miss) continue;
+    }
+    out.push(i);
+  }
+  out.sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+  return out;
+}
+
+function pcRenderRegisterList() {
   var el = document.getElementById('reg-list');
   if (!el) return;
 
-  if (!rows.length) {
-    el.innerHTML = '<div class="empty"><b>Nothing here yet</b>' +
-      (PC.q || PC.filterCat || PC.filterLoc
-        ? 'No item matches that. Clear the filters to see the whole register.'
-        : 'Add the first item, or check in a delivery — receiving something new offers to create it.') +
-      '</div>';
+  if (!PC.catalogue && PC.catStatus !== 'failed' && !Object.keys(PC.state.items).length) {
+    el.innerHTML = '<div class="empty"><b>Fetching the register</b>' +
+      'About 14,000 items and their stowage, from the last TM Master export. ' +
+      'It is cached after the first time.</div>';
     return;
   }
 
-  el.innerHTML = rows.map(function (i) {
-    var low = procurementReduce.isLow(i);
-    var neg = i.on_hand < 0;
-    var bits = [];
-    if (i.part_number) bits.push(pcEsc(i.part_number));
-    if (i.sfi_code) bits.push('SFI ' + pcEsc(i.sfi_code));
-    if (i.category_id) bits.push(pcEsc(pcCatName(i.category_id)));
-    var where = Object.keys(i.by_location).filter(function (l) { return Number(i.by_location[l]) !== 0; })
-      .map(function (l) { return pcEsc(pcLocName(l)) + ' ' + pcFmtQty(i.by_location[l], i.unit); });
-    if (where.length) bits.push(where.join(' · '));
+  // Nothing asked for: offer the decks rather than 14,000 rows nobody scrolls.
+  var browsing = !PC.q.trim() && !PC.filterFlag && !PC.filterDeck && !PC.filterLoc;
+  if (browsing && pcDecks().length) { pcRenderDeckBrowse(el); return; }
 
-    return '<div class="card click" onclick="PC.sel=\'' + pcEsc(i.item_id) + '\';pcRenderAll()">' +
-      '<div class="row">' +
-        '<div class="grow">' +
-          '<div class="ttl">' + pcEsc(i.name || '(unnamed)') +
-            (i.archived ? ' <span class="tag">Archived</span>' : '') +
-            (i.orphan ? ' <span class="tag warn">Needs details</span>' : '') +
-          '</div>' +
-          '<div class="sub">' + (bits.join(' &nbsp;·&nbsp; ') || 'No stock recorded yet') + '</div>' +
-        '</div>' +
-        '<div style="text-align:right">' +
-          '<div class="qty' + (neg ? ' neg' : (low ? ' low' : '')) + '">' + pcFmtQty(i.on_hand, i.unit) +
-            '<span class="qty-unit">' + pcEsc(i.unit) + '</span></div>' +
-          (i.on_order > 0 ? '<div class="sub nowrap">' + pcFmtQty(i.on_order, i.unit) + ' on order</div>' :
-            (low ? '<div class="sub nowrap" style="color:var(--warning)">below min ' + pcFmtQty(i.min_qty, i.unit) + '</div>' : '')) +
-        '</div>' +
-      '</div></div>';
-  }).join('');
+  var rows = pcRegisterMatches();
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty"><b>Nothing matches</b>' +
+      'Clear the search or the filters to come back to the whole register.</div>';
+    return;
+  }
+
+  var shown = rows.slice(0, REGISTER_CAP);
+  var more = rows.length - shown.length;
+
+  el.innerHTML =
+    '<div class="reg-count">' +
+      (more ? 'Showing the first ' + REGISTER_CAP.toLocaleString() + ' of ' +
+              rows.length.toLocaleString() + ' matches — narrow the search to see the rest.'
+            : rows.length.toLocaleString() + ' item' + (rows.length === 1 ? '' : 's')) +
+      ' <button class="link-btn" onclick="pcClearFilters()">Clear</button>' +
+    '</div>' +
+    shown.map(pcRegisterCard).join('');
+}
+
+function pcClearFilters() {
+  PC.q = ''; PC.filterFlag = ''; PC.filterDeck = ''; PC.filterLoc = '';
+  pcRenderAll();
+}
+
+function pcRegisterCard(i) {
+  var low = procurementReduce.isLow(i);
+  var neg = i.on_hand < 0;
+  var bits = [];
+  if (i.part_number) bits.push(pcEsc(i.part_number));
+  if (i.item_type) bits.push(pcEsc(i.item_type));
+  bits.push(i.default_location_id
+    ? pcEsc(pcLocShort(i.default_location_id))
+    : '<span class="muted">no stowage recorded</span>');
+
+  var tags = '';
+  if (i.critical) tags += ' <span class="tag bad">critical</span>';
+  if (i.blocked) tags += ' <span class="tag">blocked</span>';
+  if (i.source === 'local') tags += ' <span class="tag accent">added here</span>';
+  if (i.archived) tags += ' <span class="tag">archived</span>';
+
+  var qty = i.stock_unknown
+    ? '<div class="qty muted" title="The export carries no stock figure for this item">—</div>'
+    : '<div class="qty' + (neg ? ' neg' : (low ? ' low' : '')) + '">' + pcFmtQty(i.on_hand, i.unit) +
+      '<span class="qty-unit">' + pcEsc(i.unit) + '</span></div>';
+
+  var note = i.on_order > 0
+    ? '<div class="sub nowrap">' + pcFmtQty(i.on_order, i.unit) + ' on order</div>'
+    : (low ? '<div class="sub nowrap" style="color:var(--warning)">below min ' +
+             pcFmtQty(procurementReduce.effective(i, 'min_qty'), i.unit) + '</div>'
+           : (i.stock_unknown ? '<div class="sub nowrap muted">not counted</div>' : ''));
+
+  return '<div class="card click" onclick="pcOpenItem(&quot;' + pcEsc(i.item_id) + '&quot;)">' +
+    '<div class="row"><div class="grow">' +
+      '<div class="ttl">' + pcEsc(i.name || '(unnamed)') + tags + '</div>' +
+      '<div class="sub"><span class="mono-id">' + pcEsc(i.item_id) + '</span> &nbsp;·&nbsp; ' +
+        bits.join(' &nbsp;·&nbsp; ') + '</div>' +
+    '</div><div style="text-align:right">' + qty + note + '</div></div></div>';
+}
+
+function pcRenderDeckBrowse(el) {
+  var decks = pcDecks();
+  var items = PC.state.items;
+  var low = 0, crit = 0, unplaced = 0, nomin = 0;
+  for (var k in items) {
+    if (!Object.prototype.hasOwnProperty.call(items, k)) continue;
+    if (procurementReduce.isLow(items[k])) low++;
+    if (items[k].critical) crit++;
+    if (!items[k].default_location_id) unplaced++;
+    if (!procurementReduce.effective(items[k], 'min_qty')) nomin++;
+  }
+
+  el.innerHTML =
+    '<div class="reg-count">Search above, or start from a deck. The register is too big to ' +
+      'list whole — that is what the search is for.</div>' +
+    '<div class="deck-grid">' +
+      decks.map(function (d) {
+        return '<button class="deck-tile" onclick="pcPickDeck(&quot;' + pcEsc(d.location_id) + '&quot;)">' +
+          '<div class="deck-name">' + pcEsc(d.path) + '</div>' +
+          '<div class="deck-count">' + d.items_deep.toLocaleString() + '</div>' +
+          '<div class="deck-sub">items in ' + d.sublocations + ' spaces</div></button>';
+      }).join('') +
+      (unplaced ? '<button class="deck-tile" onclick="pcPickFlag(&quot;unplaced&quot;)">' +
+        '<div class="deck-name">No stowage recorded</div>' +
+        '<div class="deck-count">' + unplaced.toLocaleString() + '</div>' +
+        '<div class="deck-sub">items the export never placed</div></button>' : '') +
+    '</div>' +
+    '<div class="quick-row">' +
+      (low ? '<button class="icon-btn" onclick="pcPickFlag(&quot;low&quot;)">' +
+             low.toLocaleString() + ' below minimum</button>' : '') +
+      (crit ? '<button class="icon-btn" onclick="pcPickFlag(&quot;critical&quot;)">' +
+             crit.toLocaleString() + ' critical spares</button>' : '') +
+      (nomin ? '<button class="icon-btn" onclick="pcPickFlag(&quot;nomin&quot;)">' +
+             nomin.toLocaleString() + ' with no minimum set</button>' : '') +
+    '</div>';
+}
+
+function pcPickDeck(id) { PC.filterDeck = id; PC.filterLoc = ''; pcRenderAll(); }
+function pcPickFlag(f)  { PC.filterFlag = f; pcRenderAll(); }
+
+function pcOpenItem(id) {
+  PC.view = 'register';
+  PC.sel = id;
+  pcRenderAll();
+  // Long text and maker detail live in a second file, fetched once, on the
+  // first item anybody opens.
+  pcEnsureDetail().then(function () {
+    if (PC.sel === id && PC.view === 'register') pcRenderAll();
+  });
 }
 
 // ── View: one item ──────────────────────────────────────────
 
 function pcViewItem(item) {
-  pcHead(item.name || '(unnamed)',
-    [item.part_number ? 'P/N ' + item.part_number : '',
-     item.sfi_code ? 'SFI ' + item.sfi_code : '',
-     pcCatName(item.category_id)].filter(Boolean).join('  ·  ') || 'No part number recorded',
+  var isMirror = item.source === 'tm';
+  var sub = [item.item_id];
+  if (item.part_number) sub.push('P/N ' + item.part_number);
+  var sfi = procurementReduce.effective(item, 'sfi_code');
+  if (sfi) sub.push('SFI ' + sfi);
+  if (item.item_type) sub.push(item.item_type);
+
+  pcHead(item.name || '(unnamed)', sub.join('  ·  '),
     '<button class="icon-btn" onclick="PC.sel=null;pcRenderAll()">← Register</button>');
 
   var low = procurementReduce.isLow(item);
-  var locs = Object.keys(item.by_location);
+  var minEff = procurementReduce.effective(item, 'min_qty');
+  var maxEff = procurementReduce.effective(item, 'max_qty');
+  var minIsPolicy = item.policy && item.policy.min_qty !== undefined && item.policy.min_qty !== null;
+  var maxIsPolicy = item.policy && item.policy.max_qty !== undefined && item.policy.max_qty !== null;
+
+  var onHand = item.stock_unknown
+    ? '<div class="qty muted">—</div><div class="sub muted">the export carries no figure</div>'
+    : '<div class="qty' + (item.on_hand < 0 ? ' neg' : (low ? ' low' : '')) + '">' +
+      pcFmtQty(item.on_hand, item.unit) + '<span class="qty-unit">' + pcEsc(item.unit) + '</span></div>';
 
   var stock =
     '<div class="card"><div class="row" style="align-items:flex-start;flex-wrap:wrap;gap:24px">' +
-      '<div><div class="sub">On hand</div>' +
-        '<div class="qty' + (item.on_hand < 0 ? ' neg' : (low ? ' low' : '')) + '">' +
-        pcFmtQty(item.on_hand, item.unit) + '<span class="qty-unit">' + pcEsc(item.unit) + '</span></div></div>' +
-      '<div><div class="sub">On order</div><div class="qty">' + pcFmtQty(item.on_order, item.unit) + '</div></div>' +
-      '<div><div class="sub">Approved, not ordered</div><div class="qty">' + pcFmtQty(item.requested, item.unit) + '</div></div>' +
+      '<div><div class="sub">On hand</div>' + onHand + '</div>' +
+      '<div><div class="sub">On order</div><div class="qty">' + pcFmtQty(item.on_order, item.unit) + '</div>' +
+        (item.on_order_tm > 0 ? '<div class="sub muted nowrap">' + pcFmtQty(item.on_order_tm, item.unit) +
+          ' from TM Master</div>' : '') + '</div>' +
+      '<div><div class="sub">Approved, not ordered</div><div class="qty">' +
+        pcFmtQty(item.requested, item.unit) + '</div></div>' +
       '<div><div class="sub">Min / max</div><div class="qty">' +
-        (item.min_qty === null || item.min_qty === undefined ? '—' : pcFmtQty(item.min_qty, item.unit)) + ' / ' +
-        (item.max_qty === null || item.max_qty === undefined ? '—' : pcFmtQty(item.max_qty, item.unit)) + '</div></div>' +
+        (minEff === null || minEff === undefined ? '—' : pcFmtQty(minEff, item.unit)) +
+        (minIsPolicy ? '<span class="policy-chip">IDMS</span>' : '') + ' / ' +
+        (maxEff === null || maxEff === undefined ? '—' : pcFmtQty(maxEff, item.unit)) +
+        (maxIsPolicy ? '<span class="policy-chip">IDMS</span>' : '') + '</div></div>' +
       '<div class="grow"></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="btn sm" onclick="pcMoveForm(\'' + item.item_id + '\',\'receipt\')">Receive</button>' +
-        '<button class="btn sm ghost" onclick="pcMoveForm(\'' + item.item_id + '\',\'issue\')">Issue</button>' +
-        '<button class="btn sm ghost" onclick="pcMoveForm(\'' + item.item_id + '\',\'count\')">Count</button>' +
-        '<button class="btn sm ghost" onclick="pcMoveForm(\'' + item.item_id + '\',\'transfer\')">Move</button>' +
-        '<button class="btn sm ghost" onclick="pcMoveForm(\'' + item.item_id + '\',\'adjustment\')">Adjust</button>' +
+        '<button class="btn sm" onclick="pcMoveForm(&quot;' + item.item_id + '&quot;,&quot;receipt&quot;)">Receive</button>' +
+        '<button class="btn sm ghost" onclick="pcMoveForm(&quot;' + item.item_id + '&quot;,&quot;issue&quot;)">Issue</button>' +
+        '<button class="btn sm ghost" onclick="pcMoveForm(&quot;' + item.item_id + '&quot;,&quot;count&quot;)">Count</button>' +
+        '<button class="btn sm ghost" onclick="pcMoveForm(&quot;' + item.item_id + '&quot;,&quot;transfer&quot;)">Move</button>' +
+        '<button class="btn sm ghost" onclick="pcMoveForm(&quot;' + item.item_id + '&quot;,&quot;adjustment&quot;)">Adjust</button>' +
       '</div>' +
-    '</div></div>';
+    '</div>' +
+    (item.stock_unknown
+      ? '<div class="mirror-note">The stock column was blank for this item in the export, so nothing ' +
+        'is claimed about how many there are. Record a count and it becomes a real number.</div>' : '') +
+    '</div>';
 
+  // Flags TM Master maintains. Only shown when one is actually set — a row of
+  // "no" against five compliance fields tells a reader nothing.
+  var flags = [];
+  if (item.critical) flags.push('<span class="tag bad">critical occurrences</span>');
+  if (item.blocked) flags.push('<span class="tag warn">blocked</span>');
+  if (item.controlled) flags.push('<span class="tag warn">controlled goods</span>');
+  if (item.review_minmax) flags.push('<span class="tag">flagged for min/max review</span>');
+  if (item.validated) flags.push('<span class="tag good">validated</span>');
+  if (item.source === 'local') flags.push('<span class="tag accent">added in IDMS</span>');
+
+  var det = pcDetailFor(item.item_id) || {};
+  var cons = item.consumption || {};
+  var consAny = (cons[2026] || 0) + (cons[2025] || 0) + (cons[2024] || 0);
+
+  var kv = [];
+  function row(k, v) { if (v !== null && v !== undefined && v !== '') kv.push([k, v]); }
+  row('Stowage', item.default_location_id
+    ? pcEsc(pcLocName(item.default_location_id)) +
+      (pcLocKnown(item.default_location_id) ? '' : ' <span class="tag warn">not in the current layout</span>')
+    : '<span class="muted">none recorded</span>');
+  row('Unit of measure', pcEsc(item.unit));
+  row('Item category', pcEsc(item.item_category));
+  row('Supplier', pcEsc((item.suppliers[0] && item.suppliers[0].supplier_id) || ''));
+  row("Supplier's ref", pcEsc((item.suppliers[0] && item.suppliers[0].supplier_part_number) || ''));
+  row('Maker', pcEsc(det.maker));
+  row("Maker's type", pcEsc(det.makers_type));
+  row('Stock tag', pcEsc(item.stock_tag));
+  row('TM item no.', pcEsc(item.tm_item_no));
+  row('Est. delivery', item.est_delivery_days ? item.est_delivery_days + ' days' : '');
+  row('Last known price', item.last_known_price
+    ? pcEsc(item.currency || '') + ' ' + item.last_known_price +
+      (det.last_known_price_date ? ' <span class="muted">(' + pcEsc(det.last_known_price_date) + ')</span>' : '')
+    : '');
+  row('Qty in use', item.qty_in_use || '');
+  row('On draft', item.on_draft || '');
+  if (consAny) {
+    row('Consumption', '2026: ' + (cons[2026] || 0) + ' · 2025: ' + (cons[2025] || 0) +
+        ' · 2024: ' + (cons[2024] || 0));
+  }
+
+  var mirror = '<div class="card' + (isMirror ? ' mirror' : '') + '">' +
+    '<div class="row"><div class="grow"><div class="ttl">' +
+      (isMirror ? 'What TM Master says' : 'Details') + '</div></div></div>' +
+    (flags.length ? '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' +
+       flags.join('') + '</div>' : '') +
+    '<div class="kv">' + kv.map(function (r2) {
+      return '<div><span class="k">' + r2[0] + '</span><span class="v">' + r2[1] + '</span></div>';
+    }).join('') + '</div>' +
+    (det.specification ? '<div class="mirror-note"><b>Specification:</b> ' +
+        pcEsc(det.specification) + '</div>' : '') +
+    (det.unit_specific_remarks ? '<div class="mirror-note"><b>Remarks:</b> ' +
+        pcEsc(det.unit_specific_remarks) + '</div>' : '') +
+    (isMirror
+      ? '<div class="mirror-note">Mirrored from the TM Master export of ' +
+        pcEsc((PC.catalogue && PC.catalogue.generated) || '—') +
+        '. TM Master is the system of record, so these are read here and corrected there — ' +
+        'use <b>Propose a correction</b> and an officer applies it.</div>'
+      : '') +
+    '</div>';
+
+  // Where the stock actually is now, once movements are layered on the baseline.
+  var locs = Object.keys(item.by_location);
   var byLoc = !locs.length ? '' :
     '<div class="card"><div class="sub" style="margin-bottom:8px">Where it is</div>' +
     '<div class="grid-wrap"><table class="grid"><tbody>' + locs.map(function (l) {
@@ -970,31 +1430,52 @@ function pcViewItem(item) {
         pcFmtQty(v, item.unit) + ' ' + pcEsc(item.unit) + '</td></tr>';
     }).join('') + '</tbody></table></div></div>';
 
+  // Proposals: recorded, shown, never applied.
+  var props = !item.proposals.length ? '' :
+    '<div class="card"><div class="ttl">Proposed corrections</div>' +
+    '<div class="sub" style="margin-bottom:10px">Recorded here for an officer to apply in TM Master. ' +
+      'Nothing on this page changes until the next export carries it back.</div>' +
+    item.proposals.map(function (pr) {
+      var fields = Object.keys(pr.fields || {})
+        .filter(function (k) { return k !== 'item_id' && k !== 'reason' && k !== 'proposal_id'; })
+        .map(function (k) { return k + ' → ' + pcEsc(String(pr.fields[k])); });
+      return '<div class="sub" style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px">' +
+        '<b>' + pcEsc(pr.actor || '—') + '</b> · ' + pcDate(pr.timestamp) + '<br>' +
+        pcEsc(fields.join(', ') || '(no fields)') +
+        (pr.reason ? '<br><span class="muted">' + pcEsc(pr.reason) + '</span>' : '') + '</div>';
+    }).join('') + '</div>';
+
   var moves = item.movements.slice().reverse();
   var ledger = '<div class="card"><div class="sub" style="margin-bottom:8px">Ledger — ' +
-    moves.length + ' movement' + (moves.length === 1 ? '' : 's') + '</div>' +
-    (!moves.length ? '<div class="muted" style="font-size:13px">Nothing recorded yet.</div>' :
+    moves.length + ' movement' + (moves.length === 1 ? '' : 's') +
+    (item.superseded_movements
+      ? ' · ' + item.superseded_movements + ' already absorbed into the TM Master baseline'
+      : '') + '</div>' +
+    (!moves.length ? '<div class="muted" style="font-size:13px">Nothing recorded here yet. ' +
+      'The quantity above is the TM Master baseline.</div>' :
     '<div class="grid-wrap"><table class="grid"><thead><tr><th>When</th><th>What</th><th>Where</th>' +
     '<th style="text-align:right">Change</th><th>Who</th></tr></thead><tbody>' +
     moves.map(function (m) {
       var what = { receipt: 'Received', issue: 'Issued', adjustment: 'Adjusted',
                    transfer: 'Moved', count: 'Counted' }[m.kind] || m.kind;
       var detail = [];
+      if (m.superseded) detail.push('already in the baseline');
       if (m.po_id) {
         var po = PC.state.purchase_orders[m.po_id];
-        detail.push('against ' + pcEsc((po && po.po_number) || m.po_id.slice(0, 8)));
+        detail.push('against ' + pcEsc((po && po.po_number) || String(m.po_id).slice(0, 8)));
       }
       if (m.equipment_code) detail.push('for ' + pcEsc(m.equipment_code));
       if (m.reason) detail.push(pcEsc(m.reason));
-      if (m.kind === 'count') detail.push('book said ' + pcFmtQty(m.book_qty, item.unit));
+      if (m.kind === 'count' && !m.superseded) detail.push('book said ' + pcFmtQty(m.book_qty, item.unit));
       if (m.note) detail.push(pcEsc(m.note));
-      var change = m.kind === 'transfer'
-        ? pcFmtQty(m.qty, item.unit) + ' →'
-        : (m.delta > 0 ? '+' : '') + pcFmtQty(m.delta, item.unit);
+      var change = m.superseded ? '—'
+        : (m.kind === 'transfer' ? pcFmtQty(m.qty, item.unit) + ' →'
+                                 : (m.delta > 0 ? '+' : '') + pcFmtQty(m.delta, item.unit));
       var where = m.kind === 'transfer'
-        ? pcEsc(pcLocName(m.location_id)) + ' → ' + pcEsc(pcLocName(m.to_location_id))
-        : pcEsc(pcLocName(m.location_id));
-      return '<tr><td class="nowrap">' + pcDate(m.timestamp) + '</td>' +
+        ? pcEsc(pcLocShort(m.location_id)) + ' → ' + pcEsc(pcLocShort(m.to_location_id))
+        : pcEsc(pcLocShort(m.location_id));
+      return '<tr' + (m.superseded ? ' style="opacity:.55"' : '') + '>' +
+        '<td class="nowrap">' + pcDate(m.timestamp) + '</td>' +
         '<td>' + what + (detail.length ? '<div class="sub">' + detail.join(' · ') + '</div>' : '') + '</td>' +
         '<td>' + where + '</td>' +
         '<td class="num"' + (m.delta < 0 ? ' style="color:var(--danger)"' : (m.delta > 0 ? ' style="color:var(--success)"' : '')) + '>' +
@@ -1002,14 +1483,136 @@ function pcViewItem(item) {
         '<td class="muted nowrap">' + pcEsc(m.actor || '—') + '</td></tr>';
     }).join('') + '</tbody></table></div>') + '</div>';
 
-  var footer = '<div style="display:flex;gap:10px;margin-top:6px">' +
-    '<button class="icon-btn" onclick="pcItemForm(\'' + item.item_id + '\')">Edit details</button>' +
-    (item.archived
-      ? '<button class="icon-btn" onclick="pcArchiveItem(\'' + item.item_id + '\',false)">Restore</button>'
-      : '<button class="icon-btn" onclick="pcArchiveItem(\'' + item.item_id + '\',true)">Archive</button>') +
+  var footer = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">' +
+    '<button class="icon-btn" onclick="pcPolicyForm(&quot;' + item.item_id + '&quot;)">Set minimum &amp; policy</button>' +
+    (isMirror
+      ? '<button class="icon-btn" onclick="pcProposeForm(&quot;' + item.item_id + '&quot;)">Propose a correction</button>'
+      : '<button class="icon-btn" onclick="pcItemForm(&quot;' + item.item_id + '&quot;)">Edit details</button>') +
+    (item.source === 'local'
+      ? (item.archived
+          ? '<button class="icon-btn" onclick="pcArchiveItem(&quot;' + item.item_id + '&quot;,false)">Restore</button>'
+          : '<button class="icon-btn" onclick="pcArchiveItem(&quot;' + item.item_id + '&quot;,true)">Archive</button>')
+      : '') +
     '</div>';
 
-  document.getElementById('body').innerHTML = stock + byLoc + ledger + footer;
+  document.getElementById('body').innerHTML = stock + mirror + byLoc + props + ledger + footer;
+}
+
+// ── IDMS's own policy over the mirror (§42.14) ──────────────
+
+function pcPolicyForm(itemId) {
+  var it = PC.state.items[itemId];
+  if (!it) return;
+  var pol = it.policy || {};
+  function v(f) {
+    return (pol[f] === undefined || pol[f] === null) ? '' : pol[f];
+  }
+
+  pcOverlay('<div class="sheet"><h3>Minimum &amp; policy</h3>' +
+    '<div class="sheet-sub">' + pcEsc(it.name) + '. This is IDMS’s own reorder policy, kept ' +
+      'here rather than in TM Master — 13,885 of the items in the export carry no minimum at all, ' +
+      'and a register nobody can set one on is a register nobody can act on. Leave a field blank to ' +
+      'fall back to whatever TM Master says.</div>' +
+    '<div class="fieldrow">' +
+      '<div><label class="lbl">Minimum' +
+        (it.min_qty ? ' <span class="muted">(TM: ' + pcEsc(it.min_qty) + ')</span>' : '') +
+        '</label><input class="field" id="pol-min" type="number" step="any" value="' + pcEsc(v('min_qty')) + '"></div>' +
+      '<div><label class="lbl">Maximum' +
+        (it.max_qty ? ' <span class="muted">(TM: ' + pcEsc(it.max_qty) + ')</span>' : '') +
+        '</label><input class="field" id="pol-max" type="number" step="any" value="' + pcEsc(v('max_qty')) + '"></div>' +
+      '<div><label class="lbl">Reorder qty</label>' +
+        '<input class="field" id="pol-reorder" type="number" step="any" value="' + pcEsc(v('reorder_qty')) + '"></div>' +
+    '</div>' +
+    '<div class="fieldrow">' +
+      '<div><label class="lbl">SFI code</label>' +
+        '<input class="field" id="pol-sfi" placeholder="360.001" value="' + pcEsc(v('sfi_code')) + '"></div>' +
+      '<div><label class="lbl">Barcode</label>' +
+        '<input class="field" id="pol-barcode" value="' + pcEsc(v('barcode')) + '"></div>' +
+    '</div>' +
+    '<div class="sheet-sub" style="margin:0 0 10px">An SFI code joins this part to the asset register, ' +
+      'and through it to task records and failure history. The export carries none.</div>' +
+    '<label class="lbl">Note</label><input class="field" id="pol-notes" value="' + pcEsc(v('notes')) + '">' +
+    '<div class="err" id="pol-err"></div>' +
+    '<div class="sheet-actions">' +
+      '<button class="btn ghost" onclick="pcCloseOverlay()">Cancel</button>' +
+      '<button class="btn" id="pol-save" onclick="pcPolicySave(&quot;' + itemId + '&quot;)">Save policy</button>' +
+    '</div></div>');
+}
+
+async function pcPolicySave(itemId) {
+  var payload = { item_id: itemId };
+  // Blank clears the overlay back to TM Master, which is why every field is
+  // sent: an absent key would mean "unchanged" and there would be no way back.
+  payload.min_qty     = pcNum('pol-min');
+  payload.max_qty     = pcNum('pol-max');
+  payload.reorder_qty = pcNum('pol-reorder');
+  payload.sfi_code    = pcVal('pol-sfi') || null;
+  payload.barcode     = pcVal('pol-barcode') || null;
+  payload.notes       = pcVal('pol-notes') || null;
+
+  var btn = document.getElementById('pol-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await pcAppendEvent('item_policy_set', payload);
+    pcCloseOverlay();
+    pcToast('Policy saved.');
+  } catch (e) {
+    document.getElementById('pol-err').textContent = pcErrText(e);
+    btn.disabled = false; btn.textContent = 'Save policy';
+  }
+}
+
+// ── Proposals against TM Master (§42.14) ────────────────────
+
+var PROPOSE_FIELDS = [
+  ['name', 'Name'], ['uom', 'Unit of measure'], ['supplier', 'Supplier'],
+  ['makers_part_no', "Maker's part no"], ['location_path', 'Stowage'],
+  ['item_category', 'Item category'], ['other', 'Something else']
+];
+
+function pcProposeForm(itemId) {
+  var it = PC.state.items[itemId];
+  if (!it) return;
+  pcOverlay('<div class="sheet"><h3>Propose a correction</h3>' +
+    '<div class="sheet-sub">' + pcEsc(it.name) + '. TM Master is the system of record for this ' +
+      'item, so nothing here changes it. The proposal is recorded against the item with your name ' +
+      'on it, an officer makes the change in TM Master, and the next export carries it back.</div>' +
+    '<label class="lbl">What is wrong</label>' +
+    '<select class="field" id="prp-field">' + PROPOSE_FIELDS.map(function (f) {
+      return '<option value="' + f[0] + '">' + f[1] + '</option>';
+    }).join('') + '</select>' +
+    '<label class="lbl">What it should say</label>' +
+    '<input class="field" id="prp-value" placeholder="The corrected value">' +
+    '<label class="lbl">Why (optional)</label>' +
+    '<input class="field" id="prp-reason" placeholder="The label on the shelf says otherwise">' +
+    '<div class="err" id="prp-err"></div>' +
+    '<div class="sheet-actions">' +
+      '<button class="btn ghost" onclick="pcCloseOverlay()">Cancel</button>' +
+      '<button class="btn" id="prp-save" onclick="pcProposeSave(&quot;' + itemId + '&quot;)">Record it</button>' +
+    '</div></div>');
+}
+
+async function pcProposeSave(itemId) {
+  var value = pcVal('prp-value');
+  if (!value) {
+    document.getElementById('prp-err').textContent = 'What should it say?';
+    return;
+  }
+  var fields = {};
+  fields[pcVal('prp-field') || 'other'] = value;
+  var btn = document.getElementById('prp-save');
+  btn.disabled = true; btn.textContent = 'Recording…';
+  try {
+    await pcAppendEvent('item_change_proposed', {
+      item_id: itemId, proposal_id: pcUuid(),
+      fields: fields, reason: pcVal('prp-reason') || null
+    });
+    pcCloseOverlay();
+    pcToast('Recorded — an officer applies it in TM Master.');
+  } catch (e) {
+    document.getElementById('prp-err').textContent = pcErrText(e);
+    btn.disabled = false; btn.textContent = 'Record it';
+  }
 }
 
 // ── Item create / edit ──────────────────────────────────────
@@ -1251,6 +1854,116 @@ function pcReqFromLow() {
   }));
 }
 
+// ── Item picker (§42.14) ────────────────────────────────────
+// A dropdown of 14,487 options is not a control, it is a hang. Lines take a
+// search box instead: type, pick a hit, or leave the text as written and the
+// line stays free text — which is the normal case for a part that has never
+// been aboard (§42.8).
+
+function pcItemSearch(q, limit) {
+  q = String(q || '').trim().toLowerCase();
+  if (!q) return [];
+  var terms = q.split(/\s+/);
+  var items = PC.state.items;
+  var out = [];
+  for (var id in items) {
+    if (!Object.prototype.hasOwnProperty.call(items, id)) continue;
+    var i = items[id];
+    if (i.archived) continue;
+    var hay = (i.item_id + ' ' + i.name + ' ' + (i.part_number || '') + ' ' +
+               (i.stock_tag || '')).toLowerCase();
+    var ok = true;
+    for (var t = 0; t < terms.length; t++) {
+      if (hay.indexOf(terms[t]) === -1) { ok = false; break; }
+    }
+    if (ok) {
+      out.push(i);
+      if (out.length >= (limit || 20) * 3) break;   // enough to sort meaningfully
+    }
+  }
+  // A name that starts with what was typed is almost always the one wanted.
+  out.sort(function (a, b) {
+    var an = (a.name || '').toLowerCase(), bn = (b.name || '').toLowerCase();
+    var as = an.indexOf(terms[0]) === 0 ? 0 : 1, bs = bn.indexOf(terms[0]) === 0 ? 0 : 1;
+    if (as !== bs) return as - bs;
+    return an.localeCompare(bn);
+  });
+  return out.slice(0, limit || 20);
+}
+
+// `kind` is the array being edited: 'req' or 'po'.
+function pcPickerHtml(kind, idx, line) {
+  var chosen = line.item_id ? PC.state.items[line.item_id] : null;
+  var shown = chosen ? chosen.name : (line.description || '');
+  return '<div class="picker">' +
+    '<input class="field" id="pk-' + kind + '-' + idx + '" autocomplete="off" ' +
+      'placeholder="Search the register, or just describe it" ' +
+      'value="' + pcEsc(shown) + '" ' +
+      'oninput="pcPickerType(&quot;' + kind + '&quot;,' + idx + ',this.value)" ' +
+      'onfocus="pcPickerType(&quot;' + kind + '&quot;,' + idx + ',this.value)">' +
+    (chosen ? '<div class="ph-sub" style="font-size:11px;color:var(--text-muted);margin-top:3px">' +
+       pcEsc(chosen.item_id) + ' · ' + pcFmtQty(chosen.on_hand, chosen.unit) + ' ' +
+       pcEsc(chosen.unit) + ' on hand' +
+       ' <button class="link-btn" onclick="pcPickerClear(&quot;' + kind + '&quot;,' + idx + ')">clear</button></div>' : '') +
+    '<div class="picker-results" id="pkr-' + kind + '-' + idx + '" style="display:none"></div>' +
+    '</div>';
+}
+
+function pcPickerLines(kind) { return kind === 'req' ? PC._reqLines : PC._poLines; }
+
+var _pkTimer = null;
+function pcPickerType(kind, idx, value) {
+  var lines = pcPickerLines(kind);
+  if (!lines || !lines[idx]) return;
+  // Typing over a chosen item unpicks it — the text is now the description
+  // until something is chosen again.
+  lines[idx].item_id = null;
+  lines[idx].description = value;
+  clearTimeout(_pkTimer);
+  _pkTimer = setTimeout(function () { pcPickerRender(kind, idx, value); }, 130);
+}
+
+function pcPickerRender(kind, idx, value) {
+  var box = document.getElementById('pkr-' + kind + '-' + idx);
+  if (!box) return;
+  var hits = pcItemSearch(value, 20);
+  if (!String(value || '').trim()) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  if (!hits.length) {
+    box.innerHTML = '<div class="picker-none">Nothing in the register matches. ' +
+      'Leave it as written and the line stays free text — it becomes a real item when it arrives.</div>';
+    return;
+  }
+  box.innerHTML = hits.map(function (i) {
+    var where = i.default_location_id ? pcLocShort(i.default_location_id) : 'no stowage recorded';
+    return '<div class="picker-hit" onclick="pcPickerChoose(&quot;' + kind + '&quot;,' + idx +
+      ',&quot;' + pcEsc(i.item_id) + '&quot;)">' +
+      pcEsc(i.name) +
+      '<div class="ph-sub">' + pcEsc(i.item_id) +
+        (i.part_number ? ' · ' + pcEsc(i.part_number) : '') +
+        ' · ' + (i.stock_unknown ? 'stock not counted' : pcFmtQty(i.on_hand, i.unit) + ' ' + pcEsc(i.unit)) +
+        ' · ' + pcEsc(where) + '</div></div>';
+  }).join('');
+}
+
+function pcPickerChoose(kind, idx, itemId) {
+  var lines = pcPickerLines(kind);
+  var it = PC.state.items[itemId];
+  if (!lines || !lines[idx] || !it) return;
+  lines[idx].item_id = itemId;
+  lines[idx].description = '';
+  lines[idx].unit = it.unit;
+  if (kind === 'req') pcRenderReqLines(); else pcRenderPoLines();
+}
+
+function pcPickerClear(kind, idx) {
+  var lines = pcPickerLines(kind);
+  if (!lines || !lines[idx]) return;
+  lines[idx].item_id = null;
+  lines[idx].description = '';
+  if (kind === 'req') pcRenderReqLines(); else pcRenderPoLines();
+}
+
 // ── View: Requisitions ──────────────────────────────────────
 
 var REQ_TAG = { draft: '', submitted: 'accent', approved: 'good', rejected: 'bad',
@@ -1389,19 +2102,9 @@ function pcReqForm(prefillLines, editReqId) {
 }
 
 function pcRenderReqLines() {
-  var itemOpts = function (sel) {
-    return '<option value="">— describe it —</option>' +
-      pcItemsSorted().filter(function (i) { return !i.archived; }).map(function (i) {
-        return '<option value="' + pcEsc(i.item_id) + '"' + (sel === i.item_id ? ' selected' : '') +
-          '>' + pcEsc(i.name) + '</option>';
-      }).join('');
-  };
   document.getElementById('rf-lines').innerHTML = PC._reqLines.map(function (l, i) {
     return '<div class="line">' +
-      '<select class="field f-desc" onchange="pcReqLineSet(' + i + ',\'item_id\',this.value)">' +
-        itemOpts(l.item_id) + '</select>' +
-      (l.item_id ? '' : '<input class="field f-desc" placeholder="What is it?" value="' +
-        pcEsc(l.description) + '" oninput="PC._reqLines[' + i + '].description=this.value">') +
+      pcPickerHtml('req', i, l) +
       '<input class="field f-qty" type="number" step="any" min="0" value="' + pcEsc(l.qty) +
         '" oninput="PC._reqLines[' + i + '].qty=Number(this.value)">' +
       '<select class="field f-unit" onchange="PC._reqLines[' + i + '].unit=this.value">' +
@@ -1411,14 +2114,6 @@ function pcRenderReqLines() {
   }).join('');
 }
 
-function pcReqLineSet(i, k, v) {
-  PC._reqLines[i][k] = v || null;
-  if (k === 'item_id' && v) {
-    var it = PC.state.items[v];
-    if (it) { PC._reqLines[i].unit = it.unit; PC._reqLines[i].description = ''; }
-  }
-  pcRenderReqLines();
-}
 function pcReqAddLine() {
   PC._reqLines.push({ line_id: pcUuid(), item_id: null, description: '', qty: 1, unit: 'ea', notes: '' });
   pcRenderReqLines();
@@ -1615,18 +2310,9 @@ function pcPoForm(prefillLines) {
 }
 
 function pcRenderPoLines() {
-  var itemOpts = function (sel) {
-    return '<option value="">— describe it —</option>' +
-      pcItemsSorted().filter(function (i) { return !i.archived; }).map(function (i) {
-        return '<option value="' + pcEsc(i.item_id) + '"' + (sel === i.item_id ? ' selected' : '') +
-          '>' + pcEsc(i.name) + '</option>';
-      }).join('');
-  };
   document.getElementById('pf-lines').innerHTML = PC._poLines.map(function (l, i) {
     return '<div class="line">' +
-      '<select class="field f-desc" onchange="pcPoLineSet(' + i + ',this.value)">' + itemOpts(l.item_id) + '</select>' +
-      (l.item_id ? '' : '<input class="field f-desc" placeholder="What is it?" value="' +
-        pcEsc(l.description) + '" oninput="PC._poLines[' + i + '].description=this.value">') +
+      pcPickerHtml('po', i, l) +
       '<input class="field f-qty" type="number" step="any" min="0" value="' + pcEsc(l.qty_ordered) +
         '" oninput="PC._poLines[' + i + '].qty_ordered=Number(this.value)">' +
       '<select class="field f-unit" onchange="PC._poLines[' + i + '].unit=this.value">' +
@@ -1639,14 +2325,6 @@ function pcRenderPoLines() {
   }).join('');
 }
 
-function pcPoLineSet(i, v) {
-  PC._poLines[i].item_id = v || null;
-  if (v) {
-    var it = PC.state.items[v];
-    if (it) { PC._poLines[i].unit = it.unit; PC._poLines[i].description = ''; }
-  }
-  pcRenderPoLines();
-}
 function pcPoAddLine() {
   PC._poLines.push({ line_id: pcUuid(), item_id: null, description: '',
                      qty_ordered: 1, unit: 'ea', unit_price: null });
@@ -1884,20 +2562,22 @@ async function pcCheckinCommit(poId) {
   }
 }
 
+// The no-order receipt picks its item the same way lines do — through a search,
+// because the register is far too big for a dropdown.
+var PC_NP_ITEM = null;
+
 function pcCheckinNoPo() {
-  var items = pcItemsSorted().filter(function (i) { return !i.archived; });
-  if (!items.length) {
-    pcToast('Add an item first — then it can be received.');
-    pcItemForm(null);
-    return;
-  }
+  PC_NP_ITEM = null;
   pcOverlay('<div class="sheet"><h3>Received without an order</h3>' +
     '<div class="sheet-sub">Stores bought ashore, a part handed over by a rider. Legitimate, and ' +
       'recorded as exactly that — a receipt with no order behind it.</div>' +
     '<label class="lbl">Item</label>' +
-    '<select class="field" id="np-item">' + items.map(function (i) {
-      return '<option value="' + pcEsc(i.item_id) + '">' + pcEsc(i.name) + '</option>';
-    }).join('') + '</select>' +
+    '<div class="picker" style="margin-bottom:12px">' +
+      '<input class="field" id="np-q" autocomplete="off" placeholder="Search the register" ' +
+        'oninput="pcNpSearch(this.value)" onfocus="pcNpSearch(this.value)">' +
+      '<div class="picker-results" id="np-results" style="display:none"></div>' +
+      '<div id="np-chosen" class="sub" style="margin-top:4px"></div>' +
+    '</div>' +
     '<div class="fieldrow">' +
       '<div><label class="lbl">Quantity</label><input class="field" id="np-qty" type="number" step="any" min="0"></div>' +
       '<div><label class="lbl">Into</label><select class="field" id="np-loc">' +
@@ -1911,14 +2591,41 @@ function pcCheckinNoPo() {
     '</div></div>');
 }
 
+function pcNpSearch(v) {
+  var box = document.getElementById('np-results');
+  if (!box) return;
+  var hits = pcItemSearch(v, 20);
+  if (!String(v || '').trim()) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  box.innerHTML = hits.length
+    ? hits.map(function (i) {
+        return '<div class="picker-hit" onclick="pcNpChoose(&quot;' + pcEsc(i.item_id) + '&quot;)">' +
+          pcEsc(i.name) + '<div class="ph-sub">' + pcEsc(i.item_id) +
+          (i.part_number ? ' · ' + pcEsc(i.part_number) : '') + '</div></div>';
+      }).join('')
+    : '<div class="picker-none">Nothing matches. Add it as a new item first if it has never ' +
+      'been aboard.</div>';
+}
+
+function pcNpChoose(id) {
+  PC_NP_ITEM = id;
+  var it = PC.state.items[id];
+  document.getElementById('np-q').value = it ? it.name : id;
+  document.getElementById('np-results').style.display = 'none';
+  document.getElementById('np-chosen').innerHTML = it
+    ? pcEsc(it.item_id) + ' · ' + (it.stock_unknown ? 'stock not counted'
+        : pcFmtQty(it.on_hand, it.unit) + ' ' + pcEsc(it.unit) + ' on hand') : '';
+}
+
 async function pcCheckinNoPoSave() {
   var qty = pcNum('np-qty');
+  if (!PC_NP_ITEM) { document.getElementById('np-err').textContent = 'Pick the item first.'; return; }
   if (qty === null || !(qty > 0)) { document.getElementById('np-err').textContent = 'A quantity, please.'; return; }
   var btn = document.getElementById('np-save');
   btn.disabled = true; btn.textContent = 'Receiving…';
   try {
     await pcAppendEvent('stock_movement', {
-      movement_id: pcUuid(), item_id: pcVal('np-item'), kind: 'receipt',
+      movement_id: pcUuid(), item_id: PC_NP_ITEM, kind: 'receipt',
       qty: qty, location_id: pcVal('np-loc'), note: pcVal('np-note') || null
     });
     pcCloseOverlay();
@@ -1963,8 +2670,8 @@ function pcViewExceptions() {
 function pcViewSettings() {
   var s = PC.cfg.settings;
   var editable = pcCanApprove();
-  pcHead('Settings', 'Storerooms, categories, units and suppliers are read from procurementconfig.json — ' +
-    'this page never writes them', '');
+  pcHead('Settings', 'The item master and the stowage tree come from TM Master and are read, ' +
+    'never written. Only the block below belongs to this app.', '');
 
   document.getElementById('body').innerHTML =
     '<div class="card"><div class="ttl">Approval and receiving</div>' +
@@ -1980,7 +2687,9 @@ function pcViewSettings() {
     '<div class="fieldrow" style="max-width:640px">' +
       '<div><label class="lbl">Default receiving location</label>' +
         '<select class="field" id="st-recv"' + (editable ? '' : ' disabled') + '>' +
-        pcLocOptions((s.receiving_locations || [])[0] || '') + '</select></div>' +
+        // Show what is actually in force, not a blank that the browser fills
+        // with whatever happens to sort first.
+        pcLocOptions(pcReceivingDefault()) + '</select></div>' +
       '<div><label class="lbl">Chase approved lines after (days)</label>' +
         '<input class="field" id="st-stale" type="number" min="1" value="' +
         pcEsc(s.exception_stale_days || 14) + '"' + (editable ? '' : ' disabled') + '></div>' +
@@ -1990,16 +2699,7 @@ function pcViewSettings() {
               : '<div class="sub muted">Only approvers can change these.</div>') +
     '</div>' +
 
-    '<div class="card"><div class="ttl">Taxonomy</div>' +
-    '<div class="sub" style="margin-bottom:12px">Owned by the physical-structure work (§42.5). ' +
-      'Ids are opaque, hierarchy is <code>parent_id</code>, and an id this file does not explain still ' +
-      'renders and still counts — re-organising the storerooms can never hide stock.</div>' +
-    '<div class="grid-wrap"><table class="grid"><tbody>' +
-      '<tr><td>Locations</td><td class="num">' + PC.cfg.locations.length + '</td></tr>' +
-      '<tr><td>Categories</td><td class="num">' + PC.cfg.categories.length + '</td></tr>' +
-      '<tr><td>Units</td><td class="num">' + PC.cfg.units.length + '</td></tr>' +
-      '<tr><td>Suppliers</td><td class="num">' + PC.cfg.suppliers.length + '</td></tr>' +
-    '</tbody></table></div></div>' +
+    pcCatalogueCard() +
 
     '<div class="card"><div class="ttl">This device</div>' +
     '<div class="sub">' + PC.events.length + ' events replayed · ' +
@@ -2061,6 +2761,67 @@ async function pcSettingsSave() {
   } finally {
     btn.disabled = false; btn.textContent = 'Save settings';
   }
+}
+
+// §42.14. What the register is standing on, and how fresh it is. This is the
+// first thing to look at when a quantity on screen disagrees with the shelf.
+function pcCatalogueCard() {
+  var cat = PC.catalogue;
+  var status = {
+    fresh:  ['good',  'Up to date', 'Fetched from OneDrive this session.'],
+    cached: ['accent', 'Cached', 'Loaded from this device; checking OneDrive for a newer one.'],
+    stale:  ['warn',  'Offline copy', 'OneDrive could not be reached, so this is the last copy this device pulled down.'],
+    failed: ['bad',   'Not loaded', 'No catalogue on OneDrive and none cached here. Run the builder — see below.'],
+    none:   ['',      'Loading…', '']
+  }[PC.catStatus] || ['', PC.catStatus, ''];
+
+  var counts = (cat && cat.counts) || {};
+  var rows = [
+    ['Items', counts.items],
+    ['Stowage locations', counts.locations],
+    ['No stowage recorded', counts.no_location],
+    ['No stock figure in the export', counts.blank_stock],
+    ['Negative on hand', counts.negative_stock],
+    ['On order in TM Master', counts.on_order],
+    ['Critical occurrences', counts.critical],
+    ['Blocked', counts.blocked]
+  ].filter(function (r) { return r[1] !== undefined; });
+
+  return '<div class="card mirror"><div class="row"><div class="grow">' +
+    '<div class="ttl">The register <span class="tag ' + status[0] + '">' + status[1] + '</span></div>' +
+    '<div class="sub">' + pcEsc(status[2]) + '</div></div>' +
+    '<button class="icon-btn" onclick="pcRefreshCatalogue()">Check for a new one</button></div>' +
+    (cat
+      ? '<div class="kv" style="margin-top:14px">' +
+          '<div><span class="k">TM Master export</span><span class="v">' +
+            pcEsc(cat.generated || '—') + '</span></div>' +
+          '<div><span class="k">Catalogue built</span><span class="v">' +
+            pcEsc(String(cat.built_at || '—').slice(0, 16).replace('T', ' ')) + '</span></div>' +
+          '<div><span class="k">Baseline</span><span class="v">' +
+            pcEsc(String(cat.baseline_at || '—').slice(0, 10)) + '</span></div>' +
+        '</div>' +
+        '<div class="grid-wrap" style="margin-top:12px"><table class="grid"><tbody>' +
+          rows.map(function (r) {
+            return '<tr><td>' + r[0] + '</td><td class="num">' +
+              Number(r[1]).toLocaleString() + '</td></tr>';
+          }).join('') +
+        '</tbody></table></div>'
+      : '') +
+    '<div class="mirror-note">TM Master is the system of record for the item master and the stowage ' +
+      'tree. This module reads a projection of it and never writes back — quantities recorded here ' +
+      'layer on top of the baseline, and a correction to what an item <i>is</i> goes in as a proposal ' +
+      'for an officer to apply. Rebuild the projection after a fresh export with:<br>' +
+      '<code>python tools/build-procurement-catalogue.py</code></div>' +
+    '</div>';
+}
+
+async function pcRefreshCatalogue() {
+  pcToast('Checking OneDrive…');
+  await pcLoadCatalogue();
+  pcRenderAll();
+  pcToast(PC.catStatus === 'fresh' ? 'Register up to date.'
+        : PC.catStatus === 'stale' ? 'Could not reach OneDrive — still on the cached copy.'
+        : 'Register status: ' + PC.catStatus);
 }
 
 // ── Go ──────────────────────────────────────────────────────

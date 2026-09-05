@@ -49,9 +49,114 @@
 
   // ── Item shell ─────────────────────────────────────────────────────────────
 
+  // ── The catalogue (§42.14) ─────────────────────────────────────────────────
+  // TM Master is the system of record for the item master and the stowage
+  // locations. The catalogue is a generated, read-only projection of it, and
+  // this module treats it as a *baseline*: quantities as they stood when the
+  // export was taken, with the vessel's own movements layered on top. Nothing
+  // here ever writes back — an edit to a TM-owned field is recorded as a
+  // proposal and applied by an officer in TM Master, never by this code.
+
+  // Columnar, dictionary-encoded on the low-cardinality columns. Both the PWA
+  // and the Console hydrate through this one function so neither has to know
+  // the encoding.
+  function hydrateCatalogue(doc) {
+    if (!doc || !Array.isArray(doc.items)) return null;
+    var tables = doc.tables || {};
+    var idx = {};
+    (doc.item_fields || []).forEach(function (f, i) { idx[f] = i; });
+    var lidx = {};
+    (doc.location_fields || []).forEach(function (f, i) { lidx[f] = i; });
+
+    function val(row, field) {
+      var i = idx[field];
+      if (i === undefined) return null;
+      var v = row[i];
+      if (v === undefined) return null;
+      if (tables[field]) return (v === null) ? null : (tables[field][v] || null);
+      return v;
+    }
+
+    var locations = {};
+    (doc.locations || []).forEach(function (row) {
+      var code = row[lidx.code];
+      if (code === null || code === undefined) return;
+      locations[locCode(code)] = {
+        location_id: locCode(code),
+        name: row[lidx.path] || locCode(code),
+        path: row[lidx.path] || '',
+        deck: row[lidx.deck] || null,
+        depth: row[lidx.depth] || 1,
+        parent_id: (row[lidx.parent] === null || row[lidx.parent] === undefined)
+          ? null : locCode(row[lidx.parent]),
+        items_here: row[lidx.items_here] || 0,
+        items_deep: row[lidx.items_including_sublocations] || 0,
+        sublocations: row[lidx.sublocations] || 0
+      };
+    });
+
+    var flagBits = doc.flag_bits || {};
+    var items = {};
+    doc.items.forEach(function (row) {
+      var id = itemCode(row[idx.id]);
+      var loc = val(row, 'loc');
+      var flags = val(row, 'flags') || 0;
+      items[id] = {
+        item_id: id,
+        name: val(row, 'name') || id,
+        unit: val(row, 'uom') || 'ea',
+        item_type: val(row, 'item_type'),
+        item_category: val(row, 'item_category'),
+        location_id: (loc === null) ? null : locCode(loc),
+        in_stock: val(row, 'in_stock'),          // null means unknown, not zero
+        on_order_tm: val(row, 'on_order') || 0,
+        on_draft: val(row, 'on_draft') || 0,
+        qty_in_use: val(row, 'qty_in_use') || 0,
+        min_qty: val(row, 'min_qty'),
+        max_qty: val(row, 'max_qty'),
+        supplier: val(row, 'supplier'),
+        suppliers_ref: val(row, 'suppliers_ref'),
+        makers_part_no: val(row, 'makers_part_no'),
+        stock_tag: val(row, 'stock_tag'),
+        tm_item_no: val(row, 'tm_item_no'),
+        est_delivery_days: val(row, 'est_delivery_days'),
+        last_known_price: val(row, 'last_known_price'),
+        currency: val(row, 'currency'),
+        consumption: {
+          2026: val(row, 'c2026') || 0,
+          2025: val(row, 'c2025') || 0,
+          2024: val(row, 'c2024') || 0
+        },
+        validated:      !!(flags & (flagBits.validated || 1)),
+        blocked:        !!(flags & (flagBits.blocked || 2)),
+        controlled:     !!(flags & (flagBits.controlled_goods || 4)),
+        review_minmax:  !!(flags & (flagBits.review_minmax || 8)),
+        critical:       !!(flags & (flagBits.has_critical_occurrences || 16))
+      };
+    });
+
+    return {
+      baseline_at: doc.baseline_at || null,
+      generated: doc.generated || null,
+      built_at: doc.built_at || null,
+      items: items,
+      locations: locations,
+      counts: doc.counts || {}
+    };
+  }
+
+  function pad(n, width) {
+    var s = String(n);
+    while (s.length < width) s = '0' + s;
+    return s;
+  }
+  function itemCode(n) { return (typeof n === 'number') ? 'ITM-' + pad(n, 5) : String(n); }
+  function locCode(n)  { return (typeof n === 'number') ? 'LOC-' + pad(n, 4) : String(n); }
+
   function newItem(itemId) {
     return {
       item_id: itemId,
+      source: 'local',        // 'tm' once seeded from the catalogue
       name: '',
       unit: 'ea',
       notes: '',
@@ -73,12 +178,40 @@
       by_location: {},        // { location_id: qty }
       on_hand: 0,
       on_order: 0,            // filled in by the PO pass
+      on_order_tm: 0,         // what TM Master already had on order at baseline
       requested: 0,           // filled in by the requisition pass
       movements: [],          // derived, in replay order
       last_movement_at: null,
-      last_count_at: null
+      last_count_at: null,
+
+      // §42.14. IDMS keeps its own reorder policy over the mirror, because
+      // 13,885 of the 14,487 items in TM Master carry no minimum at all and a
+      // register that cannot be given one is a register nobody can act on.
+      // These always win over the catalogue's values.
+      policy: {},             // min_qty / max_qty / reorder_qty / sfi_code / barcode / notes
+      // Edits to fields TM Master owns are recorded and shown, never applied.
+      proposals: [],
+      // Movements at or before the catalogue's baseline are already reflected
+      // in its quantities. They stay in the ledger, marked, but move nothing.
+      superseded_movements: 0
     };
   }
+
+  // The value actually in force: IDMS policy first, then the TM mirror.
+  function effective(item, field) {
+    if (!item) return null;
+    if (item.policy && item.policy[field] !== undefined && item.policy[field] !== null) {
+      return item.policy[field];
+    }
+    var v = item[field];
+    return (v === undefined) ? null : v;
+  }
+
+  // IDMS's own overlay on a mirrored item. Deliberately only the fields that
+  // are policy rather than fact: what we choose to hold, and how this item
+  // joins the rest of IDMS. Never a name, a supplier or a part number — those
+  // are TM Master's to state.
+  var POLICY_FIELDS = ['min_qty', 'max_qty', 'reorder_qty', 'sfi_code', 'barcode', 'notes'];
 
   // Sparse patch: an absent key means unchanged, an explicit null clears
   // (§42.4). `item_id` can never be patched.
@@ -264,13 +397,63 @@
 
   // ── Reduce ─────────────────────────────────────────────────────────────────
 
-  function reduce(events) {
+  // `catalogue` is the hydrated TM Master baseline (§42.14) and is optional —
+  // without one the register is whatever the event stream authored, which is
+  // how this ran before the vault register existed and how a fresh vessel with
+  // no TM export would still work.
+  function reduce(events, catalogue) {
     var ordered = (events || []).slice().sort(function (a, b) {
       var ka = sortKey(a), kb = sortKey(b);
       return ka < kb ? -1 : ka > kb ? 1 : 0;
     });
 
     var items = {}, reqs = {}, pos = {};
+    var baselineAt = (catalogue && catalogue.baseline_at) || null;
+
+    // ── Seed from the catalogue ──────────────────────────────────────────────
+    // Baseline quantities go straight into by_location at the item's default
+    // stowage. An item with no stowage in the export holds its stock at the
+    // reserved 'unassigned' location rather than nowhere — 2,864 items are in
+    // that state, and their stock is real even though its address is not.
+    if (catalogue && catalogue.items) {
+      Object.keys(catalogue.items).forEach(function (id) {
+        var c = catalogue.items[id];
+        var it = newItem(id);
+        it.source = 'tm';
+        it.name = c.name;
+        it.unit = c.unit;
+        it.item_type = c.item_type;
+        it.item_category = c.item_category;
+        it.default_location_id = c.location_id;
+        it.part_number = c.makers_part_no || c.suppliers_ref || null;
+        it.min_qty = c.min_qty;
+        it.max_qty = c.max_qty;
+        it.stock_tag = c.stock_tag;
+        it.tm_item_no = c.tm_item_no;
+        it.est_delivery_days = c.est_delivery_days;
+        it.last_known_price = c.last_known_price;
+        it.currency = c.currency;
+        it.consumption = c.consumption;
+        it.qty_in_use = c.qty_in_use;
+        it.on_draft = c.on_draft;
+        it.validated = c.validated;
+        it.blocked = c.blocked;
+        it.controlled = c.controlled;
+        it.review_minmax = c.review_minmax;
+        it.critical = c.critical;
+        it.on_order_tm = c.on_order_tm || 0;
+        if (c.supplier) it.suppliers = [{ supplier_id: c.supplier, supplier_part_number: c.suppliers_ref || null }];
+
+        // `in_stock: null` means the export did not say — 2,181 items. That is
+        // not zero, and must not be shown or counted as zero.
+        it.stock_unknown = (c.in_stock === null || c.in_stock === undefined);
+        if (!it.stock_unknown) {
+          it.by_location[c.location_id || UNASSIGNED_LOCATION] = q(c.in_stock);
+          it.on_hand = q(c.in_stock);
+        }
+        items[id] = it;
+      });
+    }
 
     // Creations are applied before mutations, in their own stream order. Same
     // reasoning as notes-reduce: filenames carry each writing device's own UTC
@@ -285,6 +468,9 @@
 
       if (ev.event_type === 'item_created') {
         if (!p.item_id) continue;
+        // Never over an item the catalogue already supplied: TM Master states
+        // what that item is, and a stale local create must not rewrite it.
+        if (items[p.item_id] && items[p.item_id].source === 'tm') continue;
         var it = items[p.item_id] || (items[p.item_id] = newItem(p.item_id));
         applyItemFields(it, p);
         it.created_at = it.created_at || ev.timestamp || null;
@@ -327,8 +513,48 @@
       if (t === 'item_updated') {
         var target = items[pay.item_id];
         if (!target) continue;
+        // A mirrored item's TM-owned fields are never rewritten here (§42.14).
+        // An older stream may still carry item_updated against one; it is kept
+        // as a proposal rather than silently discarded or silently applied.
+        if (target.source === 'tm') {
+          target.proposals.push({
+            proposal_id: pay.proposal_id || e.event_id,
+            fields: pay, reason: pay.reason || null,
+            actor: e.actor || null, timestamp: e.timestamp || null,
+            legacy: true
+          });
+          continue;
+        }
         applyItemFields(target, pay);
         target.updated_at = e.timestamp || target.updated_at;
+
+      } else if (t === 'item_policy_set') {
+        // IDMS's own reorder policy over the mirror — a minimum, a maximum, an
+        // SFI code, a barcode, a note. Sparse: an absent key is unchanged, an
+        // explicit null clears back to whatever TM Master says.
+        var pit = items[pay.item_id];
+        if (!pit) continue;
+        POLICY_FIELDS.forEach(function (f) {
+          if (Object.prototype.hasOwnProperty.call(pay, f)) {
+            if (pay[f] === null) delete pit.policy[f];
+            else pit.policy[f] = pay[f];
+          }
+        });
+        pit.policy_set_at = e.timestamp || null;
+        pit.policy_set_by = e.actor || null;
+
+      } else if (t === 'item_change_proposed') {
+        // Fields TM Master owns. Recorded, shown on the item, never applied —
+        // an officer makes the change in TM Master and the next export carries
+        // it back. This is the ratified rule for TM writes, not a limitation
+        // of this screen.
+        var cit = items[pay.item_id];
+        if (!cit) continue;
+        cit.proposals.push({
+          proposal_id: pay.proposal_id || e.event_id,
+          fields: pay.fields || {}, reason: pay.reason || null,
+          actor: e.actor || null, timestamp: e.timestamp || null
+        });
 
       } else if (t === 'item_archived') {
         if (!items[pay.item_id]) continue;
@@ -352,6 +578,23 @@
           mi.orphan = true;
         }
         if (!mi) continue;
+        // Movements at or before the catalogue's baseline are already inside
+        // its quantities — TM Master had absorbed them by the time the export
+        // was taken. They stay in the ledger so the history reads continuously,
+        // but applying them again would double-count (§42.14).
+        if (baselineAt && e.timestamp && String(e.timestamp) <= String(baselineAt)) {
+          mi.superseded_movements++;
+          mi.movements.push({
+            movement_id: pay.movement_id || e.event_id,
+            item_id: mi.item_id, kind: pay.kind, qty: mag(pay.qty),
+            location_id: locOf(pay.location_id), to_location_id: pay.to_location_id || null,
+            delta: 0, superseded: true,
+            po_id: pay.po_id || null, po_line_id: pay.po_line_id || null,
+            reason: pay.reason || null, note: pay.note || null,
+            actor: e.actor || null, timestamp: e.timestamp || null
+          });
+          continue;
+        }
         var row = applyMovement(mi, e);
         if (row) mi.movements.push(row);
 
@@ -500,6 +743,13 @@
     });
 
     // ── on_order: what an open order still owes us ────────────────────────────
+    // Two sources, deliberately kept apart and then added: what TM Master had
+    // outstanding when the export was taken, and what this module's own orders
+    // still owe. Collapsing them would make it impossible to tell an order
+    // raised here from one raised ashore.
+    Object.keys(items).forEach(function (id) {
+      items[id].on_order = q(items[id].on_order_tm || 0);
+    });
     Object.keys(pos).forEach(function (id) {
       var po = pos[id];
       if (po.status !== 'sent' && po.status !== 'partial') return;
@@ -572,19 +822,26 @@
   // see the first order was on its way.
   function isLow(item) {
     if (!item || item.archived) return false;
-    if (item.min_qty === null || item.min_qty === undefined || item.min_qty === '') return false;
-    return q(item.on_hand + item.on_order) < Number(item.min_qty);
+    // 2,181 items carry no stock figure in the export. Unknown is not zero, and
+    // reporting them all as short would bury the ones that really are.
+    if (item.stock_unknown) return false;
+    var min = effective(item, 'min_qty');
+    if (min === null || min === undefined || min === '') return false;
+    return q(item.on_hand + item.on_order) < Number(min);
   }
 
   function suggestedOrderQty(item) {
     if (!item) return 0;
     var have = q(item.on_hand + item.on_order);
-    if (item.max_qty !== null && item.max_qty !== undefined && item.max_qty !== '') {
-      return Math.max(0, q(Number(item.max_qty) - have));
+    var max = effective(item, 'max_qty');
+    var reorder = effective(item, 'reorder_qty');
+    var min = effective(item, 'min_qty');
+    if (max !== null && max !== undefined && max !== '') {
+      return Math.max(0, q(Number(max) - have));
     }
-    if (item.reorder_qty) return mag(item.reorder_qty);
-    if (item.min_qty !== null && item.min_qty !== undefined && item.min_qty !== '') {
-      return Math.max(0, q(Number(item.min_qty) - have));
+    if (reorder) return mag(reorder);
+    if (min !== null && min !== undefined && min !== '') {
+      return Math.max(0, q(Number(min) - have));
     }
     return 0;
   }
@@ -629,7 +886,8 @@
         out.push({
           kind: 'below_minimum', severity: 'medium', item_id: id,
           label: item.name || id,
-          detail: item.on_hand + ' on hand against a minimum of ' + item.min_qty + ', nothing on order.'
+          detail: item.on_hand + ' on hand against a minimum of ' + effective(item, 'min_qty') +
+                  ', nothing on order.'
         });
       }
     });
@@ -690,6 +948,11 @@
 
   var api = {
     reduce: reduce,
+    hydrateCatalogue: hydrateCatalogue,
+    effective: effective,
+    itemCode: itemCode,
+    locCode: locCode,
+    POLICY_FIELDS: POLICY_FIELDS,
     isLow: isLow,
     suggestedOrderQty: suggestedOrderQty,
     exceptions: exceptions,
