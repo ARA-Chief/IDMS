@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.33 — F/V Araho**
+**Version 2.34 — F/V Araho**
+
+v2.34 *(2026-09-05)* — **§42.15 new: the TM Master push-back lane, and what the history supports for minimums.** IDMS already exports service reports to TM Master and that lane is being extended into a general reconcile-and-push path; this module must not grow a second one, so its two write-shaped events are recorded as *input* to it — `item_change_proposed` is already a proposal in the ratified sense, and the superseded movement set (§42.14) is precisely the keying worklist a reconcile pass needs. The §42.13 reconciliation question resolves through that lane rather than inside this module. Also records an assessment of **deriving order minimums from history**, measured rather than assumed: 11,835 of 14,487 items (81.7%) show no movement across the three consumption years TM Master exports, and of the 2,652 that moved, the median three-year total is 3 units. The restock interval is a real 16 days (median gap across the 19 offloads in `scheduleconfig.json`), but **`est_delivery_days` is set on 1 item of 14,487**, and with a cycle that short the assumed lead time swings the answer four-fold. The 6,091 completed task records from 2017–2026 do not help: `items_used` is populated on 7 of them, and what was fitted lives in free text. Banding by evidence gives **448 items (3.1%) defensible today**, 408 of them new, and only 8 of the 58 critical-flagged items — critical spares are the slow movers consumption history cannot speak to. 67 of the 448 are already below their proposed minimum. Proposals are computed offline (`data/procurement/proposed-minimums.json`, read by nothing); publishing them as `item_policy_set` events is an officer's decision, not a computation. The standing argument for building it anyway is that issuing stock against a `task_id` is the structured parts-on-job capture `items_used` never got, and `po_sent`-to-first-receipt measures the lead times nobody recorded.
 
 v2.33 *(2026-09-05)* — **Procurement wired to the real item master (§42.14, new; §42.5 superseded in place).** The vessel already has a register — 14,487 items and a 664-node stowage tree in TM Master, mirrored into the Engineering Vault at `50 Procurement/` — so the module stops inventing one. **TM Master is the system of record for what an item *is*; IDMS owns what it *does*.** A new builder, `tools/build-procurement-catalogue.py`, projects the Vault notes into `data/procurement/catalogue.json` (~1.8 MB, columnar and dictionary-encoded — the naïve shape is 4.6 MB) plus a lazily-fetched `catalogue-detail.json`; nothing writes to the Vault. The reducer gains `hydrateCatalogue()` and takes the catalogue as a **baseline**: quantities as at `baseline_at`, with movements applied only where `timestamp > baseline_at` — earlier ones stay in the ledger, marked, but move nothing, because the export already absorbed them. `in_stock: null` means unknown, not zero (2,181 items), and never raises a shortage. Because 13,885 of 14,487 items carry no minimum, IDMS keeps its **own policy overlay** — `min_qty`, `max_qty`, `reorder_qty`, `sfi_code`, `barcode`, `notes` via a new `item_policy_set` event, read through `effective()`, cleared back to TM Master by writing null. Edits to TM-owned fields become `item_change_proposed` events: recorded, shown, **never applied** — an officer changes TM Master and the next export carries it back. `on_order` now sums TM Master's outstanding (1,255 items) and this module's own open orders, kept apart in the derived state. The register screen is search-first with a deck browse and a 300-row cap, and line pickers are searches rather than 14,487-option dropdowns. The catalogue is cached in IndexedDB and re-fetched only on an eTag change. `procurementconfig.json` keeps only `settings`; its taxonomy arrays remain as a fallback for a vessel with no TM export.
 
@@ -7844,7 +7846,8 @@ What the Console adds rather than duplicates: spend by category and by supplier 
 ### 42.13 Open items
 
 - ~~**[SEAM]** `procurementconfig.json` locations / categories / units / suppliers are owned by the physical-structure work.~~ **Settled (v2.33):** the taxonomy is TM Master's, projected through the catalogue — §42.14. The tolerance rules written for the config are what made the switch cheap.
-- **[OPEN]** The reconciliation lane. A fresh export supersedes movements older than it, so a count recorded aboard and never keyed into TM Master is lost from the arithmetic (§42.14). Today that shows up only as a divergence on the exceptions screen; whether the Console should emit a keying worklist from the superseded movements is undecided.
+- ~~**[OPEN]** The reconciliation lane.~~ **Answered (v2.34):** it belongs to the existing service-report export path to TM Master, which is being extended into a general reconcile-and-push lane. This module supplies the input and builds no lane of its own — §42.15. What remains open is the *state* a proposal carries once that lane can push it (raised / pushed / confirmed by export / rejected), which will be a new event on this stream rather than a mutation.
+- **[OPEN]** Whether to publish the 448 computed minimum proposals (§42.15) into `item_policy_set` events, and under whose signature. It is a policy decision about how the vessel orders, not a computation, and it rests on an assumed lead time until `est_delivery_days` is populated or learned.
 - **[OPEN]** Whether the 138 units of measure should ever be reconciled. `Each`, `EA`, `PCE` and `pcs` are the same unit under four names, which makes any cross-item quantity roll-up meaningless. Normalising is TM Master's job, not this module's, but somebody has to decide it is worth doing.
 - **[OPEN]** Whether `sfi_code` on an item should be single or a list. Single for now — a gasket used on three pumps is the case that will decide it.
 - **[OPEN]** Costs are recorded (`unit_cost`, `currency`) but nothing converts currency or reconciles to an invoice. Spend reporting is Console work and needs a decision on whether IDMS is ever the financial record or always a shadow of one.
@@ -7941,6 +7944,68 @@ TM Master reports 1,255 items on order at baseline; this module raises orders of
 - **One shifted row.** `ITM-04387` carries a maker name in `OnOrder` and a part number in `Price`. The builder coerces non-numeric values in numeric columns to unknown and reports them; the fix belongs in TM Master.
 - **138 distinct units of measure**, including `Each`, `EA`, `PCE` and `pcs` all meaning the same thing. Displayed as written. Quietly normalising somebody else's vocabulary is how a register stops matching the shelf label.
 - **Stowage is a path, not a code.** `Maindeck\Fwd Shop\SH 5\5-2`. Lists show the last segment; the item screen shows the whole path.
+
+### 42.15 Writing back to TM Master, and where minimums would come from
+
+Two things sit downstream of §42.14 and are recorded here so the module is built to meet them rather than to be retrofitted.
+
+#### The push-back lane
+
+IDMS already exports service reports to TM Master, and that lane is being extended into a general reconcile-and-push path. **This module must not grow a second one.** Its two write-shaped event types are deliberately in the right shape to be *input* to that lane rather than a dead-end record:
+
+| Event | What the lane would do with it |
+|---|---|
+| `item_change_proposed` | A correction to a TM-owned field, with `fields`, `reason`, actor and timestamp. This is already a proposal in the ratified sense — it goes to TM Master when an officer signs it, and comes back on the next export. |
+| `stock_movement` where `timestamp <= baseline_at` | The superseded set (§42.14). These are movements the vessel recorded that the export has now overwritten — precisely the keying worklist a reconcile pass needs. `superseded_movements` on the derived item is the count. |
+
+When the lane lands, a proposal gains a state — *raised, pushed, confirmed by export, rejected* — which is a new event on this stream, not a mutation of the proposal. Until then a proposal is simply raised and visible, and §42.1 rule 1 is unaffected either way: **the arithmetic still runs off the baseline plus the movements, whichever direction the corrections are travelling.**
+
+The reconciliation question in §42.13 resolves through this lane rather than inside this module.
+
+#### Minimums: what the history actually supports
+
+Assessed 2026-09-05 against the real data, because "derive minimums from consumption" is easy to say and the numbers decide whether it is worth building.
+
+**The signal.** TM Master carries three consumption columns (2024, 2025, 2026 — the last a part year, annualised on elapsed fraction). Across 14,487 items:
+
+| | Items | Share |
+|---|---|---|
+| Moved in all three years | 107 | 0.7% |
+| Moved in two of three | 341 | 2.4% |
+| Moved in one of three | 2,204 | 15.2% |
+| **No movement recorded at all** | **11,835** | **81.7%** |
+
+Of the 2,652 that moved at all, the median three-year total is 3 units, and 1,375 of them average one unit a year or less. Most of this register is genuinely slow-moving spares, where consumption history is not a rate and never will be.
+
+**The gap that matters more.** A minimum is *consumption × (lead time + restock interval)*. Two of those three are in hand — consumption above, and a restock interval of **16 days** (median gap across the 19 offloads in `scheduleconfig.json`, 15 of them Dutch Harbor). **Lead time is not: `est_delivery_days` is set on 1 item of 14,487.** With a restock cycle that short, lead time dominates the answer entirely:
+
+| Assumed lead | Items whose minimum would be ≥ 2 |
+|---|---|
+| 7 days | 165 |
+| 30 days | 323 |
+| 90 days | 647 |
+
+A four-fold swing on a number nobody has recorded. Any minimum published today rests on that assumption, and it must be stated on the screen rather than buried.
+
+**Service reports do not help here.** There are 6,091 completed task records spanning 2017–2026 — a genuinely deep history — but `items_used` is populated on **7** of them. What was fitted to a job lives in the free-text `service_report` field. Text mining it into an ordering decision is not a basis for one.
+
+**What is defensible now.** Banding by how much movement history stands behind each item, at an assumed 30-day lead:
+
+| Band | | Items |
+|---|---|---|
+| A | three years, steady | 56 |
+| B | three years, lumpy | 51 |
+| C | two years | 341 |
+| D | one year, real quantity — suggestive, needs an eye | 657 |
+| E | one year, 1–5 units — noise, not a rate | 1,547 |
+
+**Bands A–C are 448 items, 3.1% of the register**, 408 of which have no TM minimum today. Only 8 of the 58 critical-flagged items fall in them — critical spares are exactly the slow movers consumption history cannot speak to, and they need an engineer's judgement, not a regression.
+
+67 of the 448 are already below their proposed minimum, which is the immediate value: a short list of things the vessel genuinely uses and is genuinely short of.
+
+**The flywheel.** The reason to build this anyway is that the module generates its own better input. Every issue recorded here carries a quantity, a date and optionally a `task_id` or `equipment_code` — which is the structured parts-on-job capture that `items_used` never got. A season of that is worth more than three columns of annual totals, and it arrives whether or not anybody sets out to collect it. Lead times likewise: `po_sent` to first receipt measures the real one per supplier, which is §42.13's lead-time item and the thing that would move the 448 into the thousands.
+
+**Not built.** Proposals are computed offline for now (`data/procurement/proposed-minimums.json`, generated, read by nothing). Publishing them into `item_policy_set` events is a decision about the vessel's ordering policy, not a computation, and it belongs to an officer.
 
 ---
 
