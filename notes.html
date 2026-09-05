@@ -917,15 +917,34 @@ function ntParseCsv(text) {
 
 // Columns 0 and 3 are Code and Name (§9). Everything else is carried by the
 // Console's ingest and is not this page's business.
-function ntAssetsFromCsv(text) {
+//
+// `ignore` is equipmentconfig.json's ignore ranges. Codes inside them are not
+// IDMS work — the register's top block is the vessel itself, its drawings and
+// its courses — and §9 says they are never offered for autocomplete. The
+// Console's asset search excludes them at the query; reading the CSV directly
+// means doing it here, or the picker would offer "F/V Araho" as a component
+// somebody could file a note against.
+function ntAssetsFromCsv(text, ignore) {
   var rows = ntParseCsv(text);
   var out = [];
   for (var i = 1; i < rows.length; i++) {
     var code = (rows[i][0] || '').trim();
-    if (!code) continue;
+    if (!code || ntCodeIgnored(code, ignore)) continue;
     out.push({ code: code, name: (rows[i][3] || '').trim() });
   }
   return out;
+}
+
+// Range comparison is on the top-level integer segment only, the same rule the
+// Console's ingest applies (§9).
+function ntCodeIgnored(code, ranges) {
+  if (!ranges || !ranges.length) return false;
+  var top = parseInt(String(code).split('.')[0], 10);
+  if (isNaN(top)) return false;
+  return ranges.some(function (r) {
+    var from = parseInt(r.from, 10), to = parseInt(r.to, 10);
+    return !isNaN(from) && !isNaN(to) && top >= from && top <= to;
+  });
 }
 
 function ntAdoptAssets(list) {
@@ -957,14 +976,21 @@ function ntEnsureAssets(force) {
   }
 
   NT.assetsState = 'loading';
-  return ntFetch(ntGraphUrl(ONEDRIVE_BASE + '/config/assets.csv'), { method: 'GET' })
-    .then(function (resp) {
-      if (resp.status === 404) throw new Error('assets.csv is not on OneDrive yet');
-      if (!resp.ok) throw new Error('assets.csv → ' + resp.status);
-      return resp.text();
-    })
-    .then(function (text) {
-      var list = ntAssetsFromCsv(text);
+  // equipmentconfig.json rides along so the ignore ranges are applied to the
+  // list that gets cached — a picker filtered on read would go stale the
+  // moment the cache was written.
+  return Promise.all([
+    ntFetch(ntGraphUrl(ONEDRIVE_BASE + '/config/assets.csv'), { method: 'GET' })
+      .then(function (resp) {
+        if (resp.status === 404) throw new Error('assets.csv is not on OneDrive yet');
+        if (!resp.ok) throw new Error('assets.csv → ' + resp.status);
+        return resp.text();
+      }),
+    ntGetJson(ONEDRIVE_BASE + '/config/equipmentconfig.json').catch(function () { return null; })
+  ])
+    .then(function (both) {
+      var text = both[0];
+      var list = ntAssetsFromCsv(text, ((both[1] || {}).ignore || {}).ranges || []);
       if (!list.length) throw new Error('assets.csv parsed to no rows');
       ntAdoptAssets(list);
       try {

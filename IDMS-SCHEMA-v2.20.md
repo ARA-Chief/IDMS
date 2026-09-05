@@ -27,6 +27,10 @@ v2.31.7 *(2026-09-05)* — **Promotion is for assignable notes only; the two Not
 
 The Console's Notes screen and the notes page had drifted, and everything below closes a gap where the Console was the poorer of the two (§41.2a). Attachments: the Console could read photos and documents but **add neither** — it now has the same ＋ on the add bar (and file-drop onto it), the same **＋ Add photo or document** on a note, and the same **📷 Photo** on the comment box, writing through the identical conventions. Documents were being rendered as photo thumbnails, so a document appeared as an empty box with no name, no size and no way to open it; **Photos and Documents are now separate sections** and a document opens through Graph's pre-signed download URL. An archived note could be archived in the Console but never brought back — **Unarchive** was missing entirely. The detail panel named only the *first* assignee (`n.assignee` is a mirror, not the list), so everyone else carrying a note was invisible; it now names them all, in full, with the shared-note warning. Sidebar counts were wrong twice over: a crew row counted only notes that person *owned* while the view it opened also lists notes *assigned* to them, and `mine` tested the first-assignee mirror so a note you were second on lit nothing — both now use list membership, computed from one query instead of one IPC round trip per row. Also added to the Console: the row **star**, the assignment **pin**, drag-to-reorder for starred notes, the attachment-retention line in the detail panel (which is the one place comment attachments are loaded), and the component's name beside its code. New shared helpers `uploadBinary` and `attachmentDownloadUrl` in the Console's Graph layer.
 
+v2.31.8 *(2026-09-05)* — **The equipment picker on both surfaces; ignore ranges honoured.** The Console's **Equipment** note type was selectable only on a note that already carried a code — everything else greyed out, so a note could not be filed against a machine from the Console at all. That was wrong on its own terms: the register is in SQLite and `db.searchAssets` already serves the Rough Log and the report screens, so "the register is behind a main-process call" was never a reason. The Console now has the same picker, with the same word-order-free matching (the IPC search is a single `LIKE`, so it is handed the longest word and the rest are ANDed in the renderer), the same current-selection chip and clear, and the same rule that choosing Equipment clears any assignees. §41.2a loses that row: the picker is no longer one-sided.
+
+Separately, the notes page was offering components the Console has always refused. §9 says assets whose top-level code segment falls in an **ignore range** are never surfaced in autocomplete — the Console excludes them at the query (`department IS NOT 'ignore'`), but the page reads `assets.csv` directly and was applying no such rule, so **851 of the register's 3,896 rows** were offerable, including `100.001.001 F/V Araho` — the vessel itself. The page now reads `equipmentconfig.json` alongside the CSV and applies the ranges before caching, on the top-level integer segment only, bounds inclusive, exactly as the ingest does.
+
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
@@ -7279,13 +7283,14 @@ The notes page and the Console's Notes screen are two implementations of this se
 
 Everything a note *is* renders the same on both: type and assignees, folder, star, pin, equipment code and its name, checklist, photos, documents, comments, archive state, and the attachment-retention line. Every action a note supports is available on both — create with attachments, complete, strike a step, assign, comment with a photo, star, reorder starred, drag to re-file, archive, unarchive, delete.
 
-Three things are deliberately one-sided, and each says so where it sits:
+Two things are deliberately one-sided, and each says so where it sits:
 
 | Only on | What | Why |
 |---|---|---|
-| notes page | The **equipment picker** (§41.6d) | The register is a file the page reads directly; in the Console it is behind a main-process call, and one picker where notes are actually filed is enough. The Console still shows the type and the code, and can clear it. |
 | notes page | The **shared-window author toggle** (§41.4d) | A window left open for anyone has no signed-in person to name. The Console is an officer's signed-in application; there is nobody else it could be. |
 | Console | The **EQUIPMENT band's** richer counterpart, Maintenance → Equipment → **Notes** (§41.6d) | The Console has the whole register, the component tree and TM's own parenthood; the band on the page is the reachable-from-here version of the same idea. |
+
+The equipment picker was on this list until v2.31.8, justified as "the register is behind a main-process call in the Console". It is not — `db.searchAssets` had been serving other Console screens the whole time, and the greyed-out radio meant a note simply could not be filed against a machine from the Console. **A convenience argument is not a reason to leave an action off one surface.** If a thing is worth doing in Notes it is worth doing in both, and the bar for adding a row to that table is that the surfaces genuinely differ in what they *are*, not in what was quicker to build.
 
 Two known limits, stated rather than hidden: the Console's *row* retention line is computed from the note's own attachments only, because the derived row carries a comment count and not the comments — the detail panel, which loads them, is correct; and the Console's list is fed by the ingest lane, so a note written on the page appears there on the next sync rather than instantly.
 
@@ -7456,13 +7461,24 @@ Both are written together, `assigned_to` always being `assignees[0]`, so the two
 
 A note filed against equipment answers "what is this about?" the same way a task does, with a code from `config/assets.csv` (§9) — the TM Master component register, dotted-decimal, 3,857 rows, and the one identifier that never changes for a physical asset.
 
-**The picker.** Choosing **Equipment** opens a search box over the register: type a code fragment or part of a name, pick a row, and the note carries that `code`. The Notes page fetches `assets.csv` itself and keeps a trimmed `code → name` map in `localStorage`; the register is a reference file replaced by hand, so a cache that is a few days old is not a correctness problem, and the page re-reads it on a cache miss or when the cached copy is older than a week. When the file cannot be read, the picker says so and still accepts a code typed in full — an unreachable register must not make a note unfileable.
+**The picker.** Choosing **Equipment** opens a search box over the register on **both surfaces**: type a code fragment or part of a name, pick a row, and the note carries that `code`. Every typed word must appear somewhere in the code or the name, **in any order** — nobody remembers a component the way TM Master wrote it, and a plain substring match finds nothing for "trawl gearbox".
+
+Each surface reaches the register the way it already reaches everything else:
+
+| | Source | Matching |
+|---|---|---|
+| Notes page | `config/assets.csv` (§9) fetched directly, trimmed to `code → name` in `localStorage`, re-read on a miss or when the cached copy is over a week old | All words ANDed in the page |
+| Console | `db.searchAssets`, the same IPC the Rough Log and the report screens use, over the ingested `assets` table | One `LIKE` on the longest word, the rest ANDed in the renderer |
+
+**Ignore ranges are honoured by both.** §9 gives `equipmentconfig.json` an `ignore` block, and an asset whose **top-level integer code segment** falls in one of those ranges (bounds inclusive) is not IDMS work — the register's top block is the vessel itself, its drawings and its courses. The Console excludes them at the query; the page reads the config alongside the CSV and applies the ranges *before caching*, so the cached list is already the offerable list. On the live register that is 851 of 3,896 rows, `100.001.001 F/V Araho` among them.
+
+When the register cannot be read, the page says so and still accepts a code typed in full — an unreachable reference file must not make a note unfileable.
 
 **Exclusive by choice, not by accident.** Selecting Equipment clears any assignees (the same clear the other two modes already do), and selecting either person-less mode clears the `equipment_code`. Dragging a note onto a *person* is a separate gesture and leaves the code alone: a pump note handed to an oiler is still a pump note, and the detail panel keeps saying so.
 
 **The EQUIPMENT band.** The Notes sidebar carries a band below Personnel, collapsed by default, built from the codes actually in use in that department (plus General-scope notes) *and their ancestors* — so `601.001.003` is reachable by walking `601` → `601.001` → `601.001.003` even when no note is filed at the two upper levels. Selecting a node lists notes at that code **and everything beneath it**, which is what a tree node means; the count on a node follows the same rule. Nodes are drop targets: dragging a note onto one files it against that code. Names come from the cached register; a code with no name still renders, because a missing lookup must not hide a note.
 
-**The Console needs nothing new to read them.** Maintenance → Equipment already has a **Notes** section querying `notes.equipment_code` (with *include sub-components* honouring both TM's `parent_code` tree and the code prefix), fed by the `notes` ingest lane, which has carried `equipment_code` since the lane was written. An equipment-typed note appears under its component on the next sync. The Console's own Notes screen shows the kind and the code but does not offer the picker — the register lives behind a main-process call there, and one picker in the place people file notes is enough.
+**The Console needs nothing new to read them.** Maintenance → Equipment already has a **Notes** section querying `notes.equipment_code` (with *include sub-components* honouring both TM's `parent_code` tree and the code prefix), fed by the `notes` ingest lane, which has carried `equipment_code` since the lane was written. An equipment-typed note appears under its component on the next sync.
 
 ### 41.7 Alerts
 
