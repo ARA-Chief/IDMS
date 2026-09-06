@@ -8,6 +8,25 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.13 — 2026-09-05
+
+- **A note can now say which machine it is about.** Open a note, set its type to
+  **Equipment**, and search the vessel's component register by code or name —
+  type the words in any order, "trawl gearbox" finds the right one.
+- Notes filed that way appear under **EQUIPMENT** at the bottom of the notes
+  sidebar, in a tree of the codes in use. Closed until you open it. Picking a
+  branch shows that code and everything under it, and a note dragged onto one
+  is filed there.
+- They also show up under that component in the Console, in Maintenance →
+  Equipment → Notes, so the next person looking at the machine finds them.
+- **A note's title can be corrected** — click it, type, Enter. The note keeps
+  its comments, its photos and whose it is.
+- An **Assignable** note can carry an equipment tag too, and now keeps it if you
+  change the note's type. Tagging the machine means a service report made from
+  that note later arrives with its equipment already filled in.
+- **Promote to Task** appears only on assignable notes, and the service report
+  itself is written in the Console for now.
+
 ## 1.12 — 2026-09-05
 
 - **Procurement now shows the real stores register** — all 14,487 items from TM

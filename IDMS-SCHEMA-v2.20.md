@@ -7318,8 +7318,13 @@ Two known limits, stated rather than hidden: the Console's *row* retention line 
 data/notes/
 ├── events/
 │   └── {YYYY}/                 ← {iso}-{event_id}.json — single append-only stream, all event types
+├── files/
+│   └── {item_id}/              ← documents byte-for-byte; item_id = note_id or comment_id (§41.4b)
 └── aggregates/
     └── {YYYY}/                 ← notes-aggregate-{YYYY}.json — Console-derived cold-start cache
+
+data/assets/pictures/{item_id}/  ← note and comment photos, the shared attachment convention
+data/tasks/files/{task_id}/      ← documents COPIED onto a task at promotion (§41.6)
 
 config/notesconfig.json          ← department heads, department folders, checklist templates
 ```
