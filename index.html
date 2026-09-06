@@ -2012,9 +2012,14 @@
             <option value="vessel">Vessel / General</option>
           </select>
         </div>
-        <!-- Task Status — mirrors the Console Update modal so a field user
-             can create an already-closed task as a service report without
-             a separate input form. Default 'open' preserves prior behaviour. -->
+        <!-- Task Status — mirrors the Console's Task Creation form so a field
+             user can create an already-done job as a service report without a
+             separate input form. Default 'open' preserves prior behaviour.
+             The close-out option's VALUE stays 'completed' because that is
+             what this form means by "closing now" — it is what writes the
+             task_records row. It is not what gets stored: submitErTaskCreate
+             stores 'reported_complete', because only a push to TM Master may
+             say 'completed'. The label says so. -->
         <div class="er-form-row" style="margin-bottom:0">
           <label class="er-form-label">Task Status</label>
           <select id="er-create-status" class="er-form-input">
@@ -2024,7 +2029,7 @@
             <option value="waiting_opportunity">Waiting Opportunity</option>
             <option value="shipyard">Shipyard</option>
             <option value="other">Other</option>
-            <option value="completed">Close (Completed)</option>
+            <option value="completed">Close out — record the work (TM Master still to be told)</option>
             <option value="cancelled">Cancelled</option>
           </select>
         </div>
@@ -4203,13 +4208,22 @@ var ER_TASK_STATUSES = [
   ['shipyard',            'Shipyard'],
   ['other',               'Other'],
   ['reported_complete',   'Report Complete'],
-  ['completed',           'Close (Completed)'],
+  ['completed',           'Completed (TM Master has it)'],
   ['cancelled',           'Cancelled']
 ];
 // `reported_complete` is ACTIVE, not terminal — terminal is
 // ('completed','cancelled'). Get this wrong and crew reports read as closed
 // and drop out of the supervisor's Active Tasks queue.
 // MUST stay in sync with Console ACTIVE_STATUSES in BOTH main.js and tasks.js.
+//
+// WHAT 'completed' MEANS (settled 2026-09-05, Console
+// docs/tm-write-path-roundtrip.md §5a): a job is REPORTED COMPLETE when the
+// work is done and captured in IDMS; it is COMPLETED when TM Master has it.
+// Only a successful push to TM Master may assert the second, and this app can
+// neither perform that push nor observe it. So NOTHING here ever writes
+// 'completed' — the status is read-only from the phone's point of view, shown
+// on a task the push has already moved. It stays in this map so a task that
+// reached it renders as itself rather than as 'Unknown'.
 var ER_TASK_ACTIVE_STATUSES = ['open','investigating','waiting_parts','waiting_opportunity','shipyard','other','reported_complete'];
 
 // What the phone's UPDATE modal offers. Deliberately contains no terminal
@@ -5717,7 +5731,11 @@ function erTaskUpdateStatusHint() {
   var hint = document.getElementById('er-task-update-status-hint');
   if (!sel || !hint) return;
   if (sel.value === 'reported_complete') {
-    hint.textContent = 'This tells the engineer the work is done. The task stays open until they sign it off in the Console.';
+    // Two steps, not one, and the crew member should know there are two —
+    // otherwise a job they can still see on the board a week later reads as a
+    // lost report rather than as one waiting on TM Master (§32a).
+    hint.textContent = 'This tells the engineer the work is done. The job stays on the board until they '
+                     + 'sign it off and send it to TM Master from the Console.';
     hint.style.display = 'block';
   } else {
     hint.style.display = 'none';
@@ -6450,7 +6468,24 @@ async function submitErTaskCreate() {
 
   var job_type  = (document.getElementById('er-create-category')   || {}).value || 'CHK';
   var priority  = (document.getElementById('er-create-priority')   || {}).value || 'Normal';
-  var status    = (document.getElementById('er-create-status')     || {}).value || 'open';
+  // Two different things, and the whole of §5a is the difference between them.
+  //
+  //   status        what the FORM was set to. 'completed' here means "I am
+  //                 closing this out now" — it is what makes this submit write
+  //                 a task_records row and file a task_closure rough log.
+  //   storedStatus  what lands on the task, on OneDrive and in the Console's
+  //                 SQLite. Closing out stores 'reported_complete': the work is
+  //                 reported done and captured, and TM Master has not been told.
+  //                 Only a successful push says 'completed', and that happens in
+  //                 the Console. Mirrors Console closeTask (main.js) and
+  //                 taskSubmitManualEntry (tasks.js).
+  //
+  // Before this the phone wrote 'completed' straight onto the definition file,
+  // which took the job out of Active Tasks looking finished while the PMS knew
+  // nothing about it — exactly the bypass the Console closed on 2026-09-05.
+  var status       = (document.getElementById('er-create-status')  || {}).value || 'open';
+  var isClosingNow = status === 'completed';
+  var storedStatus = isClosingNow ? 'reported_complete' : status;
   var role      = ((document.getElementById('er-create-role')      || {}).value || '').trim();
   var assigned  = ((document.getElementById('er-create-assigned')  || {}).value || '').trim();
   var fmCode    = (document.getElementById('er-create-fm')         || {}).value || '';
@@ -6499,13 +6534,14 @@ async function submitErTaskCreate() {
     // it out as a service report), emit a synthetic transition event so the
     // Console event log shows the creation-time status change. from_status is
     // 'open' to match the implicit default a task would have been born with.
-    if (status !== 'open') {
+    // to_status is the STORED status — the event log has to agree with the row.
+    if (storedStatus !== 'open') {
       events.push({
         event_id:    erUuid(),
         task_id:     taskId,
         type:        'transition',
         from_status: 'open',
-        to_status:   status,
+        to_status:   storedStatus,
         comment:     null,
         actor_user:  currentUser.username || 'unknown',
         actor_name:  currentUser.name || currentUser.username || 'Unknown',
@@ -6526,7 +6562,7 @@ async function submitErTaskCreate() {
       assigned_to:    assigned || null,
       description:    desc || null,
       skill_tags:     skillTags.length ? JSON.stringify(skillTags) : null,
-      status:         status,
+      status:         storedStatus,
       recurring:      recurring ? 1 : 0,
       interval:       interval || null,
       interval_hours: eqHours,
@@ -6548,7 +6584,12 @@ async function submitErTaskCreate() {
     // Console captures via its own form map onto what we already have in the
     // create form (description → service_report, notes → remark, etc.).
     // Cancelled doesn't generate a record — Console's Cancelled path doesn't either.
-    if (status === 'completed') {
+    //
+    // This record is what makes the job pushable: the Console's push queue
+    // draws records whose task is 'reported_complete', so a job closed out from
+    // the phone now arrives in the officer's TM Master queue instead of
+    // disappearing from the board as though it were already filed.
+    if (isClosingNow) {
       var record = {
         record_id:         erUuid(),
         task_id:           taskId,
@@ -6578,11 +6619,12 @@ async function submitErTaskCreate() {
         await erTaskWriteEquipmentRecord(record, primaryEqId, year);
       } catch (recErr) {
         // Don't block UI flow on a record-write failure — the task itself was
-        // saved with status=completed and a transition event, so the Console
-        // will still see it as closed; the missing record can be backfilled
-        // by re-closing the task from the Console (Close button → Task
-        // Creation re-route writes the record). Surface to console for
-        // diagnosis.
+        // saved as reported_complete with a transition event, so the Console
+        // will still see the work as reported done; the missing record can be
+        // backfilled by re-closing the task from the Console (Close button →
+        // Task Creation re-route writes the record). Note the task stays in
+        // Active Tasks either way, which is the right place for a job whose
+        // record did not get written. Surface to console for diagnosis.
         console.warn('[ER Create] Completion record write failed', recErr);
       }
     }
@@ -6592,15 +6634,15 @@ async function submitErTaskCreate() {
     renderEngineTasksList();
 
     var rlBody, rlSource;
-    if (status === 'completed') {
+    if (isClosingNow) {
       rlSource = 'task_closure';
-      rlBody   = 'Task created and closed: ' + title + (desc ? ' — ' + desc.slice(0, 200) : '');
+      rlBody   = 'Task created and closed: ' + job_name + (desc ? ' — ' + desc.slice(0, 200) : '');
     } else if (status === 'cancelled') {
       rlSource = 'task_creation';
-      rlBody   = 'Task created (cancelled): ' + title;
+      rlBody   = 'Task created (cancelled): ' + job_name;
     } else {
       rlSource = 'task_creation';
-      rlBody   = 'Task created: ' + title;
+      rlBody   = 'Task created: ' + job_name;
     }
     erWriteTaskRoughLogEntry({
       id:           erUuid(),
@@ -10968,7 +11010,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.13';
+var PWA_VERSION  = '1.14';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {

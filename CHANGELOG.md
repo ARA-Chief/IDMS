@@ -8,6 +8,21 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.14 — 2026-09-05
+
+- **Closing a job out no longer says TM Master has it.** Reporting a job done
+  from the phone records the work and files the service report exactly as
+  before, but the job now reads **Reported Complete** and stays on the board
+  until an officer pushes it to TM Master from the Console.
+- That is the honest answer: until TM Master has the record, the company's
+  system does not know the job was done. Nothing is lost — the record is
+  written the moment you save, and the push is what finishes it.
+- The close-out option now says so: **Close out — record the work (TM Master
+  still to be told)**.
+- Fixed: saving a task said **Save failed** even though the task had been
+  saved. The message came from writing the rough-log line, after the task was
+  already on OneDrive.
+
 ## 1.13 — 2026-09-05
 
 - **A note can now say which machine it is about.** Open a note, set its type to

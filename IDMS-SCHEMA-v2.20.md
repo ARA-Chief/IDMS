@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.35 — F/V Araho**
+**Version 2.36 — F/V Araho**
+
+v2.36 *(2026-09-05)* — **§32a new: what `completed` means; §32 status list corrected; §41.6 mirrors corrected.** A job is *reported complete* when the work is done and captured in IDMS, and *completed* when TM Master has it. Only a successful push writes the second, and no status dropdown on either client offers it any more — the Console's Update modal dropped `Close (Completed)` (it wrote no record), signing a job off lands it on `reported_complete`, and the PWA's close-out form now stores `reported_complete` while keeping `completed` as its own internal "closing now" flag for the `task_records` write. The effect is that the terminal state cannot be reached by forgetting to push, and a job the PMS has not been told about stays visible on Active Tasks and on the phone. §32's `status` row had listed `open / in_progress / completed / cancelled` since v2.3 and was three renames out of date; it now lists all nine and names the active/terminal split. §41.6's mirror paragraph said officer sign-off was the only path to `completed`; it is not — sign-off records the work and stops at `reported_complete`. §32a also records the one place the rule is not yet enforced: the Console's Close button (`taskSubmitCreate`) still writes `completed` directly.
 
 v2.35 *(2026-09-05)* — **Procurement built in the Console (§42.12 rewritten from "not built").** `Operations → Procurement` in IDMS-Console 0.8.5, as two renderers of one contract rather than a second system that happens to agree: the same OneDrive event stream, the same TM Master catalogue, and `utils/procurement-reduce.js` mirrored byte-identical into `src/renderer/js/`. New ingest lane `sync-procurement.js` shaped exactly like `sync-notes.js` — raw events into `procurement_events`, whole derived cache rebuilt through the shared reducer, listing-minus-held rather than a cursor seek. New SQLite tables `procurement_items` / `_movements` / `_requisitions` / `_pos`, a `procurement` entry in `DIAG_REGISTRY` with a renderer-delegated rebuild, and Graph helpers including an ETag-guarded write of the `settings` block only. The register is filtered in SQL because 14,487 rows will not go through the renderer, and derived order/requisition lines carry a folded-in `item_name` since the Console holds no in-memory register. Approving a requisition and sending an order are Console-only, being officer actions; nothing is page-only. Adds `_procurement-harness.html`, a standalone page running the real screen, derive and reducer over a local catalogue with writes collected rather than sent.
 
@@ -5548,7 +5550,7 @@ One file per equipment code range per year. The `codeRange` is the 3-digit top-l
 | `assigned_to`   | string   | no       | Username of a specific assignee. Takes precedence over `role` for assignment matching. |
 | `description`   | string   | no       | Detailed work instructions. Free text. |
 | `skill_tags`    | string[] | no       | Skill category keys. Planned for KSA profile integration. |
-| `status`        | string   | yes      | One of `open`, `in_progress`, `completed`, `cancelled`. |
+| `status`        | string   | yes      | One of `open`, `investigating`, `waiting_parts`, `waiting_opportunity`, `shipyard`, `other`, `reported_complete`, `completed`, `cancelled`. Active = everything through `reported_complete`; terminal = `completed`, `cancelled`. **`completed` means TM Master has it** — see §32a. |
 | `recurring`     | boolean  | yes      | If `true`, a new task instance is created when this task is completed. |
 | `interval`      | string   | no       | Required when `recurring` is `true`. One of the valid interval values (see below). |
 | `interval_hours`| integer  | no       | Required when `interval` is `CUSTOM`. Duration in hours. |
@@ -5903,6 +5905,45 @@ Allows recording a completion without a pre-created task. Useful for ad-hoc work
 | Follow-up    | Text input     | Optional. |
 
 On submit: generates a `record_id` (UUID), sets `task_id = null`, writes the record to the equipment record file on OneDrive, then ingests into SQLite. No task status is modified.
+
+---
+
+## §32a — What `completed` means
+
+**Status:** Settled and built, 2026-09-05.
+**Console:** `src/main/main.js` (`closeTask`), `src/main/tm-push.js` (`recordPush`, `PUSHABLE`), `src/renderer/js/tasks.js`.
+**PWA:** `index.html` — `ER_TASK_STATUSES`, `ER_TASK_UPDATE_STATUSES`, `submitErTaskCreate`.
+**Console prose:** `IDMS-Console/docs/tm-write-path-roundtrip.md` §5a.
+
+---
+
+> **A job is *reported complete* when the work is done and captured in IDMS.
+> It is *completed* when TM Master has it.**
+
+`reported_complete` is an **active** status. `completed` and `cancelled` are the only terminal ones. A job that has been signed off but not yet pushed to TM Master therefore stays on Active Tasks and on the phone's task list — which is the honest answer, because as far as the company's system of record is concerned it is not finished.
+
+### Who may write which status
+
+| Writer | Writes | Notes |
+|---|---|---|
+| PWA — Update modal | active statuses only | `ER_TASK_UPDATE_STATUSES`. No terminal status, ever. Locked 2026-07-27. |
+| PWA — Create/close-out form | `reported_complete` | The form's own value for the close-out option is `completed` (it is what triggers the `task_records` write); the **stored** status is `reported_complete`. |
+| Console — Update modal | active statuses + `cancelled` | `Close (Completed)` removed 2026-09-05: that modal writes no record. |
+| Console — Close button / Task Creation form | `reported_complete` (intended) | Writes the `task_records` row. **See the known gap below.** |
+| Console — Manual Entry | `reported_complete` | Via `closeTask`, plus a definitions-file patch. |
+| Console — TM Master push | `completed` | `recordPush` only. The single writer of the terminal state. |
+
+The point of the table is that `completed` **cannot be reached by forgetting to push**. No status dropdown on either client offers it.
+
+### The push queue
+
+`PUSHABLE` draws records whose task is `reported_complete` **or** `completed`, plus records with no task at all (manual entries). The second is backlog: ten records carried `completed` from before this rule, and excluding them would strand them permanently — unreachable by the very thing that would correct their status. A task `cancelled` while its record sat in the queue is skipped.
+
+Because a phone close-out now stores `reported_complete`, work reported from the PWA arrives in the officer's push queue instead of leaving the board looking already filed.
+
+### Known gap (open as of 2026-09-05)
+
+`taskSubmitCreate` in the Console's `tasks.js` — the path behind the **Close** button on each active task row — still writes `status: 'completed'` onto the task definition and into SQLite, despite the option now being labelled *"Close out — record the work (TM Master still to be told)"*. `closeTask` and `taskSubmitManualEntry` were moved to `reported_complete`; this one was not. Until it is, the Console's primary close-out is more optimistic than the PWA's, and the affected jobs land in the queue via the backlog arm of `PUSHABLE` rather than the intended one.
 
 ---
 
@@ -7444,7 +7485,7 @@ Submit travels **each client's existing ETag-guarded definition-create path** �
 
 **Availability.** Promote is offered on **assignable** notes only (§41.6a): a task is work somebody carries, and an unassigned note or one filed against a machine has nobody on it. The notes page shows the button and says the report is written in the Console, where the form lives; putting a third copy of task creation on that page is a separate decision, not a side effect of this one.
 
-**Mirrors.** Mirrors now come only from department-level `task_imported`, not from promotion. A mirror renders the task's live status read-only and strikes through when the task reaches a terminal state. Tapping "complete" on a mirror fires the **existing `reported_complete` action** through the existing path — the mirror stores no completion state of its own, ever. Officer sign-off in the Console remains the only path to `completed`. This is the single seam between the hub and the guarded task machinery, and it introduces no new state.
+**Mirrors.** Mirrors now come only from department-level `task_imported`, not from promotion. A mirror renders the task's live status read-only and strikes through when the task reaches a terminal state. Tapping "complete" on a mirror fires the **existing `reported_complete` action** through the existing path — the mirror stores no completion state of its own, ever. Officer sign-off in the Console records the work and also lands on `reported_complete`; a successful push to TM Master is the only path to `completed` (§32a, settled 2026-09-05). This is the single seam between the hub and the guarded task machinery, and it introduces no new state.
 
 **Assigned Tasks board (Console).** The board lists tasks and *assigned* notes, visually distinct (note rows carry a note glyph, no TM fields). Unassigned notes never appear. Completing a note row from the board appends `note_completed` — it does not touch any task table.
 
