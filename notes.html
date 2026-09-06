@@ -168,6 +168,16 @@
   .eq-result .c { color: var(--accent-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
   .eq-result .n { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .eq-note { color: var(--text-muted); font-size: 12px; line-height: 1.5; padding: 4px 2px; }
+  .eq-optional { color: var(--text-muted); font-size: 11.5px; padding: 0 2px 6px; }
+
+  /* ── Editable title ────────────────────────────────────── */
+  .detail-head .note-title { cursor: text; border-radius: var(--radius-sm); padding: 1px 4px; margin: -1px -4px; }
+  .detail-head .note-title:hover { background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--border); }
+  #title-edit { flex: 1; font-size: 16px; font-weight: 600; font-family: var(--font); line-height: 1.3;
+    background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-accent);
+    border-radius: var(--radius-sm); padding: 4px 6px; resize: vertical; min-height: 46px; }
+  #title-edit:focus { outline: none; }
+  .title-hint { color: var(--text-muted); font-size: 11px; padding: 4px 16px 0; }
   .eq-note b { color: var(--text-secondary); font-weight: 500; }
 
   /* ── Equipment band in the sidebar ─────────────────────── */
@@ -405,6 +415,7 @@ var NT = {
   showEquipment: false,    // the sidebar's Equipment band — collapsed by default
   eqOpen: {},              // asset code → expanded, in that band
   eqQuery: '',             // what is typed in the equipment picker
+  editingTitle: null,      // note_id whose title is open for renaming
   stagedPhoto: null,       // File staged on the comment box
   stagedNew: [],           // Files staged on the add bar
   dragNoteId: null,
@@ -2035,11 +2046,19 @@ function ntRenderDetail() {
   var othersCommented = n.comments.some(function (c) { return c.actor !== n.author; });
   var lastDone = n.completions.length ? n.completions[n.completions.length - 1] : null;
 
+  // The title is editable in place. A note is written in a hurry on a tablet
+  // and read for weeks afterwards, so the first line of it has to be
+  // correctable without deleting the note and losing its comments.
   var h = '<div class="detail-head">' +
     '<button class="star-btn' + (n.starred ? ' on' : '') + '" style="font-size:18px" onclick="ntToggleStar(\'' + ntAttr(n.note_id) + '\')">' +
       (n.starred ? '★' : '☆') + '</button>' +
-    '<div class="note-title"' + (n.completed ? ' style="text-decoration:line-through;color:var(--text-muted)"' : '') + '>' + ntEsc(n.title) + '</div>' +
-    '<button class="close-x" onclick="ntCloseDetail()">✕</button></div>';
+    (NT.editingTitle === n.note_id
+      ? '<textarea id="title-edit" maxlength="200" rows="2">' + ntEsc(n.title) + '</textarea>'
+      : '<div class="note-title" title="Click to rename" onclick="ntBeginTitleEdit(\'' + ntAttr(n.note_id) + '\')"' +
+        (n.completed ? ' style="text-decoration:line-through;color:var(--text-muted)"' : '') + '>' + ntEsc(n.title) + '</div>') +
+    '<button class="close-x" onclick="ntCloseDetail()">✕</button></div>' +
+    (NT.editingTitle === n.note_id
+      ? '<div class="title-hint">Enter saves · Escape cancels</div>' : '');
 
   var exp = notesReduce.hasAttachments(n) ? notesReduce.attachmentExpiry(n) : null;
   h += '<div class="detail-sec kv">' +
@@ -2054,7 +2073,7 @@ function ntRenderDetail() {
       ? '<br>Equipment <b>' + ntEsc(n.equipment_code) + '</b>' +
         (ntAssetName(n.equipment_code) ? ' — ' + ntEsc(ntAssetName(n.equipment_code)) : '')
       : '') +
-    (n.task_id ? '<br>Promoted → task <b>' + ntEsc(n.task_id) + '</b> (mirror — status arrives in the task-integration slice)' : '') +
+    (n.task_id ? '<br>Promoted → service report <b>' + ntEsc(n.task_id) + '</b>' : '') +
     (n.completed && lastDone ? '<br>Completed by <b>' + ntEsc(ntShortName(lastDone.actor)) + '</b> ' + ntWhen(lastDone.timestamp) : '') +
     (exp ? '<br><span class="warn">Attachments kept until ' + ntWhen(exp.due) + ' (' + exp.reason + ' — ' + exp.days + ' days). Archive the note to keep them.</span>' : '') +
     '</div>';
@@ -2130,6 +2149,12 @@ function ntRenderDetail() {
        '<span><b>Equipment</b><em>Filed against one machine — shows under it in the Console</em></span></label>';
   h += '</div>';
 
+  // Equipment rides alongside every kind now: the type says WHO a note is for,
+  // the code says WHAT it is about, and they are different questions. It is
+  // optional under Assignable — where it survives to prefill the service
+  // report on promotion — and the point of Equipment. Under Unassigned there
+  // is no picker, but a code already on the note is still shown and clearable,
+  // so a tag can never end up stranded where nothing can reach it.
   if (kind === 'assignable') {
     var noteDept = n.scope.department || NT.dept;
     var pool = NT.crew.filter(function (c) {
@@ -2146,8 +2171,11 @@ function ntRenderDetail() {
              (c.role_label ? ' <em>' + ntEsc(c.role_label) + '</em>' : '') + '</span></label>';
     }).join('') || '<div class="kv" style="padding:4px 2px">Nobody active in this department.</div>';
     h += '</div>';
+    h += ntEquipmentPicker(n, true);
   } else if (kind === 'equipment') {
     h += ntEquipmentPicker(n);
+  } else if (n.equipment_code) {
+    h += ntEquipmentPicker(n, true, true);
   }
   h += '</div>';
 
@@ -2158,8 +2186,14 @@ function ntRenderDetail() {
   // is a record about a machine. Neither has the one thing task creation needs
   // — a person — so offering the button on them would be an invitation to a
   // form that cannot be completed.
+  //
+  // The service report itself is written in the Console for now: the form
+  // lives there, and a third copy of task creation on this page is not
+  // something to add lightly. The button says so rather than sitting greyed
+  // out with no explanation.
   if (kind === 'assignable') {
-    h += '<button class="btn ghost" disabled title="Arrives with the task-integration slice">Promote to Task</button>';
+    h += '<button class="btn ghost" onclick="ntPromoteHint()" ' +
+         'title="Open this note in the Console to write the service report">Promote to Task…</button>';
   }
   h += n.archived
     ? '<button class="btn ghost" onclick="ntUnarchive(\'' + ntAttr(n.note_id) + '\')">Unarchive</button>'
@@ -2184,6 +2218,47 @@ function ntRenderDetail() {
     var box = document.getElementById('eq-search');
     if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
   }
+  ntWireTitleEdit(n);
+}
+
+// ── Renaming a note ─────────────────────────────────────────
+// One note_edited carrying the new title, the same correction pattern
+// everything else uses. Nothing is rewritten: the stream keeps what it said
+// before, and the panel keeps the note's author and date unchanged.
+
+function ntBeginTitleEdit(id) {
+  NT.editingTitle = id;
+  ntRenderDetail();
+}
+
+function ntWireTitleEdit(n) {
+  var box = document.getElementById('title-edit');
+  if (!box) return;
+  box.focus();
+  box.setSelectionRange(box.value.length, box.value.length);
+  box.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ntSaveTitle(n); }
+    else if (ev.key === 'Escape')           { ev.preventDefault(); NT.editingTitle = null; ntRenderDetail(); }
+  });
+  // Clicking away keeps what was typed rather than discarding it — losing a
+  // correction because the tablet was tapped elsewhere is the wrong default.
+  box.addEventListener('blur', function () { if (NT.editingTitle === n.note_id) ntSaveTitle(n); });
+}
+
+async function ntSaveTitle(n) {
+  var box = document.getElementById('title-edit');
+  if (!box) return;
+  var title = box.value.trim().replace(/\s+/g, ' ');
+  NT.editingTitle = null;
+  if (!title || title === n.title) { ntRenderDetail(); return; }
+  try {
+    await ntAppendEvent('note_edited', {
+      note_id: n.note_id, patch: { title: title }, before: { title: n.title }
+    });
+  } catch (e) {
+    ntToast('Could not rename — ' + ntWhyFailed(e));
+    ntRenderDetail();
+  }
 }
 
 // ── The equipment picker (§41.6d) ───────────────────────────
@@ -2192,9 +2267,14 @@ function ntRenderDetail() {
 // still accepts a code typed in full, because an unreachable reference file
 // must not make a note unfileable.
 
-function ntEquipmentPicker(n) {
-  ntEnsureAssets();
-  var h = '<div class="assign-sep">Equipment</div>';
+function ntEquipmentPicker(n, optional, chipOnly) {
+  if (!chipOnly) ntEnsureAssets();
+  var h = '<div class="assign-sep">Equipment' +
+          (optional && !chipOnly ? ' <em style="text-transform:none;letter-spacing:0">— optional</em>' : '') + '</div>';
+  if (optional && !chipOnly && !n.equipment_code) {
+    h += '<div class="eq-optional">Tagging the machine here means a service report made from this note ' +
+         'arrives with its equipment already filled in.</div>';
+  }
 
   if (n.equipment_code) {
     var nm = ntAssetName(n.equipment_code);
@@ -2202,6 +2282,10 @@ function ntEquipmentPicker(n) {
          '<span class="n">' + ntEsc(nm || (NT.assetsState === 'ok' ? 'not in the register' : '')) + '</span>' +
          '<button title="Clear the equipment" onclick="ntClearEquipment(\'' + ntAttr(n.note_id) + '\')">✕</button></div>';
   }
+
+  // Unassigned has no picker — only the chip above, so the tag stays visible
+  // and removable rather than becoming unreachable.
+  if (chipOnly) return h;
 
   h += '<input class="field eq-search" id="eq-search" autocomplete="off" spellcheck="false"' +
        ' placeholder="' + (n.equipment_code ? 'Search for a different code or name…' : 'Search code or name…') + '"' +
@@ -2390,29 +2474,34 @@ async function ntSetNoteType(id, mode) {
   } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
+// Picking a code tags the note. It does NOT change the note's kind: tagging an
+// assignable note with the machine it is about is a normal thing to do, and it
+// must not take the note off anyone's plate.
 async function ntSetEquipment(id, code) {
   code = String(code || '').trim();
   if (!code) return;
   var n = NT.notes[id];
   NT.eqQuery = '';
   try {
-    if (n && n.assignees.length) await ntAppendEvent('note_unassigned', { note_id: id });
-    await ntAppendEvent('note_assignment_set', { note_id: id, mode: 'equipment', equipment_code: code });
+    await ntAppendEvent('note_edited', {
+      note_id: id,
+      patch:  { equipment_code: code },
+      before: { equipment_code: (n && n.equipment_code) || null }
+    });
     ntEqReveal(code);
     ntRenderTree();
     ntToast('Filed against ' + code + (ntAssetName(code) ? ' — ' + ntAssetName(code) : ''));
   } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
-// Clears the code but keeps the note equipment-typed, so the picker stays open
-// and the next thing you do is choose another one. Changing the kind is what
-// the radios above are for.
+// Clears the code and leaves the note's kind alone — the code and the kind are
+// separate questions now, and the radios above answer the other one.
 async function ntClearEquipment(id) {
   NT.eqQuery = '';
   try {
     await ntAppendEvent('note_edited', {
       note_id: id,
-      patch:  { equipment_code: null, assignment: 'equipment' },
+      patch:  { equipment_code: null },
       before: { equipment_code: (NT.notes[id] || {}).equipment_code || null }
     });
   } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
@@ -2639,6 +2728,13 @@ function ntToggleArchived() {
   NT.showArchived = !NT.showArchived;
   document.getElementById('btn-archived').textContent = NT.showArchived ? 'Hide archived' : 'Show archived';
   ntRenderList();
+}
+
+// Promotion opens the service report form, which lives in the Console. Said
+// once, plainly, rather than leaving a dead button on the panel.
+function ntPromoteHint() {
+  ntToast('Open this note in IDMS Console — Personnel › Notes — and use Promote to Task there. ' +
+          'The service report form lives in the Console.');
 }
 
 function ntToast(msg) {

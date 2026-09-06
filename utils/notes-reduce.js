@@ -39,11 +39,17 @@
   // The note type a reader should show. `assignment` carries four values and
   // only three are ever chosen — 'assigned' is what ticking a person makes of
   // 'assignable', and the radios read it back as Assignable (§41.6a).
+  //
+  // The type answers WHO a note is for; `equipment_code` answers WHAT it is
+  // about, and the two are independent. An assignable note may carry a code —
+  // that is how a promoted note reaches the service report with its equipment
+  // already filled in — so the code is not what makes a note equipment-typed.
+  // Only 'equipment' is: about a machine, and nobody in particular.
   function noteType(n) {
     if (!n) return 'unassigned';
     if (n.assignees && n.assignees.length) return 'assignable';
     if (n.assignment === 'assignable') return 'assignable';
-    if (n.assignment === 'equipment' || n.equipment_code) return 'equipment';
+    if (n.assignment === 'equipment') return 'equipment';
     return 'unassigned';
   }
 
@@ -87,10 +93,13 @@
             //   'assignable' — open to whoever picks it up (Notes Tray)
             //   'assigned'   — one or more named people
             //   'equipment'  — filed against one asset code (§41.6d)
-            // A creation that already carries a code is equipment-typed on the
-            // spot: an importer or an older writer should not need to know
-            // about a second event to say what it plainly meant.
-            assignment: p.equipment_code ? 'equipment' : 'unassigned',
+            // An explicit assignment wins. Without one, a creation that
+            // carries a code is equipment-typed on the spot: an importer or an
+            // older writer should not need a second event to say what it
+            // plainly meant. Demotion from a task states 'assignable' and
+            // carries the code, which is exactly why the explicit form exists.
+            assignment: p.assignment ||
+                        (p.equipment_code ? 'equipment' : 'unassigned'),
             assignees: [],            // [{crew_id, username}] — order is assignment order
             assignee: null,           // = assignees[0].crew_id, for single-assignee readers
             assignee_username: null,  // = assignees[0].username
@@ -171,19 +180,19 @@
         // The three person-less types. Naming a person always wins, so this is
         // ignored while anyone is assigned — clear them first.
         //
-        // 'equipment' carries the code it files the note against; the other two
-        // clear whatever code the note was carrying, because this control is
-        // the note's own answer to what it is. Dragging a note onto a PERSON is
-        // a separate gesture and leaves the code alone (§41.6d).
+        // Switching type does NOT drop the equipment code. Assignable and
+        // Equipment both carry one — optional on the first, the point of the
+        // second — so moving between them keeps the tag, which is what stopped
+        // a note losing the machine it is about on a round trip. Only
+        // 'unassigned' clears it, because that panel offers nothing to see or
+        // change it with and a code stranded there is unreachable. Clearing on
+        // purpose is the ✕ on the picker.
         case 'note_assignment_set':
           if (n && !n.assignees.length) {
-            if (p.mode === 'equipment') {
-              n.assignment = 'equipment';
-              if (p.equipment_code) n.equipment_code = p.equipment_code;
-            } else {
-              n.assignment = p.mode === 'assignable' ? 'assignable' : 'unassigned';
-              n.equipment_code = null;
-            }
+            if (p.mode === 'equipment')       n.assignment = 'equipment';
+            else if (p.mode === 'assignable') n.assignment = 'assignable';
+            else { n.assignment = 'unassigned'; n.equipment_code = null; }
+            if (p.equipment_code) n.equipment_code = p.equipment_code;
             n.updated = ev.timestamp;
           }
           break;
@@ -227,6 +236,84 @@
       }
     });
     return notes;
+  }
+
+  // ── Task metadata carried in comments (§41.6e) ─────────────────────────────
+  // Crew already write "Priority: High" into a comment when they mean it, so
+  // promotion reads that rather than asking them to learn a new place to put
+  // it. Any comment line shaped `Label: value` is metadata; everything else is
+  // prose and is left alone. Unknown labels are ignored rather than guessed
+  // at — a wrong guess prefills a service report with something nobody said.
+  //
+  // Later comments win, because the last thing anyone wrote about a note is
+  // the current answer. Within one comment, later lines win for the same
+  // reason.
+  var TASK_META_FIELDS = {
+    priority:      'priority',
+    category:      'job_type',
+    type:          'job_type',
+    'job type':    'job_type',
+    equipment:     'equipment_code',
+    'equipment code': 'equipment_code',
+    asset:         'equipment_code',
+    code:          'equipment_code',
+    role:          'role',
+    'assigned to': 'assigned_to',
+    assignee:      'assigned_to',
+    department:    'department',
+    dept:          'department',
+    'failure mode':  'failure_mode',
+    'failure':       'failure_mode',
+    hours:           'interval_hours',
+    'equipment hours': 'interval_hours',
+    interval:      'interval',
+    status:        'status'
+  };
+
+  // One `Label: value` line. Deliberately strict about the shape: the label is
+  // short, has no sentence punctuation in it, and the line is not a URL or a
+  // clock time, so "Ran it up at 14:30" and "see https://x" stay prose.
+  var META_LINE = /^\s*([A-Za-z][A-Za-z ]{1,20}?)\s*:\s*(.+?)\s*$/;
+
+  function parseMetaLine(line) {
+    var m = META_LINE.exec(line);
+    if (!m) return null;
+    var label = m[1].trim().toLowerCase().replace(/\s+/g, ' ');
+    var field = TASK_META_FIELDS[label];
+    if (!field) return null;
+    var value = m[2].trim();
+    if (!value) return null;
+    return { field: field, value: value, label: m[1].trim() };
+  }
+
+  // Every metadata line in a note's comments, latest wins. Returns
+  // { fields: {taskField: value}, sources: [{field, label, value, actor,
+  // timestamp}] } — the sources list is what lets a UI say where a prefilled
+  // value came from instead of it appearing out of nowhere.
+  function taskMetaFromComments(note) {
+    var fields = {}, sources = [];
+    ((note && note.comments) || []).forEach(function (c) {
+      String(c.text || '').split(/\r?\n/).forEach(function (line) {
+        var hit = parseMetaLine(line);
+        if (!hit) return;
+        fields[hit.field] = hit.value;
+        sources.push({
+          field: hit.field, label: hit.label, value: hit.value,
+          actor: c.actor, timestamp: c.timestamp
+        });
+      });
+    });
+    return { fields: fields, sources: sources };
+  }
+
+  // The comment text with its metadata lines taken out, so a transcript copied
+  // onto a task does not repeat what the form fields already say.
+  function commentProse(text) {
+    return String(text || '')
+      .split(/\r?\n/)
+      .filter(function (line) { return !parseMetaLine(line); })
+      .join('\n')
+      .trim();
   }
 
   function stepStruck(step) {
@@ -275,6 +362,9 @@
   var api = {
     reduce: reduce,
     noteType: noteType,
+    taskMetaFromComments: taskMetaFromComments,
+    commentProse: commentProse,
+    TASK_META_FIELDS: TASK_META_FIELDS,
     stepStruck: stepStruck,
     isAssignedTo: isAssignedTo,
     attachmentExpiry: attachmentExpiry,

@@ -37,6 +37,16 @@ v2.31.8 *(2026-09-05)* — **The equipment picker on both surfaces; ignore range
 
 Separately, the notes page was offering components the Console has always refused. §9 says assets whose top-level code segment falls in an **ignore range** are never surfaced in autocomplete — the Console excludes them at the query (`department IS NOT 'ignore'`), but the page reads `assets.csv` directly and was applying no such rule, so **851 of the register's 3,896 rows** were offerable, including `100.001.001 F/V Araho` — the vessel itself. The page now reads `equipmentconfig.json` alongside the CSV and applies the ranges before caching, on the top-level integer segment only, bounds inclusive, exactly as the ingest does.
 
+v2.31.9 *(2026-09-05)* — **Notes are renameable; promotion and demotion, both tombstoning.** Note **titles are editable in place** on both surfaces — one `note_edited` carrying the new title, the same correction pattern as everything else. A note is written in a hurry and read for weeks; its first line has to be correctable without deleting the note and losing its comments.
+
+**Promotion supersedes the mirror model.** §41.6 said a promoted note became a live task mirror. It no longer does: the task becomes the record of that work and **the note is tombstoned** (`note_promoted` then `note_deleted`). Two records of one job drift apart, which is the thing this hub exists to prevent, and a mirror is two records. Promote is offered on **assignable** notes only (v2.31.7) and opens the Console's **New Service Report form in a lightbox** — the same `buildTaskCreationHtml` the tab renders, so there is one task-creation form, not a second one. Title, body, the comment transcript as a provenance block, and every attachment travel; attachments are **genuinely copied** under the task (§41.6, "copied, not referenced") because the note's files are on the note's retention clock and tombstoning starts it. A confirmation names what is about to stop existing.
+
+**Demotion is the mirror image** (§41.6f). A task's edit modal gains **↓ Demote to Note**: an *assignable* note is created carrying the description as its body and everything task-specific as its first comment, and the task is deleted from the definitions file and the cache. Its confirmation names what does not survive — transition history, sign-off, any completed-work record.
+
+**Task metadata in comments** (§41.6e, new). Any comment line shaped `Label: value` is read as task metadata and prefills the matching field on promotion; everything else is prose and is left alone. This is also the shape demotion *writes*, which is what makes the round trip lossless. A value the form has no option for is **stated in the lightbox** rather than dropped, because the transcript has had those lines stripped and it would otherwise vanish entirely.
+
+**The equipment tag is now orthogonal to the note type** (closing the §41.13 open item). Assignable notes carry an optional equipment code, and switching between Assignable and Equipment no longer drops it — the type answers *who* a note is for, the code answers *what* it is about. Only Unassigned clears it, since its panel has nothing to show or change a code with; a note that reaches Unassigned still carrying one shows it as a removable chip rather than stranding it.
+
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
 ---
@@ -7326,8 +7336,8 @@ Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 
 
 | `event_type` | Payload | Notes |
 |---|---|---|
-| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "general"\|"department"\|"crew", department?, owner_crew_id?}` — see §41.4a. `origin` = `manual` \| `template` \| `emergency_offline`. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). `attachments[]` = §41.4b. |
-| `note_edited` | `{note_id, patch, before}` | Same correction pattern as `observation_correction`. |
+| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, assignment?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "general"\|"department"\|"crew", department?, owner_crew_id?}` — see §41.4a. `origin` = `manual` \| `template` \| `emergency_offline` \| `task_demote` (§41.6f). `assignment` states the note type outright; without it a creation carrying an `equipment_code` is equipment-typed, which is what lets an importer say what it plainly meant in one event. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). `attachments[]` = §41.4b. |
+| `note_edited` | `{note_id, patch, before}` | Same correction pattern as `observation_correction`. Carries a renamed `title` (editable in place on both surfaces, v2.31.9), a re-filed `folder`, an added or cleared `equipment_code`, and appended `attachments`. |
 | `note_completed` / `note_uncompleted` | `{note_id}` | First `note_completed` sets state; subsequent ones from other actors are preserved and rendered as confirmations, never dropped. |
 | `step_struck` / `step_unstruck` | `{note_id, step_id}` | Multiple strikes of the same step by different actors are all preserved — "struck by A 03:12, confirmed by B 03:14". This is the emergency-checklist timeline. |
 | `note_assigned` | `{note_id, assignee_crew_id, assignee_username?}` | **Adds** one person — a note may be carried by several (§41.6a). Assigner is the envelope `actor`. `assignee_crew_id` is authoritative (§41.4a); `assignee_username` rides along only when that person is also an IDMS login, and the set of those is what the PWA's alert check matches on. |
@@ -7411,14 +7421,25 @@ Any crew member may comment on any note, with photos. Render newest-last under t
 |---|---|
 | `title` | Job name |
 | `body` + provenance block | Description |
-| `equipment_code` | Equipment picker (pre-selected when the note carries a code; if absent, the picker blocks submit as it already does). **Note:** since the type control clears the code when a note is switched to Assignable (§41.6a), a note promoted today arrives with the picker empty and the promoter fills it in. Carrying the code across that switch is the obvious improvement and is listed in §41.13 — it is not decided, because "this is filed against the main engine" and "this is Sam's job" are different claims and the type control currently makes you pick one. |
+| `equipment_code` | Equipment picker (pre-selected; an assignable note keeps its tag, §41.6a). A code named in a comment wins over the note's own tag — it is the more recent statement. If neither exists the picker blocks submit as it already does. |
+| `Label: value` lines in comments | The matching form field (§41.6e) |
 | note + comment photos | Attachments (copied, not referenced) |
 
 The provenance block is plain text appended to the description: `From note {note_id} — {author}, {date}.` followed by the comment transcript, one line per comment: `{author} ({date}): {text} [photo]`. Copied at promote time, so later deletion of the note cannot hollow out the task's history.
 
-Submit travels **each client's existing ETag-guarded definition-create path** — Console `mutateTaskDefinitionFile`, PWA `erTaskCreateInDefinitionsFile` (both guarded since Phase 6 Stage 0). There is no new write lane and no proposal inbox (v2.31 planning note: an inbox was considered and dropped once both create paths were confirmed guarded). The task is created `open`, assigned or not, per the normal screen. On success the client appends `note_promoted {note_id, task_id}` and the note becomes a **mirror** of the task it turned into.
+The form is the Console's **New Service Report** — the same `buildTaskCreationHtml` the tab renders, opened in a lightbox over the Notes screen so promoting a note does not cost you your place in the list. One task-creation form, not a second one. The lightbox does not close on a backdrop click: the form can hold several minutes of typing and a stray click is not consent to lose it.
 
-**Mirrors.** A mirror (from promotion, or from department-level `task_imported`) renders the task's live status read-only and strikes through when the task reaches a terminal state. Tapping "complete" on a mirror fires the **existing `reported_complete` action** through the existing path — the mirror stores no completion state of its own, ever. Officer sign-off in the Console remains the only path to `completed`. This is the single seam between the hub and the guarded task machinery, and it introduces no new state.
+Submit travels **each client's existing ETag-guarded definition-create path** — Console `mutateTaskDefinitionFile`, PWA `erTaskCreateInDefinitionsFile` (both guarded since Phase 6 Stage 0). There is no new write lane and no proposal inbox (v2.31 planning note: an inbox was considered and dropped once both create paths were confirmed guarded). The task is created `open`, assigned or not, per the normal screen.
+
+**On success the note is tombstoned** — `note_promoted {note_id, task_id}`, then `note_deleted`. *(v2.31.9: this supersedes the mirror model this section previously specified. A mirror is two records of one job, and two records drift — the failure §41.1 names first. The task is now the record, and the note's tombstone keeps who wrote what without keeping a second copy of the work.)*
+
+**Attachments are copied, not referenced.** Every photo and document on the note and on its comments is fetched and re-uploaded under the task — images to `data/assets/pictures/{task_id}/` with their thumbnails, documents to `data/tasks/files/{task_id}/`. Referencing them would leave the task pointing at files on the *note's* retention clock (§41.14), which tombstoning has just started. The copy runs before the form opens, so a slow or failed copy is surfaced before anyone types rather than between Save and the task existing; the promoting client therefore fixes the `task_id` in advance and hands it to the form.
+
+**Promotion is confirmed, and the confirmation says what stops existing** — that this note is deleted, how many attachments travel, and which metadata was found in its comments. A note becoming a task and back again should be rare; neither direction is a gesture that should happen by accident (§41.6f).
+
+**Availability.** Promote is offered on **assignable** notes only (§41.6a): a task is work somebody carries, and an unassigned note or one filed against a machine has nobody on it. The notes page shows the button and says the report is written in the Console, where the form lives; putting a third copy of task creation on that page is a separate decision, not a side effect of this one.
+
+**Mirrors.** Mirrors now come only from department-level `task_imported`, not from promotion. A mirror renders the task's live status read-only and strikes through when the task reaches a terminal state. Tapping "complete" on a mirror fires the **existing `reported_complete` action** through the existing path — the mirror stores no completion state of its own, ever. Officer sign-off in the Console remains the only path to `completed`. This is the single seam between the hub and the guarded task machinery, and it introduces no new state.
 
 **Assigned Tasks board (Console).** The board lists tasks and *assigned* notes, visually distinct (note rows carry a note glyph, no TM fields). Unassigned notes never appear. Completing a note row from the board appends `note_completed` — it does not touch any task table.
 
@@ -7431,6 +7452,8 @@ One control, headed **Note Type**, with three kinds. The panel *below* the radio
 | **Unassigned note** (default) | nothing | Nobody's, and not offered to anyone. | Its own list only. |
 | **Assignable** | the **Assign to** crew list | Open to whoever picks it up; ticking one or more people is the fourth, derived state — **Assigned**. | Its own list, the **Notes Tray** on the Assigned Tasks board, and — once anyone is ticked — each assignee's personal list (pinned) and their card on that board. |
 | **Equipment** | an equipment search box | Filed against one component of the asset register by its `code` (§41.6d). | Its own list, the **EQUIPMENT** band of the Notes sidebar, and the **Notes** section of that component in Console → Maintenance → Equipment. |
+
+**The equipment tag is orthogonal to all three.** The type answers *who* a note is for; `equipment_code` answers *what* it is about. Assignable notes carry an optional tag — which is how a promoted note reaches its service report with the equipment already filled in (§41.6) — and moving between Assignable and Equipment keeps it. Only **Unassigned** clears it, because that panel has nothing to show or change a code with; a note that arrives at Unassigned still carrying one shows it as a removable chip rather than stranding it somewhere nothing can reach. Clearing on purpose is the ✕ on the picker, and dragging a note onto a *person* has never touched it.
 
 The reducer's `assignment` therefore carries four values — `unassigned`, `assignable`, `assigned`, `equipment` — of which only the first, second and fourth are ever *chosen*: `assigned` is what ticking a person makes of `assignable`. The radios read `assigned` as **Assignable**, which is where the crew list lives.
 
@@ -7487,6 +7510,43 @@ When the register cannot be read, the page says so and still accepts a code type
 **The EQUIPMENT band.** The Notes sidebar carries a band below Personnel, collapsed by default, built from the codes actually in use in that department (plus General-scope notes) *and their ancestors* — so `601.001.003` is reachable by walking `601` → `601.001` → `601.001.003` even when no note is filed at the two upper levels. Selecting a node lists notes at that code **and everything beneath it**, which is what a tree node means; the count on a node follows the same rule. Nodes are drop targets: dragging a note onto one files it against that code. Names come from the cached register; a code with no name still renders, because a missing lookup must not hide a note.
 
 **The Console needs nothing new to read them.** Maintenance → Equipment already has a **Notes** section querying `notes.equipment_code` (with *include sub-components* honouring both TM's `parent_code` tree and the code prefix), fed by the `notes` ingest lane, which has carried `equipment_code` since the lane was written. An equipment-typed note appears under its component on the next sync.
+
+### 41.6e Task metadata in comments
+
+Crew already write `Priority: High` into a comment when they mean it. Promotion reads that rather than asking anyone to learn a new place to put it.
+
+**The rule.** Any comment line shaped `Label: value` where the label is one this table knows is task metadata. Everything else is prose and is left alone. Later comments win over earlier ones, and later lines win within one comment — the last thing anyone wrote about a note is the current answer.
+
+| Label (case-insensitive) | Task field |
+|---|---|
+| `Priority` | `priority` |
+| `Category`, `Type`, `Job type` | `job_type` |
+| `Equipment`, `Equipment code`, `Asset`, `Code` | `equipment_code` |
+| `Role` | `role` |
+| `Assigned to`, `Assignee` | `assigned_to` |
+| `Department`, `Dept` | `department` |
+| `Failure mode`, `Failure` | `failure_mode` |
+| `Hours`, `Equipment hours` | `interval_hours` |
+| `Interval` | `interval` |
+| `Status` | `status` |
+
+**Unknown labels are ignored, never guessed at.** A wrong guess prefills a service report with something nobody said. The label must also be short and alphabetic, which is what keeps `Ran it up at 14:30`, `see https://…` and `Spoke to the chief: he says wait` as prose.
+
+**The prose survives, the labels do not.** The transcript copied into the task's description has its metadata lines removed, so the form fields and the description do not say the same thing twice. That is exactly why a value the form cannot accept — a role that is not in the roster, say — is **named in the lightbox** instead of dropped: it has already been taken out of the transcript, so silence there would lose it altogether.
+
+This is also the shape §41.6f *writes*, which is what makes a demote-then-promote round trip lossless.
+
+### 41.6f Demotion — a task becomes a note again
+
+A task's edit modal carries **↓ Demote to Note**, the mirror image of promotion and tombstoning on its own side.
+
+The new note is **assignable** — it was work somebody was meant to do, and it still is — with the task's `job_name` as its title, its `description` as the body, and its first equipment code as the note's tag. Everything task-specific goes into the **first comment**, in the `Label: value` shape of §41.6e: category, priority, department, role, holder, equipment, failure mode, interval, equipment hours, status, plus any further equipment, supervisor notes and skill tags as plain lines. The task is then deleted from the definitions file and from the derived cache.
+
+**What does not come back**, and the confirmation says so: the task's transition history, any officer sign-off, and any `task_records` row already written from it. A note cannot hold those, and demoting a *closed* task throws away the record of it being done — which the confirmation calls out separately.
+
+**A failure after the note exists is never silent.** The note is created first, because losing a task entirely is worse than briefly having both; its creation is an appended event and events are not retracted. So if the task deletion then fails, the client says plainly that both now exist and which one to remove by hand. Reporting a partial state is the only honest option available at that point.
+
+**Both directions are confirmed on purpose.** A note going back and forth accumulates a comment per trip, and nothing about this system wants that traffic — these are conversions, not a toggle.
 
 ### 41.7 Alerts
 
@@ -7576,7 +7636,8 @@ When more than one clock applies, the **earliest** due date wins. Un-completing 
 - ~~**[OPEN]** Who may author notes at department level.~~ **Settled (v2.31.1):** anyone, deliberately — mostly-global rules keep the first release clean, and an authorship setup page stays a future option rather than a commitment.
 - **[OPEN]** Whether aggregates ship in the first release or replay-only suffices at initial volumes (41.3).
 - **[NEXT SLICE]** The Console-side attachment purge screen required by §41.14 — the reducer already computes eligibility; nothing purges yet.
-- **[OPEN]** Whether switching a note to **Assignable** should keep its `equipment_code` instead of clearing it (§41.6a). Keeping it would let a promoted note arrive at Task Creation with the equipment picker already filled, which is the job §41.6 gives the tag; clearing it is what an exclusive type control means, and is what dragging a note onto a *person* deliberately does not do. Not urgent while promotion is unbuilt — but it has to be settled before it is.
+- ~~**[OPEN]** Whether switching a note to **Assignable** should keep its `equipment_code` instead of clearing it (§41.6a).~~ **Settled (v2.31.9):** it keeps it. The tag is orthogonal to the type — the type says who a note is for, the code says what it is about — and only Unassigned clears it. Settled by the same decision that made promotion prefill the equipment picker.
+- **[OPEN]** The promotion lightbox is Console-only. The notes page shows the button and points at the Console, because the PWA's task-creation form lives in `index.html` and a copy on the notes page would be a *third* implementation to keep in step. Extracting one shared form is the way to close this, not copying a second.
 - Emergency mode (41.9) is staged after the hub's first online-only release; the service worker work is tracked with PWA-SCHEMA §19.
 
 ---
