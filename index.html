@@ -2015,11 +2015,17 @@
         <!-- Task Status — mirrors the Console's Task Creation form so a field
              user can create an already-done job as a service report without a
              separate input form. Default 'open' preserves prior behaviour.
-             The close-out option's VALUE stays 'completed' because that is
-             what this form means by "closing now" — it is what writes the
-             task_records row. It is not what gets stored: submitErTaskCreate
-             stores 'reported_complete', because only a push to TM Master may
-             say 'completed'. The label says so. -->
+
+             THERE IS NO 'completed' OPTION. Reporting a job complete is one
+             step and pushing it to TM Master is another, taken by someone else
+             in the Console, so the terminal status is not a thing this form —
+             or any dropdown on either client — can select. Picking Report
+             Complete is still what makes this submit write the task_records
+             row; what it no longer does is claim the PMS has been told.
+
+             This used to read `value="completed"` with a label explaining that
+             it did not mean completed, which is a lot of work for a word to do.
+             The value is the status now. -->
         <div class="er-form-row" style="margin-bottom:0">
           <label class="er-form-label">Task Status</label>
           <select id="er-create-status" class="er-form-input">
@@ -2029,7 +2035,7 @@
             <option value="waiting_opportunity">Waiting Opportunity</option>
             <option value="shipyard">Shipyard</option>
             <option value="other">Other</option>
-            <option value="completed">Close out — record the work (TM Master still to be told)</option>
+            <option value="reported_complete">Report Complete</option>
             <option value="cancelled">Cancelled</option>
           </select>
         </div>
@@ -4231,8 +4237,11 @@ var ER_TASK_ACTIVE_STATUSES = ['open','investigating','waiting_parts','waiting_o
 // Console (which writes the task_records row via db:closeTask). Locked
 // decision 2026-07-27, extended 2026-07-27 to drop 'cancelled' from the phone
 // for the same reason — it too removed work from the pool with no review.
-// The CREATE modal is untouched and still offers both terminal statuses; that
-// path already writes a completion record correctly.
+//
+// The CREATE modal offers 'reported_complete' and 'cancelled' as well, because
+// creating an already-done job IS the phone's service-report path and it does
+// write the record. Since 2026-09-06 it offers no 'completed' either, so the
+// two modals now agree: nothing on this phone writes the terminal state.
 var ER_TASK_UPDATE_STATUSES = ['open','investigating','waiting_parts','waiting_opportunity','shipyard','other','reported_complete'];
 
 var ER_TASKS_STATE = {
@@ -5734,8 +5743,8 @@ function erTaskUpdateStatusHint() {
     // Two steps, not one, and the crew member should know there are two —
     // otherwise a job they can still see on the board a week later reads as a
     // lost report rather than as one waiting on TM Master (§32a).
-    hint.textContent = 'This tells the engineer the work is done. The job stays on the board until they '
-                     + 'sign it off and send it to TM Master from the Console.';
+    hint.textContent = 'This tells the engineer the work is done. The job stays on the board until it is '
+                     + 'written up and pushed to TM Master from the Console.';
     hint.style.display = 'block';
   } else {
     hint.style.display = 'none';
@@ -5743,9 +5752,8 @@ function erTaskUpdateStatusHint() {
   }
 }
 
-// Dropdown label — the action phrasing ("Report Complete", "Close
-// (Completed)"). erTaskStatusLabel below is the row-pill counterpart and
-// returns the state instead.
+// Dropdown label — the action phrasing ("Report Complete"). erTaskStatusLabel
+// below is the row-pill counterpart and returns the state instead ("Reported").
 function erTaskStatusOptionLabel(s) {
   for (var i = 0; i < ER_TASK_STATUSES.length; i++) {
     if (ER_TASK_STATUSES[i][0] === s) return ER_TASK_STATUSES[i][1];
@@ -5757,7 +5765,8 @@ function erTaskStatusLabel(s) {
   for (var i = 0; i < ER_TASK_STATUSES.length; i++) {
     if (ER_TASK_STATUSES[i][0] === s) {
       // Row pills want the state, not the action verb the dropdown uses:
-      // "Close (Completed)" → "Completed", "Report Complete" → "Reported".
+      // "Report Complete" → "Reported". 'completed' is here to render a task
+      // the Console's push has already moved; nothing on the phone writes it.
       if (s === 'completed')         return 'Completed';
       if (s === 'reported_complete') return 'Reported';
       return ER_TASK_STATUSES[i][1];
@@ -6468,24 +6477,19 @@ async function submitErTaskCreate() {
 
   var job_type  = (document.getElementById('er-create-category')   || {}).value || 'CHK';
   var priority  = (document.getElementById('er-create-priority')   || {}).value || 'Normal';
-  // Two different things, and the whole of §5a is the difference between them.
+  // 'reported_complete' is what the form offers and what gets stored — one
+  // value, no translation. Picking it means "I am reporting this done now",
+  // which is what makes this submit write a task_records row and file a
+  // task_closure rough log; the record is what puts the job in the officer's
+  // TM Master queue.
   //
-  //   status        what the FORM was set to. 'completed' here means "I am
-  //                 closing this out now" — it is what makes this submit write
-  //                 a task_records row and file a task_closure rough log.
-  //   storedStatus  what lands on the task, on OneDrive and in the Console's
-  //                 SQLite. Closing out stores 'reported_complete': the work is
-  //                 reported done and captured, and TM Master has not been told.
-  //                 Only a successful push says 'completed', and that happens in
-  //                 the Console. Mirrors Console closeTask (main.js) and
-  //                 taskSubmitManualEntry (tasks.js).
-  //
-  // Before this the phone wrote 'completed' straight onto the definition file,
-  // which took the job out of Active Tasks looking finished while the PMS knew
-  // nothing about it — exactly the bypass the Console closed on 2026-09-05.
+  // There were two variables here for a day. The form said 'completed' and the
+  // task stored 'reported_complete', on the reasoning that 'completed' was what
+  // the FORM meant by closing now. It was a translation nobody reading either
+  // half would expect, and it kept a word on screen that the whole rule exists
+  // to stop meaning. The Console dropped the same indirection on 2026-09-06.
   var status       = (document.getElementById('er-create-status')  || {}).value || 'open';
-  var isClosingNow = status === 'completed';
-  var storedStatus = isClosingNow ? 'reported_complete' : status;
+  var isClosingNow = status === 'reported_complete';
   var role      = ((document.getElementById('er-create-role')      || {}).value || '').trim();
   var assigned  = ((document.getElementById('er-create-assigned')  || {}).value || '').trim();
   var fmCode    = (document.getElementById('er-create-fm')         || {}).value || '';
@@ -6534,14 +6538,13 @@ async function submitErTaskCreate() {
     // it out as a service report), emit a synthetic transition event so the
     // Console event log shows the creation-time status change. from_status is
     // 'open' to match the implicit default a task would have been born with.
-    // to_status is the STORED status — the event log has to agree with the row.
-    if (storedStatus !== 'open') {
+    if (status !== 'open') {
       events.push({
         event_id:    erUuid(),
         task_id:     taskId,
         type:        'transition',
         from_status: 'open',
-        to_status:   storedStatus,
+        to_status:   status,
         comment:     null,
         actor_user:  currentUser.username || 'unknown',
         actor_name:  currentUser.name || currentUser.username || 'Unknown',
@@ -6562,7 +6565,7 @@ async function submitErTaskCreate() {
       assigned_to:    assigned || null,
       description:    desc || null,
       skill_tags:     skillTags.length ? JSON.stringify(skillTags) : null,
-      status:         storedStatus,
+      status:         status,
       recurring:      recurring ? 1 : 0,
       interval:       interval || null,
       interval_hours: eqHours,
@@ -11010,7 +11013,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.14';
+var PWA_VERSION  = '1.15';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {

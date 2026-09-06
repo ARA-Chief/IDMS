@@ -1,6 +1,8 @@
 # IDMS Schema Specification
 **Version 2.36 — F/V Araho**
 
+v2.37 *(2026-09-06)* — **The two steps get their own names; §32a's known gap closed; `completed` removed from the last dropdown that offered it.** Reporting a job done and telling TM Master about it are two steps taken by two people, and neither client said so. Both called the first one *Close*. The Console's row button is now **Report Complete** (the engineer; writes the `task_records` row, task → `reported_complete`) and a record still sitting on `reported_complete` carries **Push to TM Master…** (the officer; the only path to `completed`), which opens the same approval screen the toolbar does, preselected on that job. The PWA's create form drops `value="completed"` — it offered a close-out option whose label explained that it did not mean completed, and `submitErTaskCreate` translated it to `reported_complete` on the way out; the value is the status now and `storedStatus` is gone. **§32a's known gap is closed**: `taskSubmitCreate` no longer writes `completed`, so nothing on either client can reach the terminal state except `recordPush`. Also corrected in the Console, and the reason the two steps were invisible: `TASK_UNION_SQL` hardcoded `'completed'` on every `task_records` row, so a record written but not yet pushed was filed in the archive — out of the active list, and so out of sight of the officer who still had to push it. The union reads the status off the task behind the record now, falling back to `'completed'` for imported history, which has no task behind it. That means a record can come back from a `status:'active'` query, so `getTasksUnified` gained a `source` filter and the Assigned Work board asks for `source:'task'` rather than dropping records after the fetch had already counted them.
+
 v2.36 *(2026-09-05)* — **§32a new: what `completed` means; §32 status list corrected; §41.6 mirrors corrected.** A job is *reported complete* when the work is done and captured in IDMS, and *completed* when TM Master has it. Only a successful push writes the second, and no status dropdown on either client offers it any more — the Console's Update modal dropped `Close (Completed)` (it wrote no record), signing a job off lands it on `reported_complete`, and the PWA's close-out form now stores `reported_complete` while keeping `completed` as its own internal "closing now" flag for the `task_records` write. The effect is that the terminal state cannot be reached by forgetting to push, and a job the PMS has not been told about stays visible on Active Tasks and on the phone. §32's `status` row had listed `open / in_progress / completed / cancelled` since v2.3 and was three renames out of date; it now lists all nine and names the active/terminal split. §41.6's mirror paragraph said officer sign-off was the only path to `completed`; it is not — sign-off records the work and stops at `reported_complete`. §32a also records the one place the rule is not yet enforced: the Console's Close button (`taskSubmitCreate`) still writes `completed` directly.
 
 v2.35 *(2026-09-05)* — **Procurement built in the Console (§42.12 rewritten from "not built").** `Operations → Procurement` in IDMS-Console 0.8.5, as two renderers of one contract rather than a second system that happens to agree: the same OneDrive event stream, the same TM Master catalogue, and `utils/procurement-reduce.js` mirrored byte-identical into `src/renderer/js/`. New ingest lane `sync-procurement.js` shaped exactly like `sync-notes.js` — raw events into `procurement_events`, whole derived cache rebuilt through the shared reducer, listing-minus-held rather than a cursor seek. New SQLite tables `procurement_items` / `_movements` / `_requisitions` / `_pos`, a `procurement` entry in `DIAG_REGISTRY` with a renderer-delegated rebuild, and Graph helpers including an ETag-guarded write of the `settings` block only. The register is filtered in SQL because 14,487 rows will not go through the renderer, and derived order/requisition lines carry a folded-in `item_name` since the Console holds no in-memory register. Approving a requisition and sending an order are Console-only, being officer actions; nothing is page-only. Adds `_procurement-harness.html`, a standalone page running the real screen, derive and reducer over a local catalogue with writes collected rather than sent.
@@ -5910,7 +5912,7 @@ On submit: generates a `record_id` (UUID), sets `task_id = null`, writes the rec
 
 ## §32a — What `completed` means
 
-**Status:** Settled and built, 2026-09-05.
+**Status:** Settled and built, 2026-09-05. Two-step naming and the last gap closed, 2026-09-06.
 **Console:** `src/main/main.js` (`closeTask`), `src/main/tm-push.js` (`recordPush`, `PUSHABLE`), `src/renderer/js/tasks.js`.
 **PWA:** `index.html` — `ER_TASK_STATUSES`, `ER_TASK_UPDATE_STATUSES`, `submitErTaskCreate`.
 **Console prose:** `IDMS-Console/docs/tm-write-path-roundtrip.md` §5a.
@@ -5927,13 +5929,27 @@ On submit: generates a `record_id` (UUID), sets `task_id = null`, writes the rec
 | Writer | Writes | Notes |
 |---|---|---|
 | PWA — Update modal | active statuses only | `ER_TASK_UPDATE_STATUSES`. No terminal status, ever. Locked 2026-07-27. |
-| PWA — Create/close-out form | `reported_complete` | The form's own value for the close-out option is `completed` (it is what triggers the `task_records` write); the **stored** status is `reported_complete`. |
+| PWA — Create form | `reported_complete` | The option's value *is* the status (2026-09-06). It writes the `task_records` row, which is what puts the job in the officer's queue. |
 | Console — Update modal | active statuses + `cancelled` | `Close (Completed)` removed 2026-09-05: that modal writes no record. |
-| Console — Close button / Task Creation form | `reported_complete` (intended) | Writes the `task_records` row. **See the known gap below.** |
+| Console — Report Complete / Task Creation form | `reported_complete` | Writes the `task_records` row. |
 | Console — Manual Entry | `reported_complete` | Via `closeTask`, plus a definitions-file patch. |
 | Console — TM Master push | `completed` | `recordPush` only. The single writer of the terminal state. |
 
-The point of the table is that `completed` **cannot be reached by forgetting to push**. No status dropdown on either client offers it.
+The point of the table is that `completed` **cannot be reached by forgetting to push**. No status dropdown on either client offers it, and as of 2026-09-06 no form value on either client is spelled `completed` either — the last one was the PWA's close-out option, whose label had to explain that it did not mean completed.
+
+### The two steps, and who takes them (2026-09-06)
+
+| Where | Button | Who | What it does |
+|---|---|---|---|
+| Console — a live task row | **Report Complete** | the engineer who did the work | writes the record; task → `reported_complete` |
+| Console — a crew report with no record yet | **Report Complete** | whoever writes it up | same form, same record |
+| Console — a record still on `reported_complete` | **Push to TM Master…** | the reviewing officer | fills TM's Job done form; on approval → `completed` |
+| PWA — Update modal | **Report Complete** | the crew member | status only; no record, so the officer still writes it up |
+| PWA — Create form | **Report Complete** | the crew member | creates an already-done job *and* its record |
+
+Both clients now use one phrase for the first step. Nothing anywhere finishes a job in one press, because there is no point at which one person both does the work and tells the PMS about it.
+
+**The Console's list had to be corrected to show this.** `TASK_UNION_SQL` hardcoded `'completed'` on every `task_records` row, on the old assumption that a record *is* a finished job. Under two steps a record can be halfway — written, not pushed — and those rows were being filed in the archive, out of the active list and so out of sight of the officer who still had to push them. The union reads the status off the task behind the record now, falling back to `'completed'` for imported history, which has no task behind it at all. Pinned by the "unified status" section of `npm run test:tm-ingest`.
 
 ### The push queue
 
@@ -5941,9 +5957,9 @@ The point of the table is that `completed` **cannot be reached by forgetting to 
 
 Because a phone close-out now stores `reported_complete`, work reported from the PWA arrives in the officer's push queue instead of leaving the board looking already filed.
 
-### Known gap (open as of 2026-09-05)
+### The gap this section recorded, closed 2026-09-06
 
-`taskSubmitCreate` in the Console's `tasks.js` — the path behind the **Close** button on each active task row — still writes `status: 'completed'` onto the task definition and into SQLite, despite the option now being labelled *"Close out — record the work (TM Master still to be told)"*. `closeTask` and `taskSubmitManualEntry` were moved to `reported_complete`; this one was not. Until it is, the Console's primary close-out is more optimistic than the PWA's, and the affected jobs land in the queue via the backlog arm of `PUSHABLE` rather than the intended one.
+`taskSubmitCreate` in the Console's `tasks.js` wrote `status: 'completed'` while the option above it was labelled *"Close out — record the work (TM Master still to be told)"* — a label doing work the value contradicted. `closeTask` and `taskSubmitManualEntry` had been moved to `reported_complete`; that path had not. The option is gone rather than relabelled, on both clients, and `recordPush` is now the only writer of the terminal state anywhere in IDMS.
 
 ---
 

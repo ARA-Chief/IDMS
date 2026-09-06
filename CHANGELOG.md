@@ -8,6 +8,17 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.15 — 2026-09-06
+
+- **"Report Complete" is what it is called now, everywhere.** The status you
+  set, the option on the create form, and the button the engineer presses in
+  the Console all use the same two words. Nothing says "Close" any more,
+  because closing a job is telling TM Master about it — and that is a separate
+  step somebody else takes.
+- Creating an already-done job from the phone now sets **Report Complete**
+  directly. Same result as before: the service report is written the moment you
+  save, and it goes into the officer's queue for TM Master.
+
 ## 1.14 — 2026-09-05
 
 - **Closing a job out no longer says TM Master has it.** Reporting a job done
