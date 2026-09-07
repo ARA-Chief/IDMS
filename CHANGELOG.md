@@ -8,6 +8,42 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.21 — 2026-09-07
+
+- **Procurement is open to the whole engine room.** If Engine Room is one of
+  your departments, the tile is on your hub: the stores register, where things
+  are stowed, what is short, receiving, counts, and raising a requisition.
+  You no longer need to be a chief to look something up or book a part in.
+- Approving a requisition and sending an order are unchanged — still the
+  chief engineers and admins. Asking for a part and agreeing to buy it are
+  different jobs.
+- Which departments get in is now a setting (Procurement → Settings), so it
+  can be widened or closed without a new build.
+
+## 1.20 — 2026-09-07
+
+- Your user menu now has **My Profile**, **My KSA Card** and **My Training** in every department, not just the Engine Room.
+- **My KSA Card** shows your verified sign-offs with when the work last came round, and flags any card revised after you were signed off.
+- **My Training** shows what your work asks for: cards needed for jobs assigned to you or due soon, your department's syllabus, and anything to refresh. Tap a card to see why. It is a plan, not a score.
+
+## 1.19 — 2026-09-07
+
+- **The incinerator lamp tells the truth on every phone.** It only ever lights
+  from a complete read of the log, it re-reads by itself (when you open the
+  hub, when you come back to the app, and every minute while it is on
+  screen), and if it could not read the log it says so instead of guessing.
+  The "running for 800 hours" readings were never an hour-meter: that was a
+  phone counting from a session everyone else had already stopped or deleted.
+- **Long runs read as days.** Above a day the bar says `1d 02:15:00`, not
+  `26:15:00`. A session open more than 12 hours is marked *stale?* so someone
+  looks.
+- **STOP, ADD, DELETE and edits check the log first.** If another phone has
+  already stopped or deleted the session you are looking at, you are told, and
+  nothing is written. Buttons go quiet while a write is in flight, so a double
+  tap is one event, not two.
+- **Editing a stopped session keeps it stopped.** Leaving the stop time blank
+  used to re-open it silently.
+
 ## 1.18 — 2026-09-07
 
 - **Contacts.** Everyone the vessel buys from — 1,745 of them — is on the phone

@@ -14,6 +14,9 @@
   <script src="utils/crew-display.js"></script>
   <!-- Shared Notes Hub reducer (mirror at IDMS-Console/src/renderer/js/notes-reduce.js) -->
   <script src="utils/notes-reduce.js"></script>
+  <script src="utils/plan-derive.js"></script>
+  <!-- Shared incinerator replay (mirror at IDMS-Console/src/renderer/js/incinerator-reduce.js) -->
+  <script src="utils/incinerator-reduce.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -351,11 +354,17 @@
     .incin-status-text { font-weight: 800; letter-spacing: 0.16em; }
     .incin-status-text.on  { color: #ff5555; }
     .incin-status-text.off { color: var(--text-muted); }
+    .incin-lamp.unknown { background: #2a2a2a; border-color: #666; border-style: dashed; box-shadow: none; }
+    .incin-status-text.unknown { color: var(--warning); }
     /* Incinerator log screen */
     .incin-action-btn { display: block; width: calc(100% - 24px); margin: 16px 12px; padding: 22px; font-size: 22px; font-weight: 800; letter-spacing: 0.12em; border-radius: var(--radius-lg); border: none; cursor: pointer; }
     .incin-action-btn.start { background: #16a34a; color: #fff; }
     .incin-action-btn.stop  { background: #dc2626; color: #fff; }
     .incin-action-btn:active { transform: scale(0.98); }
+    .incin-action-btn.unknown { background: var(--bg-input); color: var(--text-muted); border: 1px dashed var(--border); font-size: 16px; }
+    .incin-action-btn:disabled { opacity: 0.55; cursor: wait; }
+    .incin-status-line { margin: -6px 12px 10px; min-height: 14px; font-size: 11.5px; color: var(--text-muted); text-align: center; }
+    .incin-status-line.warn { color: var(--warning); }
     .incin-table-wrap { padding: 0 12px 16px; }
     .incin-table-head { display: flex; justify-content: space-between; align-items: center; margin: 4px 4px 8px; }
     .incin-table-head h3 { margin: 0; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
@@ -484,6 +493,32 @@
        applied to html + body + phone-frame to defend against any of them
        being the root scroller in different deployment shells. */
     html, body, .phone-frame { overscroll-behavior-x: none; overscroll-behavior-y: auto; }
+
+    /* ── ME: KSA card and training plan (schema §43) ── */
+    .me-body { flex: 1; overflow-y: auto; padding: 12px 12px 120px; }
+    .me-loading, .me-empty { color: var(--text-muted); font-size: 14px; text-align: center; padding: 28px 12px; line-height: 1.5; }
+    .me-caption { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0 0 12px; }
+    .me-group { margin-bottom: 16px; }
+    .me-group-head { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); padding: 6px 2px; border-bottom: 1px solid var(--border); margin-bottom: 6px; display: flex; justify-content: space-between; }
+    .me-row { background: var(--bg-3); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 8px; }
+    .me-row-top { display: flex; align-items: center; gap: 10px; }
+    .me-row-label { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .me-row-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.45; }
+    .me-row-why { display: none; font-size: 12px; color: var(--text-secondary); margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); line-height: 1.5; }
+    .me-row.open .me-row-why { display: block; }
+    .me-lane { font-size: 9px; letter-spacing: .04em; text-transform: uppercase; border: 1px solid currentColor; border-radius: 8px; padding: 0 5px; color: var(--text-muted); flex: none; }
+    .me-ladder { display: inline-flex; gap: 3px; flex: none; }
+    .me-rung { width: 11px; height: 11px; border-radius: 3px; background: var(--bg-2); border: 1px solid var(--text-muted); box-sizing: border-box; }
+    .me-rung-held { background: var(--accent); border-color: var(--accent); }
+    .me-rung-prov { background: transparent; border-style: dotted; border-color: var(--accent); }
+    .me-rung-req { box-shadow: 0 0 0 2px var(--warning, #f59e0b); }
+    .me-pips { display: inline-flex; gap: 3px; flex: none; }
+    .me-pip { width: 10px; height: 10px; border-radius: 50%; background: var(--bg-2); border: 1px solid var(--text-muted); }
+    .me-pip-filled { background: var(--accent); border-color: var(--accent); }
+    .me-pip-stale { background: transparent; border-color: var(--warning, #f59e0b); }
+    .me-warn { color: var(--warning, #f59e0b); }
+    .me-key { display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 11px; color: var(--text-muted); margin: 4px 0 12px; }
+    .me-key span { display: inline-flex; align-items: center; gap: 5px; }
   </style>
 </head>
 <body>
@@ -606,7 +641,10 @@
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Signed in as</div>
             <div id="user-menu-name" style="font-size:14px;font-weight:500;color:var(--text-secondary)">—</div>
           </div>
-          <button id="menu-btn-switch-dept" onclick="closeUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">Switch Department</button>
+          <button onclick="closeUserMenu();openEngineProfile('screen-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">My Profile</button>
+          <button onclick="closeUserMenu();openMeKsa('screen-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My KSA Card</button>
+          <button onclick="closeUserMenu();openMeTraining('screen-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My Training</button>
+          <button id="menu-btn-switch-dept" onclick="closeUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch Department</button>
           <button onclick="switchUser()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch User</button>
           <button onclick="signOut()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--danger);cursor:pointer;border-top:1px solid var(--border)">Sign Out</button>
         </div>
@@ -1028,7 +1066,10 @@
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Signed in as</div>
             <div id="fa-user-menu-name" style="font-size:14px;font-weight:500;color:var(--text-secondary)">—</div>
           </div>
-          <button id="fa-menu-btn-switch-dept" onclick="closeFaUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">Switch Department</button>
+          <button onclick="closeFaUserMenu();openEngineProfile('screen-factory-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">My Profile</button>
+          <button onclick="closeFaUserMenu();openMeKsa('screen-factory-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My KSA Card</button>
+          <button onclick="closeFaUserMenu();openMeTraining('screen-factory-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My Training</button>
+          <button id="fa-menu-btn-switch-dept" onclick="closeFaUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch Department</button>
           <button onclick="switchUser()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch User</button>
           <button onclick="signOut()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--danger);cursor:pointer;border-top:1px solid var(--border)">Sign Out</button>
         </div>
@@ -1137,7 +1178,10 @@
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Signed in as</div>
             <div id="pu-user-menu-name" style="font-size:14px;font-weight:500;color:var(--text-secondary)">—</div>
           </div>
-          <button id="pu-menu-btn-switch-dept" onclick="closePuUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">Switch Department</button>
+          <button onclick="closePuUserMenu();openEngineProfile('screen-purser-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">My Profile</button>
+          <button onclick="closePuUserMenu();openMeKsa('screen-purser-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My KSA Card</button>
+          <button onclick="closePuUserMenu();openMeTraining('screen-purser-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My Training</button>
+          <button id="pu-menu-btn-switch-dept" onclick="closePuUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch Department</button>
           <button onclick="switchUser()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch User</button>
           <button onclick="signOut()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--danger);cursor:pointer;border-top:1px solid var(--border)">Sign Out</button>
         </div>
@@ -1236,7 +1280,10 @@
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Signed in as</div>
             <div id="pr-user-menu-name" style="font-size:14px;font-weight:500;color:var(--text-secondary)">—</div>
           </div>
-          <button id="pr-menu-btn-switch-dept" onclick="closePrUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">Switch Department</button>
+          <button onclick="closePrUserMenu();openEngineProfile('screen-proc-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">My Profile</button>
+          <button onclick="closePrUserMenu();openMeKsa('screen-proc-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My KSA Card</button>
+          <button onclick="closePrUserMenu();openMeTraining('screen-proc-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My Training</button>
+          <button id="pr-menu-btn-switch-dept" onclick="closePrUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch Department</button>
           <button onclick="switchUser()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch User</button>
           <button onclick="signOut()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--danger);cursor:pointer;border-top:1px solid var(--border)">Sign Out</button>
         </div>
@@ -1607,7 +1654,10 @@
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Signed in as</div>
             <div id="er-user-menu-name" style="font-size:14px;font-weight:500;color:var(--text-secondary)">—</div>
           </div>
-          <button id="er-menu-btn-switch-dept" onclick="closeErUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">Switch Department</button>
+          <button onclick="closeErUserMenu();openEngineProfile('screen-engine-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">My Profile</button>
+          <button onclick="closeErUserMenu();openMeKsa('screen-engine-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My KSA Card</button>
+          <button onclick="closeErUserMenu();openMeTraining('screen-engine-home')" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">My Training</button>
+          <button id="er-menu-btn-switch-dept" onclick="closeErUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch Department</button>
           <button onclick="switchUser()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch User</button>
           <button onclick="signOut()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--danger);cursor:pointer;border-top:1px solid var(--border)">Sign Out</button>
         </div>
@@ -1712,6 +1762,7 @@
       </button>
     </div>
     <button id="incin-action-btn" class="incin-action-btn start" onclick="incinPrimaryAction()">START</button>
+    <div id="incin-status-line" class="incin-status-line"></div>
     <div class="incin-table-wrap">
       <div class="incin-table-head">
         <h3>Sessions</h3>
@@ -2178,6 +2229,34 @@
     <input type="file" id="er-profile-pic-input" accept="image/*" style="display:none">
   </div>
 
+  <!-- ── ME: MY KSA CARD (schema §43) ── -->
+  <div class="screen" id="screen-me-ksa">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen(ME.back || 'screen-engine-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>My KSA Card</h2>
+      <button class="icon-btn" onclick="meReload('ksa')" aria-label="Refresh" title="Refresh">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M15 9a6 6 0 1 1-1.8-4.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M15 3v3.5h-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div id="me-ksa-body" class="me-body"><div class="me-loading">Loading…</div></div>
+  </div>
+
+  <!-- ── ME: MY TRAINING (schema §43) ── -->
+  <div class="screen" id="screen-me-training">
+    <div class="subscreen-header">
+      <button class="back-btn" onclick="showScreen(ME.back || 'screen-engine-home')">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <h2>My Training</h2>
+      <button class="icon-btn" onclick="meReload('training')" aria-label="Refresh" title="Refresh">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M15 9a6 6 0 1 1-1.8-4.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M15 3v3.5h-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div id="me-training-body" class="me-body"><div class="me-loading">Loading…</div></div>
+  </div>
+
   <!-- ── ENGINE ROOM: ADD CERTIFICATE MODAL ── -->
   <div class="modal-overlay" id="er-cert-add-modal" style="display:none">
     <div class="modal-card" style="max-width:480px;text-align:left">
@@ -2494,22 +2573,44 @@ function userIsPurser() {
 }
 
 // ── Procurement gate (§42.11) ────────────────
-// The tile is offered to admins, to anyone carrying Procurement on their crew
-// record, and to the approver roles. The authoritative check is in
-// procurement.html against the live config; this one only decides whether the
-// tile is worth showing, and reads a cached copy of the config so an edited
-// approver_roles list reaches the picker on the next sign-in rather than never.
+// The tile is offered to admins, to the approver roles, to anyone carrying
+// Procurement on their crew record, and to anyone in a department the vessel
+// has opened the module to — which is how the whole engine room gets in.
+//
+// The authoritative check is pcHasAccess() in procurement.html against the live
+// config; this one only decides whether the tile is worth showing, and reads a
+// cached copy of the config so an edited list reaches the picker on the next
+// sign-in rather than never. The two must agree — a tile that appears and then
+// refuses is worse than no tile — and tools/test/access.test.js asserts they do.
 var PROC_ACTIVE = false;
 var PROC_CFG_CACHE_KEY = 'fw_proccfg';
 var PROC_DEFAULT_ROLES = ['Chief Engineer', 'Admin'];
+var PROC_DEFAULT_DEPTS = ['Engine Room'];
 
-function procApproverRoles() {
+function procCfgList(key) {
   try {
     var c = JSON.parse(localStorage.getItem(PROC_CFG_CACHE_KEY) || 'null');
-    var r = c && c.settings && c.settings.approver_roles;
-    if (Array.isArray(r) && r.length) return r;
+    var r = c && c.settings && c.settings[key];
+    if (Array.isArray(r)) return r;
   } catch (e) {}
-  return PROC_DEFAULT_ROLES;
+  return null;
+}
+
+// An empty approver list falls back to the defaults, because somebody must be
+// able to approve: a config that names nobody is a config that has gone wrong.
+function procApproverRoles() {
+  var r = procCfgList('approver_roles');
+  return (r && r.length) ? r : PROC_DEFAULT_ROLES;
+}
+
+// An empty *department* list does not, because naming no department is a
+// coherent thing to want — it is the module as it stood before, gated on role
+// alone — and clearing the field in Settings is the only way to say it. Only a
+// missing key falls back, which is how the live config, written before this
+// key existed, still lets the engine room in.
+function procAccessDepartments() {
+  var d = procCfgList('access_departments');
+  return d || PROC_DEFAULT_DEPTS;
 }
 
 // Fire-and-forget: never on the critical path of a sign-in. The gate uses
@@ -2528,7 +2629,9 @@ function refreshProcurementConfig() {
 function userIsProcurement() {
   if (!currentUser) return false;
   if ((currentUser.permission_tier || '') === 'admin') return true;
-  if ((currentUser.departments || []).indexOf('Procurement') !== -1) return true;
+  var mine = currentUser.departments || [];
+  if (mine.indexOf('Procurement') !== -1) return true;
+  if (procAccessDepartments().some(function (d) { return mine.indexOf(d) !== -1; })) return true;
   return procApproverRoles().indexOf(currentUser.role) !== -1;
 }
 
@@ -9493,11 +9596,16 @@ function erlEsc(str) {
 
 var INCIN = {
   sessions:    [],   // replayed state, sorted by start_time desc
-  byId:        {},   // session_id -> session
-  openSession: null, // session with no stop_time
+  byId:        {},   // session_id -> session (deleted ones included, for edit/delete)
+  openSession: null, // the ONE canonical open session, or null
   vesselTanks: [],   // from config/vesselconfig.json (waste_oil only)
   fuelState:   null, // cached on screen-open / before stop
-  loading:     false,
+  loading:     null, // in-flight loadIncinerator() promise, shared by concurrent callers
+  loaded:      false,// a COMPLETE replay has succeeded since page load
+  loadedAt:    null, // ms epoch of that replay
+  lastError:   null, // message of the most recent failed refresh; null after a good one
+  failedAt:    null, // ms epoch of that failure
+  busy:        false,// a write (start/stop/add/edit/delete) is in flight
   manualEditingId: null
 };
 
@@ -9506,17 +9614,44 @@ var ORB_INBOX_PATH     = 'Documents/IDMS/data/orb/inbox';
 var VESSELCONFIG_PATH  = 'Documents/IDMS/config/vesselconfig.json';
 var FUELSTATE_PATH     = 'Documents/IDMS/data/fuel/fuelstate.json';
 
+// PWA-SCHEMA v1.10 — the reader's contract.
+//   * The lamp, the timer bar and the START/STOP button are painted only from
+//     a COMPLETE replay of the event folder. A refresh that cannot read every
+//     listed file fails as a whole and leaves the last complete state (and
+//     says so on screen); it never paints a partial log, because a partial
+//     log is exactly how a deleted session comes back to life as "running".
+//   * Event files are immutable (PUT with If-None-Match: *), so once read
+//     they are kept in localStorage under their filename and never fetched
+//     again. A refresh costs one folder listing plus the files this device
+//     has not seen. Files this device wrote are put in the same cache at
+//     write time, so its own START / STOP / DELETE is on screen at once even
+//     while the OneDrive listing is still catching up.
+//   * Nothing is written without a fresh complete read first, and the read
+//     must agree that the write still makes sense (STOP needs an open
+//     session, DELETE needs a live one, editing a stopped session must keep
+//     a stop time).
+var INCIN_CACHE_KEY          = 'fw_incin_events'; // §8 registry
+var INCIN_FETCH_CONCURRENCY  = 6;                 // parallel event-file reads
+var INCIN_FETCH_ATTEMPTS     = 4;                 // per request, with backoff
+var INCIN_REFRESH_MS         = 60000;             // background re-read cadence
+var INCIN_OWN_WRITE_GRACE_MS = 24 * 3600000;      // keep an unlisted cached file this long
+
 function incinGraphUrl(path) {
   return 'https://graph.microsoft.com/v1.0/me/drive/root:/'
        + encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
 }
 function incinGraphChildrenUrl(path) {
   return 'https://graph.microsoft.com/v1.0/me/drive/root:/'
-       + encodeURIComponent(path).replace(/%2F/g, '/') + ':/children?$select=id,name';
+       + encodeURIComponent(path).replace(/%2F/g, '/') + ':/children?$select=id,name&$top=999';
 }
 
 function incinActor() {
   return (currentUser && currentUser.username) || 'unknown';
+}
+function incinActorLabel(actor) {
+  if (!actor) return 'another user';
+  if (typeof actor === 'string') return actor;
+  return actor.name || actor.username || actor.source || 'another user';
 }
 
 // MM/DD HH:MM in local time. Used for table display only; events keep ISO.
@@ -9547,21 +9682,69 @@ function incinHHMM(iso) {
   return padTwo(d.getHours()) + ':' + padTwo(d.getMinutes());
 }
 function incinHoursBetween(startIso, stopIso) {
-  if (!startIso || !stopIso) return 0;
-  var ms = new Date(stopIso).getTime() - new Date(startIso).getTime();
-  return Math.max(0, ms / 3600000);
+  return incineratorReduce.hoursBetween(startIso, stopIso);
+}
+function incinSleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+function incinFilenameStamp(d) { return d.toISOString().replace(/[:.\-]/g, ''); }
+
+// ── EVENT CACHE (localStorage, immutable files keyed by filename) ──
+function incinCacheRead() {
+  try {
+    var raw = localStorage.getItem(INCIN_CACHE_KEY);
+    if (!raw) return {};
+    var j = JSON.parse(raw);
+    return (j && j.v === 1 && j.files && typeof j.files === 'object') ? j.files : {};
+  } catch (_) { return {}; }
+}
+function incinCacheWrite(files) {
+  try { localStorage.setItem(INCIN_CACHE_KEY, JSON.stringify({ v: 1, files: files })); }
+  catch (_) { /* quota / private mode: the cache is an optimisation only */ }
+}
+function incinCacheRemember(filename, body) {
+  var files = incinCacheRead();
+  files[filename] = body;
+  incinCacheWrite(files);
+}
+
+// ── GRAPH GET with the retry policy a satellite link needs ──
+// Transient network errors, 429 throttling (honouring Retry-After) and 5xx
+// are retried with backoff; a 401 refreshes the token once. Anything else is
+// returned for the caller to judge. Never returns a partial answer.
+async function incinGraphFetch(url, attempt) {
+  attempt = attempt || 0;
+  var resp;
+  try {
+    resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + graphToken }, cache: 'no-store' });
+  } catch (e) {
+    if (attempt + 1 >= INCIN_FETCH_ATTEMPTS) throw e;
+    await incinSleep(500 * Math.pow(2, attempt));
+    return incinGraphFetch(url, attempt + 1);
+  }
+  if (resp.status === 401 && attempt === 0) {
+    await obsRefreshToken(true);
+    return incinGraphFetch(url, attempt + 1);
+  }
+  if ((resp.status === 429 || resp.status >= 500) && attempt + 1 < INCIN_FETCH_ATTEMPTS) {
+    var ra = Number(resp.headers.get('Retry-After')) || 0;
+    await incinSleep(ra ? Math.min(ra, 60) * 1000 : 500 * Math.pow(2, attempt));
+    return incinGraphFetch(url, attempt + 1);
+  }
+  return resp;
 }
 
 // ── EVENT WRITE ─────────────────────────────────────────────────
 // Append a single immutable event file. Filename is sort-stable (strip
 // ':', '.', '-' from the ISO timestamp). event_id reused on retry so
-// If-None-Match: * gives idempotent 412 no-ops.
+// If-None-Match: * gives idempotent 412 no-ops. The written body goes
+// straight into the local cache so the next replay sees it whether or not
+// the folder listing has caught up yet.
 async function pushIncinEvent(eventType, payload, opts) {
   await obsRefreshToken();
-  var nowIso  = new Date().toISOString();
-  var eventId = (opts && opts.eventId) || erUuid();
-  var tsForFn = nowIso.replace(/[:.\-]/g, '');
-  var path    = INCIN_BASE_PATH + '/' + tsForFn + '-' + eventId + '.json';
+  var nowIso   = new Date().toISOString();
+  var eventId  = (opts && opts.eventId) || erUuid();
+  var tsForFn  = nowIso.replace(/[:.\-]/g, '');
+  var filename = tsForFn + '-' + eventId + '.json';
+  var path     = INCIN_BASE_PATH + '/' + filename;
   var body = {
     schema_version: 1,
     event_id:   eventId,
@@ -9579,133 +9762,131 @@ async function pushIncinEvent(eventType, payload, opts) {
     },
     body: JSON.stringify(body, null, 2)
   });
-  if (resp.status === 412) return body; // already landed
-  if (!resp.ok) throw new Error('Incinerator event PUT failed: ' + resp.status);
+  if (resp.status !== 412 && !resp.ok) throw new Error('Incinerator event PUT failed: ' + resp.status);
+  incinCacheRemember(filename, body);
   return body;
 }
 
-// ── EVENT REPLAY ────────────────────────────────────────────────
-// Reduce raw events into a sessions[] array. Order is by event timestamp
-// (filename is already sort-stable), but each session's *displayed* time
-// is its session_start payload time.
-function incinReplay(events) {
-  var byId = {};
-  events.forEach(function(ev) {
-    var p = ev.payload || {};
-    var sid = p.session_id;
-    if (!sid) return;
-    if (ev.event_type === 'session_start') {
-      if (!byId[sid]) {
-        byId[sid] = {
-          session_id:  sid,
-          start_time:  p.start_time || ev.timestamp,
-          stop_time:   null,
-          source_tank: p.source_tank || null,
-          qty:         Number(p.qty || 0),
-          deleted:     false,
-          actor:       ev.actor
-        };
-      }
-    } else if (ev.event_type === 'session_addition') {
-      if (byId[sid]) byId[sid].qty = Number(byId[sid].qty || 0) + Number(p.qty_add || 0);
-    } else if (ev.event_type === 'session_end') {
-      if (byId[sid]) {
-        byId[sid].stop_time = p.stop_time || ev.timestamp;
-        if (p.qty != null) byId[sid].qty = Number(p.qty);
-        if (p.retained != null) byId[sid].retained = Number(p.retained);
-      }
-    } else if (ev.event_type === 'session_correction') {
-      if (byId[sid] && p.patch) {
-        Object.keys(p.patch).forEach(function(k) { byId[sid][k] = p.patch[k]; });
-      }
-    } else if (ev.event_type === 'session_deletion') {
-      if (byId[sid]) byId[sid].deleted = true;
-    }
-  });
-
-  var list = Object.keys(byId).map(function(k) { return byId[k]; })
-                   .filter(function(s) { return !s.deleted; });
-  list.sort(function(a, b) { return (a.start_time < b.start_time) ? 1 : -1; });
-
-  // Concurrency rule: only one physical incinerator exists. If two users race
-  // and both manage to write a session_start before either replays, multiple
-  // open (no stop_time) sessions can appear. Collapse them into ONE canonical
-  // session — earliest start_time wins, qty is summed. Subsequent additions /
-  // end / corrections will land against whichever session_id their writer used
-  // and merge naturally on the next replay.
-  var openList = list.filter(function(s) { return !s.stop_time; });
-  var open = null;
-  if (openList.length === 1) {
-    open = openList[0];
-  } else if (openList.length > 1) {
-    openList.sort(function(a, b) { return (a.start_time < b.start_time) ? -1 : 1; });
-    var canonical = openList[0];
-    var mergedQty = 0;
-    openList.forEach(function(s) { mergedQty += Number(s.qty || 0); });
-    canonical.qty = mergedQty;
-    canonical._aggregated_from = openList.slice(1).map(function(s) { return s.session_id; });
-    // Drop the non-canonical duplicates from the visible list so the table
-    // doesn't show phantom rows.
-    var dropIds = {};
-    openList.slice(1).forEach(function(s) { dropIds[s.session_id] = true; });
-    list = list.filter(function(s) { return !dropIds[s.session_id]; });
-    open = canonical;
+// ── ONEDRIVE LOAD ───────────────────────────────────────────────
+async function incinListEventFiles() {
+  var url = incinGraphChildrenUrl(INCIN_BASE_PATH);
+  var names = [];
+  while (url) {
+    var resp = await incinGraphFetch(url);
+    if (resp.status === 404) return names;               // folder not created yet
+    if (!resp.ok) throw new Error('listing HTTP ' + resp.status);
+    var page = await resp.json();
+    (page.value || []).forEach(function(f) {
+      if (f && f.name && /\.json$/.test(f.name)) names.push(f.name);
+    });
+    url = page['@odata.nextLink'] || null;              // Graph pages at 200 by default
   }
-  return { sessions: list, byId: byId, openSession: open };
+  return names;
 }
 
-// ── ONEDRIVE LOAD ───────────────────────────────────────────────
-async function loadIncinerator() {
-  if (INCIN.loading) return;
-  INCIN.loading = true;
-  try {
-    await obsRefreshToken();
-    // List event files
-    var resp = await fetch(incinGraphChildrenUrl(INCIN_BASE_PATH), {
-      headers: { 'Authorization': 'Bearer ' + graphToken },
-      cache: 'no-store'
-    });
-    var files = [];
-    if (resp.ok) {
-      var j = await resp.json();
-      files = (j.value || []).filter(function(f) { return f.name && f.name.endsWith('.json'); });
-    } else if (resp.status !== 404) {
-      throw new Error('Graph children failed: ' + resp.status);
-    }
-    files.sort(function(a, b) { return a.name < b.name ? -1 : 1; });
-
-    var events = [];
-    await Promise.all(files.map(async function(f) {
+// Fetch every named file into `files`, a few at a time. The first failure
+// (after retries) aborts the whole refresh: one missing file is one missing
+// deletion, and one missing deletion is a phantom "running" lamp.
+async function incinFetchMissing(names, files) {
+  var next = 0, failure = null;
+  async function worker() {
+    while (next < names.length && !failure) {
+      var n = names[next++];
       try {
-        var r = await fetch(incinGraphUrl(INCIN_BASE_PATH + '/' + f.name), {
-          headers: { 'Authorization': 'Bearer ' + graphToken },
-          cache: 'no-store'
-        });
-        if (!r.ok) return;
-        events.push(await r.json());
-      } catch (_) {}
-    }));
-    events.sort(function(a, b) { return (a.timestamp || '') < (b.timestamp || '') ? -1 : 1; });
-
-    var state = incinReplay(events);
-    INCIN.sessions    = state.sessions;
-    INCIN.byId        = state.byId;
-    INCIN.openSession = state.openSession;
-
-    // Load vessel tanks in parallel (needed for source-name display + dropdown)
-    await loadVesselTanks();
-  } finally {
-    INCIN.loading = false;
-    renderIncineratorScreen();
-    updateIncinTileLamp();
+        var r = await incinGraphFetch(incinGraphUrl(INCIN_BASE_PATH + '/' + n));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var body = await r.json();
+        if (!body || typeof body !== 'object') throw new Error('not an event');
+        files[n] = body;
+      } catch (e) {
+        if (!failure) failure = new Error(n + ': ' + (e && e.message ? e.message : e));
+      }
+    }
   }
+  var workers = [];
+  for (var k = 0; k < Math.min(INCIN_FETCH_CONCURRENCY, names.length); k++) workers.push(worker());
+  await Promise.all(workers);
+  if (failure) throw failure;
+}
+
+// Re-read the folder and replay it. Concurrent callers share one in-flight
+// read (so a pre-flight check before a write always waits for a real read
+// instead of returning early against stale memory). Never throws: a failed
+// refresh keeps the last complete state and records why in INCIN.lastError.
+function loadIncinerator() {
+  if (INCIN.loading) return INCIN.loading;
+  INCIN.loading = (async function() {
+    try {
+      await obsRefreshToken();
+      var names = await incinListEventFiles();
+      var files = incinCacheRead();
+      var listed = {};
+      names.forEach(function(n) { listed[n] = true; });
+      // Forget cached files the listing no longer has — unless they are
+      // recent: a file this device wrote seconds ago can take a while to
+      // show in the listing, and forgetting it would undo the write on screen.
+      var graceStamp = incinFilenameStamp(new Date(Date.now() - INCIN_OWN_WRITE_GRACE_MS));
+      Object.keys(files).forEach(function(n) { if (!listed[n] && n < graceStamp) delete files[n]; });
+      var missing = names.filter(function(n) { return !files[n]; });
+      await incinFetchMissing(missing, files);
+      incinCacheWrite(files);
+
+      var events = Object.keys(files).map(function(n) {
+        var ev = {};
+        Object.keys(files[n]).forEach(function(k) { ev[k] = files[n][k]; });
+        ev._fn = n;
+        return ev;
+      });
+      var state = incineratorReduce.reduce(events);
+      INCIN.sessions    = state.sessions;
+      INCIN.byId        = state.byId;
+      INCIN.openSession = state.openSession;
+      INCIN.loaded      = true;
+      INCIN.loadedAt    = Date.now();
+      INCIN.lastError   = null;
+      if (state.orphans.length) {
+        console.warn('[incinerator] ' + state.orphans.length + ' event(s) name a session with no session_start');
+      }
+      await loadVesselTanks();
+    } catch (e) {
+      INCIN.lastError = (e && e.message) ? e.message : String(e);
+      INCIN.failedAt  = Date.now();
+      console.warn('[incinerator] refresh failed — keeping last complete state:', INCIN.lastError);
+    } finally {
+      INCIN.loading = null;
+      renderIncineratorScreen();
+      updateIncinTileLamp();
+    }
+  })();
+  return INCIN.loading;
+}
+
+// Fresh, complete read before any write. True when the state on screen is
+// current; false (after telling the user) when the log could not be read —
+// in which case nothing is written, because a write against an unreadable
+// log is how the phantom sessions of May–August 2026 were born.
+async function incinPreflight(verb) {
+  await loadIncinerator();
+  if (!INCIN.loaded || INCIN.lastError !== null) {
+    alert('Could not read the incinerator log (' + (INCIN.lastError || 'unknown') + ').\n\nNothing was ' + verb + '. Check the connection and try again.');
+    return false;
+  }
+  return true;
+}
+
+// One write at a time, and the buttons say so.
+function incinBusy(on) {
+  INCIN.busy = !!on;
+  var els = document.querySelectorAll('#incin-action-btn, [id^="modal-incin-"] .modal-btn');
+  for (var i = 0; i < els.length; i++) els[i].disabled = !!on;
 }
 
 async function loadVesselTanks() {
   try {
     await obsRefreshToken();
     var resp = await fetch(incinGraphUrl(VESSELCONFIG_PATH), {
-      headers: { 'Authorization': 'Bearer ' + graphToken }
+      headers: { 'Authorization': 'Bearer ' + graphToken },
+      cache: 'no-store'
     });
     if (!resp.ok) { INCIN.vesselTanks = []; return; }
     var cfg = await resp.json();
@@ -9718,7 +9899,8 @@ async function loadFuelStateSnapshot() {
   try {
     await obsRefreshToken();
     var resp = await fetch(incinGraphUrl(FUELSTATE_PATH), {
-      headers: { 'Authorization': 'Bearer ' + graphToken }
+      headers: { 'Authorization': 'Bearer ' + graphToken },
+      cache: 'no-store'
     });
     if (!resp.ok) { INCIN.fuelState = null; return null; }
     INCIN.fuelState = await resp.json();
@@ -9738,17 +9920,40 @@ function incinTankVolume(tankId) {
 }
 
 // ── RENDER ──────────────────────────────────────────────────────
+// Three lamp states, not two: ON, OFF, and "?" until a complete replay has
+// been read this page-load. A lamp that has never read the log has nothing
+// to say.
 function updateIncinTileLamp() {
-  var lamp = document.getElementById('incin-tile-lamp');
-  var txt  = document.getElementById('incin-tile-status-text');
-  var on   = !!INCIN.openSession;
-  if (lamp) lamp.classList.toggle('on', on);
-  if (txt)  {
-    txt.textContent = on ? 'ON' : 'OFF';
-    txt.classList.toggle('on', on);
-    txt.classList.toggle('off', !on);
+  var lamp  = document.getElementById('incin-tile-lamp');
+  var txt   = document.getElementById('incin-tile-status-text');
+  var known = INCIN.loaded;
+  var on    = known && !!INCIN.openSession;
+  var stale = on && incineratorReduce.isStale(INCIN.openSession);
+  if (lamp) {
+    lamp.classList.toggle('on', on);
+    lamp.classList.toggle('unknown', !known);
+  }
+  if (txt) {
+    var label = !known ? '?' : (on ? (stale ? 'ON · STALE?' : 'ON') : 'OFF');
+    if (known && INCIN.lastError) label += ' · refresh failed';
+    txt.textContent = label;
+    txt.className = 'incin-status-text ' + (!known ? 'unknown' : (on ? 'on' : 'off'));
   }
   renderIncineratorTimerBar();
+}
+
+// Elapsed as HH:MM:SS below a day, "Nd HH:MM:SS" above it — so nobody reads
+// "828:14:03" as an hour-meter. It is time since this session's start.
+function incinElapsedLabel(sec) {
+  if (sec >= 86400) {
+    var d = Math.floor(sec / 86400);
+    return d + 'd ' + formatElapsed(sec - d * 86400);
+  }
+  return formatElapsed(sec);
+}
+function incinElapsedSec(session) {
+  var sec = Math.floor((Date.now() - new Date(session.start_time).getTime()) / 1000);
+  return (Number.isFinite(sec) && sec > 0) ? sec : 0;
 }
 
 // Persistent timer bar on the ER home screen — mirrors the Factory
@@ -9757,22 +9962,24 @@ function updateIncinTileLamp() {
 function renderIncineratorTimerBar() {
   var stack = document.getElementById('er-active-timers-stack');
   if (!stack) return;
-  var s = INCIN.openSession;
+  var s = INCIN.loaded ? INCIN.openSession : null;
   if (!s) { stack.innerHTML = ''; return; }
-  var elapsedSec = Math.floor((Date.now() - new Date(s.start_time).getTime()) / 1000);
-  if (!Number.isFinite(elapsedSec) || elapsedSec < 0) elapsedSec = 0;
+  var elapsedSec = incinElapsedSec(s);
+  var stale = incineratorReduce.isStale(s);
   // 30-min warning threshold matches Factory bars; for incinerator this is informational only.
-  var warn = elapsedSec >= 1800;
-  var tankLabel = incinTankName(s.source_tank);
+  var warn = stale || elapsedSec >= 1800;
+  var sub = 'Source: ' + escapeHtml(incinTankName(s.source_tank)) + ' · since ' + escapeHtml(incinFormatStamp(s.start_time));
+  if (stale) sub += ' · open over ' + incineratorReduce.STALE_HOURS + ' h — check the log';
+  if (INCIN.lastError) sub += ' · last refresh failed';
   stack.innerHTML =
     '<div class="active-timer-bar" id="incin-timer-bar" onclick="openIncineratorLog()">' +
       '<span class="timer-bar-dot' + (warn ? ' warning' : '') + '" style="background:#ff4444"></span>' +
       '<div class="timer-bar-info">' +
-        '<div class="timer-bar-name">Incinerator running</div>' +
-        '<div class="timer-bar-cat">Source: ' + tankLabel + '</div>' +
+        '<div class="timer-bar-name">Incinerator running' + (stale ? ' — stale?' : '') + '</div>' +
+        '<div class="timer-bar-cat">' + sub + '</div>' +
       '</div>' +
       '<div class="timer-bar-clock' + (warn ? ' warning' : '') + '" id="incin-bar-clock">' +
-        formatElapsed(elapsedSec) +
+        incinElapsedLabel(elapsedSec) +
       '</div>' +
     '</div>';
 }
@@ -9781,13 +9988,12 @@ function renderIncineratorTimerBar() {
 // formatElapsed is already defined by the factory timer module.
 (function() {
   setInterval(function() {
-    var s = INCIN.openSession;
+    var s = INCIN.loaded ? INCIN.openSession : null;
     if (!s) return;
     var clk = document.getElementById('incin-bar-clock');
     if (!clk) return;
-    var elapsedSec = Math.floor((Date.now() - new Date(s.start_time).getTime()) / 1000);
-    if (!Number.isFinite(elapsedSec) || elapsedSec < 0) elapsedSec = 0;
-    clk.textContent = formatElapsed(elapsedSec);
+    var elapsedSec = incinElapsedSec(s);
+    clk.textContent = incinElapsedLabel(elapsedSec);
     if (elapsedSec >= 1800) clk.classList.add('warning');
   }, 1000);
 })();
@@ -9795,9 +10001,28 @@ function renderIncineratorTimerBar() {
 function renderIncineratorScreen() {
   var btn = document.getElementById('incin-action-btn');
   if (btn) {
-    var on = !!INCIN.openSession;
-    btn.textContent = on ? 'STOP' : 'START';
-    btn.className   = 'incin-action-btn ' + (on ? 'stop' : 'start');
+    if (!INCIN.loaded) {
+      btn.textContent = INCIN.loading ? 'READING LOG…' : 'STATUS UNKNOWN — TAP TO RETRY';
+      btn.className   = 'incin-action-btn unknown';
+    } else {
+      var on = !!INCIN.openSession;
+      btn.textContent = on ? 'STOP' : 'START';
+      btn.className   = 'incin-action-btn ' + (on ? 'stop' : 'start');
+    }
+  }
+  var line = document.getElementById('incin-status-line');
+  if (line) {
+    var readAt = INCIN.loadedAt ? incinHHMM(new Date(INCIN.loadedAt).toISOString()) : null;
+    if (INCIN.lastError) {
+      line.textContent = '⚠ Could not read the log' + (readAt ? ' — showing the state read at ' + readAt : '') + ' (' + INCIN.lastError + ')';
+      line.className = 'incin-status-line warn';
+    } else if (readAt) {
+      line.textContent = 'Log read at ' + readAt + ' · refreshes automatically';
+      line.className = 'incin-status-line';
+    } else {
+      line.textContent = '';
+      line.className = 'incin-status-line';
+    }
   }
   var tbody = document.getElementById('incin-table-body');
   var empty = document.getElementById('incin-empty');
@@ -9851,6 +10076,8 @@ function openIncineratorLog() {
 }
 
 function incinPrimaryAction() {
+  if (INCIN.busy) return;
+  if (!INCIN.loaded) { loadIncinerator(); renderIncineratorScreen(); return; }
   if (INCIN.openSession) incinOpenStopModal();
   else                   incinOpenStartModal();
 }
@@ -9865,34 +10092,34 @@ async function incinConfirmStart() {
   var sel = document.getElementById('incin-start-source');
   var tankId = sel ? sel.value : '';
   if (!tankId) { alert('Pick a source tank.'); return; }
-
-  // Pre-flight refresh: the only physical incinerator must not have two open
-  // sessions. Reload from OneDrive first to catch a session another user just
-  // started. (A true sub-poll race can still slip through; incinReplay
-  // aggregates such duplicates on the next refresh — see incinReplay.)
-  try { await loadIncinerator(); } catch (_) {}
-  if (INCIN.openSession) {
-    var who = (INCIN.openSession.actor && INCIN.openSession.actor.name)
-           || (INCIN.openSession.actor && INCIN.openSession.actor.username)
-           || 'another user';
-    incinCloseModal('modal-incin-start');
-    alert('Incinerator already running (started by ' + who + '). Returning to the log screen.');
-    openIncineratorLog();
-    return;
-  }
-
-  var session_id = erUuid();
-  var nowIso = new Date().toISOString();
+  if (INCIN.busy) return;
+  incinBusy(true);
   try {
-    await pushIncinEvent('session_start', {
-      session_id:  session_id,
-      start_time:  nowIso,
-      source_tank: tankId,
-      qty:         0
-    });
-  } catch (e) { alert('Failed to start session: ' + e.message); return; }
-  incinCloseModal('modal-incin-start');
-  await loadIncinerator();
+    // Fresh, complete read first: the only physical incinerator must not get
+    // two open sessions. (A true sub-second race can still slip through;
+    // the reducer collapses such duplicates on the next refresh.)
+    if (!(await incinPreflight('started'))) return;
+    if (INCIN.openSession) {
+      incinCloseModal('modal-incin-start');
+      alert('Incinerator already running (started by ' + incinActorLabel(INCIN.openSession.actor)
+          + ' at ' + incinFormatStamp(INCIN.openSession.start_time) + ').');
+      renderIncineratorScreen();
+      updateIncinTileLamp();
+      return;
+    }
+    var session_id = erUuid();
+    var nowIso = new Date().toISOString();
+    try {
+      await pushIncinEvent('session_start', {
+        session_id:  session_id,
+        start_time:  nowIso,
+        source_tank: tankId,
+        qty:         0
+      });
+    } catch (e) { alert('Failed to start session: ' + e.message); return; }
+    incinCloseModal('modal-incin-start');
+    await loadIncinerator();
+  } finally { incinBusy(false); }
 }
 
 // ── STOP FLOW ──────────────────────────────────────────────────
@@ -9912,31 +10139,44 @@ async function incinOpenStopModal() {
   incinShowModal('modal-incin-stop');
 }
 async function incinConfirmStop() {
-  var s = INCIN.openSession;
-  if (!s) { incinCloseModal('modal-incin-stop'); return; }
+  if (INCIN.busy) return;
   var qty      = Number((document.getElementById('incin-stop-qty')      || {}).value || 0);
   var retained = Number((document.getElementById('incin-stop-retained') || {}).value || 0);
-  var nowIso = new Date().toISOString();
+  incinBusy(true);
   try {
-    await pushIncinEvent('session_end', {
-      session_id: s.session_id,
-      stop_time:  nowIso,
-      qty:        qty,
-      retained:   retained
-    });
-    // Build the merged session view for the ORB inbox write
-    var closed = {
-      session_id:  s.session_id,
-      start_time:  s.start_time,
-      stop_time:   nowIso,
-      source_tank: s.source_tank,
-      qty:         qty,
-      retained:    retained
-    };
-    await pushOrbInboxEntry(closed);
-  } catch (e) { alert('Failed to stop session: ' + e.message); return; }
-  incinCloseModal('modal-incin-stop');
-  await loadIncinerator();
+    // Re-read before writing: the session this modal was opened for may have
+    // been stopped or deleted from another phone in the meantime, and a STOP
+    // written against a session that is already gone is noise in the audit
+    // trail (and, on the old reader, a way to keep a phantom alive).
+    if (!(await incinPreflight('stopped'))) return;
+    var s = INCIN.openSession;
+    if (!s) {
+      incinCloseModal('modal-incin-stop');
+      alert('The incinerator is already stopped — another device closed this session. Nothing was written.');
+      return;
+    }
+    var nowIso = new Date().toISOString();
+    try {
+      await pushIncinEvent('session_end', {
+        session_id: s.session_id,
+        stop_time:  nowIso,
+        qty:        qty,
+        retained:   retained
+      });
+      // Build the merged session view for the ORB inbox write
+      var closed = {
+        session_id:  s.session_id,
+        start_time:  s.start_time,
+        stop_time:   nowIso,
+        source_tank: s.source_tank,
+        qty:         qty,
+        retained:    retained
+      };
+      await pushOrbInboxEntry(closed);
+    } catch (e) { alert('Failed to stop session: ' + e.message); return; }
+    incinCloseModal('modal-incin-stop');
+    await loadIncinerator();
+  } finally { incinBusy(false); }
 }
 
 // ── ADD-TO-SESSION FLOW ────────────────────────────────────────
@@ -9950,18 +10190,27 @@ function incinOpenAddQty() {
   incinShowModal('modal-incin-add-qty');
 }
 async function incinConfirmAddQty() {
-  var s = INCIN.openSession;
-  if (!s) { incinCloseModal('modal-incin-add-qty'); return; }
+  if (INCIN.busy) return;
   var add = Number((document.getElementById('incin-add-qty-input') || {}).value || 0);
   if (!(add > 0)) { alert('Enter a positive quantity.'); return; }
+  incinBusy(true);
   try {
-    await pushIncinEvent('session_addition', {
-      session_id: s.session_id,
-      qty_add:    add
-    });
-  } catch (e) { alert('Failed to add qty: ' + e.message); return; }
-  incinCloseModal('modal-incin-add-qty');
-  await loadIncinerator();
+    if (!(await incinPreflight('added'))) return;
+    var s = INCIN.openSession;
+    if (!s) {
+      incinCloseModal('modal-incin-add-qty');
+      alert('The incinerator is not running any more — another device closed this session. Nothing was written.');
+      return;
+    }
+    try {
+      await pushIncinEvent('session_addition', {
+        session_id: s.session_id,
+        qty_add:    add
+      });
+    } catch (e) { alert('Failed to add qty: ' + e.message); return; }
+    incinCloseModal('modal-incin-add-qty');
+    await loadIncinerator();
+  } finally { incinBusy(false); }
 }
 
 // ── MANUAL ADD / EDIT / DELETE ─────────────────────────────────
@@ -9995,101 +10244,131 @@ async function incinEditSession(sessionId) {
 }
 
 async function incinConfirmManual() {
+  if (INCIN.busy) return;
   var startIso = incinIsoFromLocalInput((document.getElementById('incin-manual-start') || {}).value);
   var stopIso  = incinIsoFromLocalInput((document.getElementById('incin-manual-stop')  || {}).value);
   var tankId   = (document.getElementById('incin-manual-source') || {}).value || '';
   var qty      = Number((document.getElementById('incin-manual-qty') || {}).value || 0);
   if (!startIso) { alert('Start time is required.'); return; }
   if (!tankId)   { alert('Source tank is required.'); return; }
+  if (stopIso && stopIso < startIso) { alert('Stop time is before start time.'); return; }
   var editingId = INCIN.manualEditingId;
+  incinBusy(true);
   try {
+    if (!(await incinPreflight('saved'))) return;
     if (editingId) {
+      var before = INCIN.byId[editingId];
+      if (!before || before.deleted) {
+        incinCloseModal('modal-incin-manual');
+        alert('That session was deleted on another device. Nothing was written.');
+        return;
+      }
+      // A correction carries the whole patch, so a blank stop on a stopped
+      // session would silently re-open it and light every lamp on board.
+      if (before.stop_time && !stopIso) {
+        alert('This session is already stopped. Enter a stop time — leaving it blank would re-open the session. Use Delete if the session should not exist.');
+        return;
+      }
       var patch = {
         start_time:  startIso,
         stop_time:   stopIso,
         source_tank: tankId,
         qty:         qty
       };
-      await pushIncinEvent('session_correction', {
-        session_id: editingId,
-        patch:      patch
-      });
-      // If edit closed an open session, also write the ORB inbox entry.
-      var before = INCIN.byId[editingId];
-      if (before && !before.stop_time && stopIso) {
-        await loadFuelStateSnapshot();
-        await pushOrbInboxEntry({
-          session_id:  editingId,
-          start_time:  startIso,
-          stop_time:   stopIso,
-          source_tank: tankId,
-          qty:         qty,
-          retained:    incinTankVolume(tankId)
+      try {
+        await pushIncinEvent('session_correction', {
+          session_id: editingId,
+          patch:      patch
         });
-      }
+        // If edit closed an open session, also write the ORB inbox entry.
+        if (!before.stop_time && stopIso) {
+          await loadFuelStateSnapshot();
+          await pushOrbInboxEntry({
+            session_id:  editingId,
+            start_time:  startIso,
+            stop_time:   stopIso,
+            source_tank: tankId,
+            qty:         qty,
+            retained:    incinTankVolume(tankId)
+          });
+        }
+      } catch (e) { alert('Failed to save: ' + e.message); return; }
     } else {
+      if (!stopIso && INCIN.openSession) {
+        alert('The incinerator is already running (started ' + incinFormatStamp(INCIN.openSession.start_time)
+            + '). A second open session is not allowed — give this one a stop time.');
+        return;
+      }
       var sid = erUuid();
-      await pushIncinEvent('session_start', {
-        session_id:  sid,
-        start_time:  startIso,
-        source_tank: tankId,
-        qty:         qty
-      });
-      if (stopIso) {
-        await loadFuelStateSnapshot();
-        var retained = incinTankVolume(tankId);
-        await pushIncinEvent('session_end', {
-          session_id: sid,
-          stop_time:  stopIso,
-          qty:        qty,
-          retained:   retained
-        });
-        await pushOrbInboxEntry({
+      try {
+        await pushIncinEvent('session_start', {
           session_id:  sid,
           start_time:  startIso,
-          stop_time:   stopIso,
           source_tank: tankId,
-          qty:         qty,
-          retained:    retained
+          qty:         qty
         });
-      }
+        if (stopIso) {
+          await loadFuelStateSnapshot();
+          var retained = incinTankVolume(tankId);
+          await pushIncinEvent('session_end', {
+            session_id: sid,
+            stop_time:  stopIso,
+            qty:        qty,
+            retained:   retained
+          });
+          await pushOrbInboxEntry({
+            session_id:  sid,
+            start_time:  startIso,
+            stop_time:   stopIso,
+            source_tank: tankId,
+            qty:         qty,
+            retained:    retained
+          });
+        }
+      } catch (e) { alert('Failed to save: ' + e.message); return; }
     }
-  } catch (e) { alert('Failed to save: ' + e.message); return; }
-  incinCloseModal('modal-incin-manual');
-  await loadIncinerator();
+    incinCloseModal('modal-incin-manual');
+    await loadIncinerator();
+  } finally { incinBusy(false); }
 }
 
 async function incinDeleteSession(sessionId) {
+  if (INCIN.busy) return;
   if (!confirm('Delete this incinerator session? This cannot be undone.')) return;
-
-  // Belt-and-suspenders: if this session is still open (no stop_time), write
-  // a synthetic session_end BEFORE the deletion event. The deletion already
-  // hides the session from PWA/Console views via the `deleted` flag, but if
-  // the deletion event ever fails to replay on a downstream surface (network
-  // race, cursor drift, etc.) the session would linger as an open orphan
-  // and falsely show "Incinerator running" on the Console dashboard. Closing
-  // it first makes the orphan state unreachable.
-  //
-  // qty: preserve whatever's accumulated via session_addition so the audit
-  // trail still tells the truth about volume processed before the deletion.
-  // retained: null — we can't know without a fuelstate lookup, and this is
-  // a deletion path anyway. force_close marker tags the synthetic event so
-  // future diagnostics can distinguish it from a real STOP.
-  var open = (INCIN.byId && INCIN.byId[sessionId]) || null;
-  var needsClose = open && !open.stop_time;
+  incinBusy(true);
   try {
-    if (needsClose) {
-      await pushIncinEvent('session_end', {
-        session_id:  sessionId,
-        stop_time:   new Date().toISOString(),
-        qty:         Number(open.qty || 0),
-        retained:    null,
-        force_close: true
-      });
+    if (!(await incinPreflight('deleted'))) return;
+    var target = (INCIN.byId && INCIN.byId[sessionId]) || null;
+    if (!target || target.deleted) {
+      alert('That session is already deleted. Nothing was written.');
+      return;
     }
-    await pushIncinEvent('session_deletion', { session_id: sessionId });
-  } catch (e) { alert('Failed to delete: ' + e.message); return; }
-  await loadIncinerator();
+    // Belt-and-suspenders: if this session is still open (no stop_time), write
+    // a synthetic session_end BEFORE the deletion event. The deletion already
+    // hides the session from PWA/Console views via the `deleted` flag, but if
+    // the deletion event ever fails to replay on a downstream surface the
+    // session would linger as an open orphan and falsely show "Incinerator
+    // running". Closing it first makes the orphan state unreachable.
+    //
+    // qty: preserve whatever's accumulated via session_addition so the audit
+    // trail still tells the truth about volume processed before the deletion.
+    // retained: null — we can't know without a fuelstate lookup, and this is
+    // a deletion path anyway. force_close marker tags the synthetic event so
+    // future diagnostics can distinguish it from a real STOP.
+    try {
+      if (!target.stop_time) {
+        await pushIncinEvent('session_end', {
+          session_id:  sessionId,
+          stop_time:   new Date().toISOString(),
+          qty:         Number(target.qty || 0),
+          retained:    null,
+          force_close: true
+        });
+      }
+      await pushIncinEvent('session_deletion', { session_id: sessionId });
+    } catch (e) { alert('Failed to delete: ' + e.message); return; }
+    await loadIncinerator();
+  } finally { incinBusy(false); }
 }
 
 // ── MODAL HELPERS ──────────────────────────────────────────────
@@ -10175,20 +10454,38 @@ async function pushOrbInboxEntry(session) {
   if (!resp.ok) throw new Error('ORB inbox PUT failed: ' + resp.status);
 }
 
-// Lamp on hub: refresh whenever the engine-home screen is shown.
-// loadIncinerator does its own renderIncineratorScreen + lamp update;
-// we also kick a lightweight load when the hub is visited so the lamp
-// reflects cross-user state without needing the user to open the screen.
+// ── REFRESH POLICY (PWA-SCHEMA v1.10) ──
+// The lamp is re-read: when the ER hub or the incinerator screen is shown;
+// whenever the page becomes visible again (a phone that sat on the hub for
+// a fortnight used to keep counting from whatever state it had when its
+// screen went dark, long after another phone had stopped or deleted the
+// session); and every INCIN_REFRESH_MS while either screen is on show or an
+// open session is in memory. Each re-read costs one listing plus only the
+// event files this device has never seen.
+function incinStateOnScreen() {
+  var active = document.querySelector('.screen.active');
+  var id = active ? active.id : '';
+  return id === 'screen-engine-home' || id === 'screen-incinerator-log' || !!INCIN.openSession;
+}
 (function() {
   var origShowScreen = showScreen;
   showScreen = function(id) {
     origShowScreen.apply(this, arguments);
     if (id === 'screen-engine-home') {
-      // Paint timer bar immediately from in-memory state, then refresh from OneDrive.
-      try { renderIncineratorTimerBar(); } catch (_) {}
+      // Paint from in-memory state immediately, then refresh from OneDrive.
+      try { updateIncinTileLamp(); } catch (_) {}
       try { loadIncinerator(); } catch (_) {}
     }
   };
+  function wake() {
+    if (document.visibilityState !== 'visible') return;
+    if (!msalAccount && !graphToken) return;   // not signed in yet
+    if (!incinStateOnScreen()) return;
+    try { loadIncinerator(); } catch (_) {}
+  }
+  document.addEventListener('visibilitychange', wake);
+  window.addEventListener('pageshow', wake);
+  setInterval(wake, INCIN_REFRESH_MS);
 })();
 
 // ════════════════════════════════════════════════════════════════
@@ -11032,7 +11329,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.18';
+var PWA_VERSION  = '1.21';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {
@@ -11350,6 +11647,282 @@ async function ntaCheckAlerts(isLogin) {
   } finally {
     NTA.checking = false;
   }
+}
+
+
+// ── ME: MY KSA CARD & MY TRAINING (IDMS-SCHEMA §43) ──────────────────────────
+// The member's own competency record and development plan. Read-only; shows
+// this person and nobody else, from journal records marked shared. The plan is
+// derived on every open by utils/plan-derive.js — the same code the Console
+// runs — over the mirrors the Console publishes to data/personnel/ and the
+// task definition files. Practice currency comes from the Console's per-member
+// snapshot; without one the plan still renders and says so.
+var ME = {
+  back: 'screen-engine-home',
+  registry: null, demand: null, config: null, currency: null,
+  tasks: null, records: null, loadedAt: 0
+};
+var ME_FRESH_MS = 5 * 60 * 1000;
+var ME_RECORDS_KEY = 'me_pd_records_v1';   // {name: record | {skip:true}} — only this member's records are kept
+
+function meEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function meCrewId() { return (currentUser && currentUser.user_id) || null; }
+function meDepartment() {
+  // Purser and Procurement are role hubs, not the department whose syllabus
+  // applies; fall back to the member's first real department.
+  var d = currentDepartment || '';
+  if (!d || d === 'Purser' || d === 'Procurement') d = (currentUser && currentUser.departments && currentUser.departments[0]) || 'Engine Room';
+  return d;
+}
+function meMember() {
+  return {
+    crew_id: meCrewId(),
+    username: (currentUser && currentUser.username) || '',
+    name: (currentUser && currentUser.name) || '',
+    role: (currentUser && currentUser.role) || '',
+    department: meDepartment()
+  };
+}
+
+async function meListFolder(path) {
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' + encodeURIComponent(path).replace(/%2F/g, '/') + ':/children?$select=name,file&$top=200';
+  var out = [];
+  while (url) {
+    var r = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
+    if (r.status === 404) return out;
+    if (!r.ok) throw new Error('List failed: ' + r.status);
+    var d = await r.json();
+    (d.value || []).forEach(function (e) { if (e.file && e.name) out.push(e.name); });
+    url = d['@odata.nextLink'] || null;
+  }
+  return out;
+}
+function meOptional(path) {
+  return erFetchOneDriveJson(path).catch(function () { return null; });
+}
+
+async function meLoadTasks() {
+  var names = (await meListFolder('Documents/IDMS/data/tasks/definitions')).filter(function (n) { return /^tasks-.*\.json$/i.test(n); });
+  var all = [];
+  for (var i = 0; i < names.length; i += 6) {
+    var got = await Promise.all(names.slice(i, i + 6).map(function (n) {
+      return meOptional('Documents/IDMS/data/tasks/definitions/' + n);
+    }));
+    got.forEach(function (d) { if (d && Array.isArray(d.tasks)) all = all.concat(d.tasks); });
+  }
+  return all;
+}
+
+// The journal: one small file per record. Only this member's records are
+// cached; anyone else's is remembered by name alone so it is never refetched.
+async function meLoadRecords() {
+  var cache = {};
+  try { cache = JSON.parse(localStorage.getItem(ME_RECORDS_KEY) || '{}') || {}; } catch (e) { cache = {}; }
+  var mine = meCrewId();
+  var names = (await meListFolder('Documents/IDMS/data/personnel/records')).filter(function (n) { return /\.json$/i.test(n); });
+  var fresh = names.filter(function (n) { return !cache[n]; });
+  for (var i = 0; i < fresh.length; i += 8) {
+    var chunk = fresh.slice(i, i + 8);
+    var got = await Promise.all(chunk.map(function (n) {
+      return meOptional('Documents/IDMS/data/personnel/records/' + n).then(function (r) { return { name: n, r: r }; });
+    }));
+    got.forEach(function (g) {
+      if (!g.r) return;                                   // fetch failed — next time
+      cache[g.name] = (g.r.crew_id === mine && g.r.visibility === 'shared') ? g.r : { skip: true };
+    });
+  }
+  try { localStorage.setItem(ME_RECORDS_KEY, JSON.stringify(cache)); } catch (e) {}
+  return Object.keys(cache).map(function (n) { return cache[n]; })
+    .filter(function (r) { return r && !r.skip && r.crew_id === mine; });
+}
+
+async function meLoadAll(force) {
+  if (!force && ME.loadedAt && Date.now() - ME.loadedAt < ME_FRESH_MS) return;
+  var crewId = meCrewId();
+  var res = await Promise.all([
+    meOptional('Documents/IDMS/data/personnel/ksa-registry.json'),
+    meOptional('Documents/IDMS/data/personnel/ksa-demand.json'),
+    meOptional('Documents/IDMS/data/personnel/ksa-config.json'),
+    crewId ? meOptional('Documents/IDMS/data/personnel/currency/' + crewId + '.json') : null,
+    meLoadTasks().catch(function () { return []; }),
+    meLoadRecords().catch(function () { return []; })
+  ]);
+  ME.registry = res[0]; ME.demand = res[1]; ME.config = res[2]; ME.currency = res[3];
+  ME.tasks = res[4]; ME.records = res[5];
+  ME.loadedAt = Date.now();
+}
+
+// Latest shared sign-off per card.
+function meSignoffs() {
+  var out = {};
+  (ME.records || []).forEach(function (r) {
+    if (r.type !== 'ksa_signoff' || !r.ksa_id) return;
+    var prev = out[r.ksa_id];
+    if (!prev || (r.date || r.created_at || '') > (prev.date || prev.created_at || '')) out[r.ksa_id] = r;
+  });
+  return out;
+}
+function mePlan() {
+  return planDerive.derivePlan({
+    member: meMember(), tasks: ME.tasks || [], demand: ME.demand, registry: ME.registry,
+    signoffs: meSignoffs(), currency: ME.currency, config: ME.config,
+    now: new Date().toISOString().slice(0, 10)
+  });
+}
+
+function meLadder(row) {
+  var html = '';
+  for (var i = 1; i <= 4; i++) {
+    var cls = 'me-rung' + (i <= row.held_level ? (row.provisional ? ' me-rung-prov' : ' me-rung-held') : '') + (i === row.required_level ? ' me-rung-req' : '');
+    html += '<span class="' + cls + '"></span>';
+  }
+  var title = 'holds ' + (row.held_name || 'nothing') + (row.provisional ? ' (provisional)' : '') + ' · needs ' + row.required_name;
+  return '<span class="me-ladder" title="' + meEsc(title) + '">' + html + '</span>';
+}
+function meLane(kind) {
+  var l = kind === 'SKG' ? 'global' : kind === 'SKD' ? 'vessel' : kind === 'KSA' ? 'ksa' : '';
+  return l ? '<span class="me-lane">' + l + '</span>' : '';
+}
+function meReason(row) {
+  if (row.group === 'refresh') {
+    return row.reasons.map(function (r) {
+      return r === 'practice'
+        ? 'practice — last used ' + (row.practice.last || 'never') + (row.practice.months ? ', window ' + row.practice.months + ' mo' : '')
+        : 'revision — card revised ' + row.revision.card_revised + ', your sign-off is ' + row.signed_date;
+    }).join(' · ');
+  }
+  var d = row.demanded_by[0];
+  if (!d) return '';
+  var s = 'needed for ' + d.card_id.split('-').slice(0, 2).join('-');
+  if (row.demand_count > 1) s += ' +' + (row.demand_count - 1);
+  if (d.task_title) s += ' · ' + d.task_title;
+  if (row.due) s += ' · due ' + row.due;
+  return s;
+}
+function mePrereqLine(row) {
+  var idx = planDerive.registryIndex(ME.registry);
+  var card = idx.byId[row.id];
+  var reqs = (card && card.requires_ksa) || [];
+  if (!reqs.length) return '';
+  return '<div class="me-row-sub">↳ first: ' + reqs.map(function (id) {
+    var cid = idx.canonical(planDerive.unwrapLink(id));
+    var c = idx.byId[cid]; return meEsc(c ? c.label : cid);
+  }).join(', ') + '</div>';
+}
+function meRowsHtml(rows) {
+  if (!rows.length) return '<div class="me-empty" style="padding:10px">Nothing here.</div>';
+  return rows.map(function (r) {
+    var why = r.demanded_by.map(function (d) {
+      return '• ' + d.card_title + (d.task_title ? ' — ' + d.task_title : '') + (d.due ? ' (due ' + d.due + ')' : '') + ' · ' + d.ring;
+    }).join('<br>');
+    var who = r.assessors == null ? '' : (r.assessors.length ? 'Sign-off: ' + r.assessors.map(function (a) { return a.name; }).join(', ') : '<span class="me-warn">No assessor recorded</span>');
+    return '<div class="me-row" onclick="this.classList.toggle(\'open\')">' +
+      '<div class="me-row-top"><span class="me-row-label">' + meEsc(r.label) + '</span>' + meLane(r.kind) + meLadder(r) + '</div>' +
+      '<div class="me-row-sub">' + meEsc(meReason(r)) + '</div>' + mePrereqLine(r) +
+      '<div class="me-row-why">' + why + (who ? '<br>' + who : '') + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function meRenderTraining() {
+  var body = document.getElementById('me-training-body');
+  if (!body) return;
+  if (!ME.demand || !ME.registry) {
+    body.innerHTML = '<div class="me-empty">The training plan needs the competency mirrors the Console publishes. Ask the Chief to open KSA / Development once on the office PC.</div>';
+    return;
+  }
+  var plan;
+  try { plan = mePlan(); } catch (e) { body.innerHTML = '<div class="me-empty">Could not derive your plan: ' + meEsc(e.message) + '</div>'; return; }
+  var group = function (key, title, hint) {
+    return '<div class="me-group"><div class="me-group-head" title="' + meEsc(hint) + '"><span>' + title + '</span><span>' + plan.summary[key] + '</span></div>' + meRowsHtml(plan[key]) + '</div>';
+  };
+  body.innerHTML =
+    '<p class="me-caption">What your work asks for, not how good you are. Tap a card for why.' +
+      (plan.currency_known ? '' : ' Practice currency is not available on the phone until the Console has published it.') + '</p>' +
+    '<div class="me-key"><span><span class="me-ladder"><span class="me-rung me-rung-held"></span></span> held</span>' +
+      '<span><span class="me-ladder"><span class="me-rung me-rung-req"></span></span> needed</span>' +
+      '<span><span class="me-ladder"><span class="me-rung me-rung-prov"></span></span> provisional</span></div>' +
+    group('now', 'Now', 'Needed for work assigned to you, or due in your department soon') +
+    group('next', 'Next', 'Your department\'s syllabus') +
+    group('refresh', 'Refresh', 'Held, but out of practice or the card changed since your sign-off') +
+    (plan.unassessable.length ? group('unassessable', 'Not yet assessable', 'Named as a target, but the card is a stub — nothing to be assessed against yet') : '');
+}
+
+function meRenderKsa() {
+  var body = document.getElementById('me-ksa-body');
+  if (!body) return;
+  var so = meSignoffs();
+  var ids = Object.keys(so);
+  if (!ME.registry) {
+    body.innerHTML = '<div class="me-empty">The competency registry has not been published yet. Ask the Chief to open KSA / Development once on the office PC.</div>';
+    return;
+  }
+  if (!ids.length) {
+    body.innerHTML = '<div class="me-empty">No shared sign-offs on your record yet.</div>';
+    return;
+  }
+  var idx = planDerive.registryIndex(ME.registry);
+  var cfg = planDerive.planConfigFor(ME.config, meDepartment());
+  var now = new Date().toISOString().slice(0, 10);
+  var cur = ME.currency && ME.currency.byCompetency;
+  var rows = ids.map(function (id) {
+    var cid = idx.canonical(id), card = idx.byId[cid], rec = so[id];
+    var level = Math.max(0, Math.min(4, rec.level | 0));
+    var tracked = ((ME.config && ME.config.tracked) || []).filter(function (k) { return idx.canonical(k.ksa_id) === cid; })[0];
+    var months = (tracked && tracked.recency_months) || (card && card.recency_default_months) || cfg.recency_default_months || null;
+    var hit = cur ? cur[cid] : null;
+    var last = hit ? hit.last : null, via = hit ? hit.via : null;
+    var stale = false;
+    if (cur && months) {
+      var d = new Date(now + 'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - months);
+      var cutoff = d.toISOString().slice(0, 10);
+      stale = !(last && via !== 'discipline') || last < cutoff;
+    }
+    var behind = Boolean(rec.date && card && card.revised && rec.date < card.revised);
+    return { id: cid, label: card ? card.label : id, kind: card ? card.kind : '', level: level, rec: rec, last: last, via: via, stale: stale, behind: behind, revised: card ? card.revised : null, unknown: !cur };
+  }).sort(function (a, b) { return (b.rec.date || '') < (a.rec.date || '') ? -1 : 1; });
+
+  var html = rows.map(function (r) {
+    var pips = '';
+    for (var i = 1; i <= 4; i++) pips += '<span class="me-pip' + (i <= r.level ? (r.stale ? ' me-pip-stale' : ' me-pip-filled') : '') + '"></span>';
+    var sub = planDerive.levelName(r.level) + ' · signed ' + (r.rec.date || '—') + (r.rec.author && r.rec.author.name ? ' by ' + r.rec.author.name : '') + (r.rec.method ? ' (' + r.rec.method + ')' : '');
+    var cur = r.unknown ? '' : ('Last used ' + (r.last ? r.last + ' · ' + (r.via || '') : 'never in the logged history') + (r.stale ? ' <span class="me-warn">— out of practice</span>' : ''));
+    var rev = r.behind ? '<span class="me-warn">Card revised ' + r.revised + ', after your sign-off — read the current revision.</span>' : '';
+    return '<div class="me-row"><div class="me-row-top"><span class="me-row-label">' + meEsc(r.label) + '</span>' + meLane(r.kind) + '<span class="me-pips">' + pips + '</span></div>' +
+      '<div class="me-row-sub">' + meEsc(sub) + '</div>' + (cur ? '<div class="me-row-sub">' + cur + '</div>' : '') + (rev ? '<div class="me-row-sub">' + rev + '</div>' : '') + '</div>';
+  }).join('');
+  var behindCount = rows.filter(function (r) { return r.behind; }).length;
+  body.innerHTML =
+    '<p class="me-caption">Your verified sign-offs, aware → supervised → independent → assessor. An outlined level stands but the work has not come round inside its window.' +
+      (cur ? '' : ' Practice currency appears once the Console has published it.') + '</p>' +
+    (behindCount ? '<div class="me-group"><div class="me-group-head"><span>Revised since your sign-off</span><span>' + behindCount + '</span></div>' +
+      '<p class="me-caption">These cards changed after you were signed off. Read the current revision before the work comes round.</p></div>' : '') +
+    html;
+}
+
+async function meOpen(which, back) {
+  ME.back = back || (typeof deptHomeScreen === 'function' ? deptHomeScreen(currentDepartment) : 'screen-engine-home');
+  var screen = which === 'ksa' ? 'screen-me-ksa' : 'screen-me-training';
+  var bodyId = which === 'ksa' ? 'me-ksa-body' : 'me-training-body';
+  showScreen(screen);
+  var body = document.getElementById(bodyId);
+  if (!graphToken) { body.innerHTML = '<div class="me-empty">Not authenticated. Please reload.</div>'; return; }
+  if (!meCrewId()) { body.innerHTML = '<div class="me-empty">No crew record is linked to this sign-in. Ask an administrator to add you to the Crew List.</div>'; return; }
+  if (typeof planDerive === 'undefined') { body.innerHTML = '<div class="me-empty">The plan module did not load — reload the app.</div>'; return; }
+  if (!ME.loadedAt) body.innerHTML = '<div class="me-loading">Reading your record…</div>';
+  try { await meLoadAll(false); }
+  catch (e) { body.innerHTML = '<div class="me-empty">Could not load: ' + meEsc(e.message) + '</div>'; return; }
+  if (which === 'ksa') meRenderKsa(); else meRenderTraining();
+}
+function openMeKsa(back) { return meOpen('ksa', back); }
+function openMeTraining(back) { return meOpen('training', back); }
+async function meReload(which) {
+  ME.loadedAt = 0;
+  return meOpen(which, ME.back);
 }
 
 </script>

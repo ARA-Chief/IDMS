@@ -7,6 +7,7 @@
   "suppliers": [],
   "settings": {
     "approver_roles": ["Chief Engineer", "Admin"],
+    "access_departments": ["Engine Room"],
     "default_currency": "USD",
     "receiving_locations": [],
     "exception_stale_days": 14

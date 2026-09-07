@@ -64,6 +64,19 @@ check('byte-identical with the IDMS canonical copy',
 check('the contact reducer is byte-identical too',
   fs.readFileSync(IDMS + '/utils/contacts-reduce.js').equals(
     fs.readFileSync(CON + '/src/renderer/js/contacts-reduce.js')));
+// §43: the phone and the Console must never compute two different plans from
+// the same inputs — one derivation, mirrored, checked here like the reducers.
+check('the plan derivation is byte-identical too',
+  fs.readFileSync(IDMS + '/utils/plan-derive.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/plan-derive.js')));
+check('the Console loads the plan mirror before the screen that uses it', (() => {
+  const html = fs.readFileSync(CON + '/src/renderer/index.html', 'utf8');
+  return html.indexOf('js/plan-derive.js') !== -1 && html.indexOf('js/plan-derive.js') < html.indexOf('js/personneldev.js');
+})());
+check('the KSA screen keeps the CSP rule too', (() => {
+  const src = fs.readFileSync(CON + '/src/renderer/js/personneldev.js', 'utf8');
+  return (src.match(inlineRe) || []).length === 0;
+})());
 
 // The form and the reducer carry the same field list, in two files and two
 // repos. A field on the form that the reducer does not know is dropped on
