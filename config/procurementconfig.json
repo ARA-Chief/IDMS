@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "_seam": "The item master, the stowage tree, units, suppliers and categories now come from TM Master, projected into data/procurement/catalogue.json by tools/build-procurement-catalogue.py (IDMS-SCHEMA §42.14). This module reads that projection and never writes back. The arrays below are only a fallback for a vessel with no TM Master export at all; when the catalogue loads, it wins. `settings` is the one block the PWA writes, ETag-guarded.",
+  "locations": [],
+  "categories": [],
+  "units": [],
+  "suppliers": [],
+  "settings": {
+    "approver_roles": ["Chief Engineer", "Admin"],
+    "default_currency": "USD",
+    "receiving_locations": [],
+    "exception_stale_days": 14
+  }
+}

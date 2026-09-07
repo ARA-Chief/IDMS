@@ -1,5 +1,19 @@
 # IDMS Schema Specification
-**Version 2.31 — F/V Araho**
+**Version 2.38 — F/V Araho**
+
+v2.38 *(2026-09-06)* — **§42.7a new: the count session, and the shared location sheet.** A `count` movement is a spot correction and always was; what the register could not say is that a *space* was swept. An item counted and found right moves nothing, so it files no movement, so it leaves no trace — a shelf walked end to end last Tuesday and a shelf nobody has opened in a year both read as "no count", and that is the one figure an audit turns on. Three events carry the sweep as its own thing: `count_session_opened` names a space and a scope (`here` for the bin, `deep` for it and everything under it) and records what the sheet held when it was opened; `count_session_closed` carries `confirmed[]`, the items seen and found right, which is the only evidence they were looked at; `count_session_abandoned` gives up the claim that the space was swept while leaving the counts already filed standing. **The arithmetic is untouched** — counts under a session are ordinary `count` movements carrying a `session_id`, a spot correction is the same movement with none, and deleting every session event changes no quantity. `expected` is read off the opening event rather than recomputed, so a transfer into the space an hour later cannot retrospectively turn a complete count into a partial one. Items gain `last_verified_at`, which moves for a count **or** a confirmation; `last_count_at` is unchanged, so nothing already reading it changes meaning. `locationSheet()` lives in the reducer rather than in either screen, because a sheet that differs by device is a sheet nobody can sign: it puts both the stock the book places in the space *and* the items whose home is there though the book says none are left — an emptied bin being exactly where a miscount hides — carries the book figure for **that space** rather than the shipwide total, prints unknown stock as unknown rather than as 0, and offers no count box on a deep row summing several bins, there being no single bin for the count to land in. New PWA screen **Stock Location** (`procurement.html?view=location`), PWA 1.16, whose space list is ordered by each space's last closed session. §42.10's cycle-counting paragraph is corrected while it is open: it claimed since v2.32 that the register sorts by `last_count_at` ascending, which it never has — the register is search-first, and least-recently-swept-first is the space list's ordering, not the register's. Console side not built.
+
+v2.37 *(2026-09-06)* — **The two steps get their own names; §32a's known gap closed; `completed` removed from the last dropdown that offered it.** Reporting a job done and telling TM Master about it are two steps taken by two people, and neither client said so. Both called the first one *Close*. The Console's row button is now **Report Complete** (the engineer; writes the `task_records` row, task → `reported_complete`) and a record still sitting on `reported_complete` carries **Push to TM Master…** (the officer; the only path to `completed`), which opens the same approval screen the toolbar does, preselected on that job. The PWA's create form drops `value="completed"` — it offered a close-out option whose label explained that it did not mean completed, and `submitErTaskCreate` translated it to `reported_complete` on the way out; the value is the status now and `storedStatus` is gone. **§32a's known gap is closed**: `taskSubmitCreate` no longer writes `completed`, so nothing on either client can reach the terminal state except `recordPush`. Also corrected in the Console, and the reason the two steps were invisible: `TASK_UNION_SQL` hardcoded `'completed'` on every `task_records` row, so a record written but not yet pushed was filed in the archive — out of the active list, and so out of sight of the officer who still had to push it. The union reads the status off the task behind the record now, falling back to `'completed'` for imported history, which has no task behind it. That means a record can come back from a `status:'active'` query, so `getTasksUnified` gained a `source` filter and the Assigned Work board asks for `source:'task'` rather than dropping records after the fetch had already counted them.
+
+v2.36 *(2026-09-05)* — **§32a new: what `completed` means; §32 status list corrected; §41.6 mirrors corrected.** A job is *reported complete* when the work is done and captured in IDMS, and *completed* when TM Master has it. Only a successful push writes the second, and no status dropdown on either client offers it any more — the Console's Update modal dropped `Close (Completed)` (it wrote no record), signing a job off lands it on `reported_complete`, and the PWA's close-out form now stores `reported_complete` while keeping `completed` as its own internal "closing now" flag for the `task_records` write. The effect is that the terminal state cannot be reached by forgetting to push, and a job the PMS has not been told about stays visible on Active Tasks and on the phone. §32's `status` row had listed `open / in_progress / completed / cancelled` since v2.3 and was three renames out of date; it now lists all nine and names the active/terminal split. §41.6's mirror paragraph said officer sign-off was the only path to `completed`; it is not — sign-off records the work and stops at `reported_complete`. §32a also records the one place the rule is not yet enforced: the Console's Close button (`taskSubmitCreate`) still writes `completed` directly.
+
+v2.35 *(2026-09-05)* — **Procurement built in the Console (§42.12 rewritten from "not built").** `Operations → Procurement` in IDMS-Console 0.8.5, as two renderers of one contract rather than a second system that happens to agree: the same OneDrive event stream, the same TM Master catalogue, and `utils/procurement-reduce.js` mirrored byte-identical into `src/renderer/js/`. New ingest lane `sync-procurement.js` shaped exactly like `sync-notes.js` — raw events into `procurement_events`, whole derived cache rebuilt through the shared reducer, listing-minus-held rather than a cursor seek. New SQLite tables `procurement_items` / `_movements` / `_requisitions` / `_pos`, a `procurement` entry in `DIAG_REGISTRY` with a renderer-delegated rebuild, and Graph helpers including an ETag-guarded write of the `settings` block only. The register is filtered in SQL because 14,487 rows will not go through the renderer, and derived order/requisition lines carry a folded-in `item_name` since the Console holds no in-memory register. Approving a requisition and sending an order are Console-only, being officer actions; nothing is page-only. Adds `_procurement-harness.html`, a standalone page running the real screen, derive and reducer over a local catalogue with writes collected rather than sent.
+
+v2.34 *(2026-09-05)* — **§42.15 new: the TM Master push-back lane, and what the history supports for minimums.** IDMS already exports service reports to TM Master and that lane is being extended into a general reconcile-and-push path; this module must not grow a second one, so its two write-shaped events are recorded as *input* to it — `item_change_proposed` is already a proposal in the ratified sense, and the superseded movement set (§42.14) is precisely the keying worklist a reconcile pass needs. The §42.13 reconciliation question resolves through that lane rather than inside this module. Also records an assessment of **deriving order minimums from history**, measured rather than assumed: 11,835 of 14,487 items (81.7%) show no movement across the three consumption years TM Master exports, and of the 2,652 that moved, the median three-year total is 3 units. The restock interval is a real 16 days (median gap across the 19 offloads in `scheduleconfig.json`), but **`est_delivery_days` is set on 1 item of 14,487**, and with a cycle that short the assumed lead time swings the answer four-fold. The 6,091 completed task records from 2017–2026 do not help: `items_used` is populated on 7 of them, and what was fitted lives in free text. Banding by evidence gives **448 items (3.1%) defensible today**, 408 of them new, and only 8 of the 58 critical-flagged items — critical spares are the slow movers consumption history cannot speak to. 67 of the 448 are already below their proposed minimum. Proposals are computed offline (`data/procurement/proposed-minimums.json`, read by nothing); publishing them as `item_policy_set` events is an officer's decision, not a computation. The standing argument for building it anyway is that issuing stock against a `task_id` is the structured parts-on-job capture `items_used` never got, and `po_sent`-to-first-receipt measures the lead times nobody recorded.
+
+v2.33 *(2026-09-05)* — **Procurement wired to the real item master (§42.14, new; §42.5 superseded in place).** The vessel already has a register — 14,487 items and a 664-node stowage tree in TM Master, mirrored into the Engineering Vault at `50 Procurement/` — so the module stops inventing one. **TM Master is the system of record for what an item *is*; IDMS owns what it *does*.** A new builder, `tools/build-procurement-catalogue.py`, projects the Vault notes into `data/procurement/catalogue.json` (~1.8 MB, columnar and dictionary-encoded — the naïve shape is 4.6 MB) plus a lazily-fetched `catalogue-detail.json`; nothing writes to the Vault. The reducer gains `hydrateCatalogue()` and takes the catalogue as a **baseline**: quantities as at `baseline_at`, with movements applied only where `timestamp > baseline_at` — earlier ones stay in the ledger, marked, but move nothing, because the export already absorbed them. `in_stock: null` means unknown, not zero (2,181 items), and never raises a shortage. Because 13,885 of 14,487 items carry no minimum, IDMS keeps its **own policy overlay** — `min_qty`, `max_qty`, `reorder_qty`, `sfi_code`, `barcode`, `notes` via a new `item_policy_set` event, read through `effective()`, cleared back to TM Master by writing null. Edits to TM-owned fields become `item_change_proposed` events: recorded, shown, **never applied** — an officer changes TM Master and the next export carries it back. `on_order` now sums TM Master's outstanding (1,255 items) and this module's own open orders, kept apart in the derived state. The register screen is search-first with a deck browse and a 300-row cap, and line pickers are searches rather than 14,487-option dropdowns. The catalogue is cached in IndexedDB and re-fetched only on an eTag change. `procurementconfig.json` keeps only `settings`; its taxonomy arrays remain as a fallback for a vessel with no TM export.
+
+v2.32 *(2026-09-05)* — **Procurement & Inventory specified and built in the PWA (§42, new).** Stores and ordering as one closed loop — hold, need, order, arrive — replacing the "To Order" list that has lived in Microsoft To-Do and, since PWA v1.10, as an Engine Room notes folder. Same architecture as §41: one append-only OneDrive event stream under `data/procurement/events/{YYYY}/`, a pure reducer (`utils/procurement-reduce.js`) mirrored byte-identical into the Console when its lane is built, and a standalone same-origin page (`procurement.html`) reached from a hub screen in `index.html`. **Procurement is a new top-level department**, role-gated (`permission_tier: "admin"`, `settings.approver_roles`, or `"Procurement"` in `departments[]`) until the crew records carry the department. Four governing rules: on-hand is never authored, only derived from movements and counts; one fact writes one event (there is no `po_received` — receipt is a `stock_movement` carrying `po_line_id`, and order progress is derived from it); items are archived, never deleted; and the taxonomy — storerooms, bins, categories, units, suppliers — is config owned elsewhere, read tolerantly, so no reshuffle of the storerooms can hide stock. Movements are one event type with a `kind` discriminator (receipt / issue / adjustment / transfer / count) and an always-positive `qty`, `direction` carrying the only sign in the system. Requisitions separate *we need this* from *we have ordered this*, support free-text lines for parts never yet aboard, and record per-line approval decisions in one event. Receiving supports partial, over- and no-PO receipts, is idempotent under interruption, and writes one movement per line. Low stock counts `on_hand + on_order` against `min_qty`, which is the specific defence against ordering the same part twice. Issuing a part to a job references `task_id` / `equipment_code` but **never** writes to `task_records`, TM Master or job history — §41's boundary, restated. New config file `config/procurementconfig.json` (locations, categories, units, suppliers, settings), registered in the §1 File Location Map; its `settings` block is the only part the PWA writes, ETag-guarded.
 
 v2.31 *(2026-09-02)* — **Notes Hub specified (§41, new); §34 Messages superseded.** Adds the full contract for the Notes Hub: a shared, non-private, event-sourced notes surface — an in-house Microsoft To-Do — acting as the go-between for the PWA and the Console. One OneDrive append-only event stream under `data/notes/events/{YYYY}/` (envelope per `docs/architecture.md`, same pattern as the Phase 4/5 event logs), rendered by two implementations over three surfaces: a standalone page in this repo (same origin and MSAL registration as the PWA — also usable as a browser window kept open beside other work), a PWA screen sharing that same code, and a native Console screen fed from the SQLite derived cache by a new `notes` ingest lane. Notes carry a single-line title, optional photo(s), optional body, an optional SFI equipment tag, and an optional `steps[]` checklist; anyone can read, author (including department level, for now — mostly-global rules by design), comment (with photos, reusing the rounds-comment attachment conventions), assign, and promote. Promotion prefills the existing Task Creation screen and submits through each client's *existing ETag-guarded* definition-create path (v2.31 supersedes an earlier working plan for a proposal-inbox: both Console and PWA creates have been guarded since Phase 6 Stage 0, so no new write lane is needed). After promotion the note converts to a task-mirror wrapper — department-level notes can also import tasks directly as mirrors — and a mirror's strike fires the existing `reported_complete` action, never a second completion state: **notes never touch `task_records`, TM Master, or job history.** Deletion is a tombstone event (authors their own, department heads any; Archive is the default on notes carrying others' comments). Alerts are derived (assigned-to-me + department-head-flagged group alerts), acknowledged per user via `alert_acked` events, surfaced as one summary popup at login (both `routeAfterLogin` branches) and on sync diffs. Emergency checklist templates (Blackout Recovery, Boundary Isolation) instantiate under deterministic note ids (`{template_id}-{local date}`) so independently-offline devices converge on one note without de-duplication; a 60-minute reconciliation window handles boundary cases via Console-emitted `note_merged` events. Offline generation makes the service worker a stated prerequisite of the emergency stage (not of the hub's first release). The hub records who did what, when — it never authorizes, and it is explicitly not LOTO. §34 Messages is superseded in place (group alerts cover broadcast; comments cover threaded discussion; person-to-person direct messaging is dropped). §31 Rough Log gains a cross-reference for the display-time daily digest of completed assigned notes. New config file `config/notesconfig.json` (department heads, department folders, checklist templates), registered in the §1 File Location Map.
 
@@ -18,6 +32,26 @@ v2.31.3 *(2026-09-02)* — **Assigned Tasks board carries notes; several holders
 v2.31.4 *(2026-09-02)* — **Two-level organisation, note dragging, full names.** The folder band gains **groups**: a group sits at the level of Department notes and holds folders, giving two levels and no more (§41.4a). A note's `folder` becomes a path — `"Folder"`, `"Group"`, or `"Group/Folder"` — and `department_folders[{dept}]` now holds bare strings (unchanged, what every existing config contains) or `{type, name, folders[]}` objects; reading normalises both, and a groupless config is written back byte-identical. Groups and folders are added, renamed, removed and dragged into any order inside the band, with the Department-notes and Personnel headings as hard stops and a group refused inside a group. Renaming or moving re-paths the notes beneath, children included. **Dragging a note** now files it into a folder or group, and onto a person means hand-over for a personal note (ownership moves) or assignment for a department or global one. The Console screen gains note dragging, which it did not have at all. Personnel lists show **full names** in both clients — two Sams and two Taylors aboard mean a first name is not an identification.
 
 v2.31.5 *(2026-09-02)* — **The shared window, and a signalled sign-in expiry.** A notes window left open for anyone to write in now records `actor: "browser"` — shown as **"Browser addition"** — instead of whoever last signed in (§41.4d): it says what is known, that the note came from that window, rather than naming the wrong person. Toggled from the footer, remembered per browser, and pinnable with `?shared=1`. `browser` is a reserved actor and never a crew member. Also: an expired Microsoft sign-in is now a stated condition rather than a red dot that retries forever — already-synced notes stay readable, a banner offers **Sign in again**, and writes refuse with that reason instead of a raw `AADSTS` code (§41.2).
+
+v2.31.6 *(2026-09-05)* — **Note type gains Equipment; notes filed against the register.** The Notes Hub's assignment control becomes a **Note Type** control with three kinds (§41.6a): *Unassigned*, *Assignable* — which is where the **Assign to** crew list now lives — and **Equipment**, which attributes the note to one component of the asset register by its code. The panel below the radios changes with the choice: nothing, the crew list, or an equipment search box. `note_assignment_set` gains `mode: "equipment"` carrying an `equipment_code`, and the two person-less modes clear that code, so the control can never disagree with what the note says it is. The reducer's `assignment` gains a fourth value, `equipment`; a note created with an `equipment_code` and nobody on it reads as equipment-typed without needing a second event. The Notes page reads `config/assets.csv` directly for the picker and the code→name lookup — the first time the field PWA has read that file, which §9 now records; it is a read, cached per browser, and nothing writes to the register. A new collapsed **EQUIPMENT** band at the bottom of the Notes sidebar builds a tree from the dotted codes actually in use (with their ancestors), so a note filed against `601.001.003` is found by walking `601` → `601.001` → `601.001.003`; selecting a node lists that code *and everything under it*, and dragging a note onto a node files it there. Console-side this needed nothing new to *read*: the Maintenance > Equipment screen's **Notes** section already queries `notes.equipment_code`, so an equipment-typed note appears under its component as soon as the ingest lane runs (§41.6d).
+
+v2.31.7 *(2026-09-05)* — **Promotion is for assignable notes only; the two Notes surfaces reconciled.** **Promote to Task** now appears only on an *assignable* note (§41.6). A task is work somebody carries; an unassigned note is a record nobody has taken on and an equipment note is a record about a machine, so offering the action on either was an invitation to a form that cannot be completed. The button is shown, not merely disabled, by note type — identically on both surfaces.
+
+The Console's Notes screen and the notes page had drifted, and everything below closes a gap where the Console was the poorer of the two (§41.2a). Attachments: the Console could read photos and documents but **add neither** — it now has the same ＋ on the add bar (and file-drop onto it), the same **＋ Add photo or document** on a note, and the same **📷 Photo** on the comment box, writing through the identical conventions. Documents were being rendered as photo thumbnails, so a document appeared as an empty box with no name, no size and no way to open it; **Photos and Documents are now separate sections** and a document opens through Graph's pre-signed download URL. An archived note could be archived in the Console but never brought back — **Unarchive** was missing entirely. The detail panel named only the *first* assignee (`n.assignee` is a mirror, not the list), so everyone else carrying a note was invisible; it now names them all, in full, with the shared-note warning. Sidebar counts were wrong twice over: a crew row counted only notes that person *owned* while the view it opened also lists notes *assigned* to them, and `mine` tested the first-assignee mirror so a note you were second on lit nothing — both now use list membership, computed from one query instead of one IPC round trip per row. Also added to the Console: the row **star**, the assignment **pin**, drag-to-reorder for starred notes, the attachment-retention line in the detail panel (which is the one place comment attachments are loaded), and the component's name beside its code. New shared helpers `uploadBinary` and `attachmentDownloadUrl` in the Console's Graph layer.
+
+v2.31.8 *(2026-09-05)* — **The equipment picker on both surfaces; ignore ranges honoured.** The Console's **Equipment** note type was selectable only on a note that already carried a code — everything else greyed out, so a note could not be filed against a machine from the Console at all. That was wrong on its own terms: the register is in SQLite and `db.searchAssets` already serves the Rough Log and the report screens, so "the register is behind a main-process call" was never a reason. The Console now has the same picker, with the same word-order-free matching (the IPC search is a single `LIKE`, so it is handed the longest word and the rest are ANDed in the renderer), the same current-selection chip and clear, and the same rule that choosing Equipment clears any assignees. §41.2a loses that row: the picker is no longer one-sided.
+
+Separately, the notes page was offering components the Console has always refused. §9 says assets whose top-level code segment falls in an **ignore range** are never surfaced in autocomplete — the Console excludes them at the query (`department IS NOT 'ignore'`), but the page reads `assets.csv` directly and was applying no such rule, so **851 of the register's 3,896 rows** were offerable, including `100.001.001 F/V Araho` — the vessel itself. The page now reads `equipmentconfig.json` alongside the CSV and applies the ranges before caching, on the top-level integer segment only, bounds inclusive, exactly as the ingest does.
+
+v2.31.9 *(2026-09-05)* — **Notes are renameable; promotion and demotion, both tombstoning.** Note **titles are editable in place** on both surfaces — one `note_edited` carrying the new title, the same correction pattern as everything else. A note is written in a hurry and read for weeks; its first line has to be correctable without deleting the note and losing its comments.
+
+**Promotion supersedes the mirror model.** §41.6 said a promoted note became a live task mirror. It no longer does: the task becomes the record of that work and **the note is tombstoned** (`note_promoted` then `note_deleted`). Two records of one job drift apart, which is the thing this hub exists to prevent, and a mirror is two records. Promote is offered on **assignable** notes only (v2.31.7) and opens the Console's **New Service Report form in a lightbox** — the same `buildTaskCreationHtml` the tab renders, so there is one task-creation form, not a second one. Title, body, the comment transcript as a provenance block, and every attachment travel; attachments are **genuinely copied** under the task (§41.6, "copied, not referenced") because the note's files are on the note's retention clock and tombstoning starts it. A confirmation names what is about to stop existing.
+
+**Demotion is the mirror image** (§41.6f). A task's edit modal gains **↓ Demote to Note**: an *assignable* note is created carrying the description as its body and everything task-specific as its first comment, and the task is deleted from the definitions file and the cache. Its confirmation names what does not survive — transition history, sign-off, any completed-work record.
+
+**Task metadata in comments** (§41.6e, new). Any comment line shaped `Label: value` is read as task metadata and prefills the matching field on promotion; everything else is prose and is left alone. This is also the shape demotion *writes*, which is what makes the round trip lossless. A value the form has no option for is **stated in the lightbox** rather than dropped, because the transcript has had those lines stripped and it would otherwise vanish entirely.
+
+**The equipment tag is now orthogonal to the note type** (closing the §41.13 open item). Assignable notes carry an optional equipment code, and switching between Assignable and Equipment no longer drops it — the type answers *who* a note is for, the code answers *what* it is about. Only Unassigned clears it, since its panel has nothing to show or change a code with; a note that reaches Unassigned still carrying one shows it as a removable chip rather than stranding it.
 
 Append further v2.31.x or v2.32 entries here as new work lands between releases.
 
@@ -985,6 +1019,7 @@ v2.1 — Navigation restructure. Sidebar groups renamed and reorganised. Stabili
 39. [OEE Module](#39-oee-module)
 40. [tripanalyticsconfig.json](#40-tripanalyticsconfigjson)
 41. [Notes Hub](#41--notes-hub)
+42. [Procurement & Inventory](#42--procurement--inventory)
 
 ---
 
@@ -1012,6 +1047,7 @@ Documents/IDMS/
 │   ├── fmeaconfig.json             ← Factory production FMEA failure mode registry
 │   ├── tripanalyticsconfig.json    ← Trip Analytics module config (ports, map colours, offload estimator, active trip)
 │   ├── notesconfig.json            ← Notes Hub: department heads, department folders, checklist templates (§41)
+│   ├── procurementconfig.json      ← Procurement: storerooms/bins, categories, units, suppliers, settings (§42)
 │   ├── userprefs-{username}.json   ← Per-user PWA preferences (keypad side, colour mode) — one file per user
 │   └── shells/
 │       ├── factoryshell.json       ← Factory module behaviour
@@ -1046,11 +1082,18 @@ Documents/IDMS/
 │   │   └── active/                 ← {username}.json (per-user active task state)
 │   ├── schedule/
 │   │   └── notifications/          ← schedule-notification-{YYYY-MM-DD}.json (audit log mirrors)
-│   └── notes/
+│   ├── notes/
+│   │   ├── events/
+│   │   │   └── {YYYY}/             ← {iso}-{event_id}.json — Notes Hub append-only event stream (§41)
+│   │   └── aggregates/
+│   │       └── {YYYY}/             ← notes-aggregate-{YYYY}.json (Console-derived cold-start cache, ETag-republished)
+│   └── procurement/
 │       ├── events/
-│       │   └── {YYYY}/             ← {iso}-{event_id}.json — Notes Hub append-only event stream (§41)
+│       │   └── {YYYY}/             ← {iso}-{event_id}.json — Procurement append-only event stream (§42)
+│       ├── catalogue.json      ← TM Master item master + stowage tree, projected (§42.14). Generated.
+│       ├── catalogue-detail.json ← specification / remarks / maker detail, fetched lazily (§42.14)
 │       └── aggregates/
-│           └── {YYYY}/             ← notes-aggregate-{YYYY}.json (Console-derived cold-start cache, ETag-republished)
+│           └── {YYYY}/             ← procurement-aggregate-{YYYY}.json (Console-derived cold-start cache, future)
 │
 └── console.lock                    ← Active console heartbeat file
 ```
@@ -1610,7 +1653,7 @@ When implemented, `bootstrap.json` will gain a `storage_provider` field (default
 
 **Location:** `Documents/IDMS/config/assets.csv`
 **Edited by:** External (TM-Master export). Replace the file on OneDrive when the asset register changes.
-**Read by:** Console only — ingested into the SQLite `assets` table on manual refresh from the Equipment Setup screen. Never read by the field PWA directly.
+**Read by:** Console — ingested into the SQLite `assets` table on manual refresh from the Equipment Setup screen. Also read directly by the Notes page (§41.6d) for the equipment picker and the code→name lookup, cached per browser; that read was added in v2.31.6 and is the only place the field PWA touches this file. Read-only from both.
 
 This file is the vessel's complete equipment and asset register, exported from TM-Master. IDMS treats it as **read-only** — it is never written to by the console or the field PWA. When the register changes, the operator replaces the file on OneDrive and triggers a refresh.
 
@@ -5511,7 +5554,7 @@ One file per equipment code range per year. The `codeRange` is the 3-digit top-l
 | `assigned_to`   | string   | no       | Username of a specific assignee. Takes precedence over `role` for assignment matching. |
 | `description`   | string   | no       | Detailed work instructions. Free text. |
 | `skill_tags`    | string[] | no       | Skill category keys. Planned for KSA profile integration. |
-| `status`        | string   | yes      | One of `open`, `in_progress`, `completed`, `cancelled`. |
+| `status`        | string   | yes      | One of `open`, `investigating`, `waiting_parts`, `waiting_opportunity`, `shipyard`, `other`, `reported_complete`, `completed`, `cancelled`. Active = everything through `reported_complete`; terminal = `completed`, `cancelled`. **`completed` means TM Master has it** — see §32a. |
 | `recurring`     | boolean  | yes      | If `true`, a new task instance is created when this task is completed. |
 | `interval`      | string   | no       | Required when `recurring` is `true`. One of the valid interval values (see below). |
 | `interval_hours`| integer  | no       | Required when `interval` is `CUSTOM`. Duration in hours. |
@@ -5866,6 +5909,59 @@ Allows recording a completion without a pre-created task. Useful for ad-hoc work
 | Follow-up    | Text input     | Optional. |
 
 On submit: generates a `record_id` (UUID), sets `task_id = null`, writes the record to the equipment record file on OneDrive, then ingests into SQLite. No task status is modified.
+
+---
+
+## §32a — What `completed` means
+
+**Status:** Settled and built, 2026-09-05. Two-step naming and the last gap closed, 2026-09-06.
+**Console:** `src/main/main.js` (`closeTask`), `src/main/tm-push.js` (`recordPush`, `PUSHABLE`), `src/renderer/js/tasks.js`.
+**PWA:** `index.html` — `ER_TASK_STATUSES`, `ER_TASK_UPDATE_STATUSES`, `submitErTaskCreate`.
+**Console prose:** `IDMS-Console/docs/tm-write-path-roundtrip.md` §5a.
+
+---
+
+> **A job is *reported complete* when the work is done and captured in IDMS.
+> It is *completed* when TM Master has it.**
+
+`reported_complete` is an **active** status. `completed` and `cancelled` are the only terminal ones. A job that has been signed off but not yet pushed to TM Master therefore stays on Active Tasks and on the phone's task list — which is the honest answer, because as far as the company's system of record is concerned it is not finished.
+
+### Who may write which status
+
+| Writer | Writes | Notes |
+|---|---|---|
+| PWA — Update modal | active statuses only | `ER_TASK_UPDATE_STATUSES`. No terminal status, ever. Locked 2026-07-27. |
+| PWA — Create form | `reported_complete` | The option's value *is* the status (2026-09-06). It writes the `task_records` row, which is what puts the job in the officer's queue. |
+| Console — Update modal | active statuses + `cancelled` | `Close (Completed)` removed 2026-09-05: that modal writes no record. |
+| Console — Report Complete / Task Creation form | `reported_complete` | Writes the `task_records` row. |
+| Console — Manual Entry | `reported_complete` | Via `closeTask`, plus a definitions-file patch. |
+| Console — TM Master push | `completed` | `recordPush` only. The single writer of the terminal state. |
+
+The point of the table is that `completed` **cannot be reached by forgetting to push**. No status dropdown on either client offers it, and as of 2026-09-06 no form value on either client is spelled `completed` either — the last one was the PWA's close-out option, whose label had to explain that it did not mean completed.
+
+### The two steps, and who takes them (2026-09-06)
+
+| Where | Button | Who | What it does |
+|---|---|---|---|
+| Console — a live task row | **Report Complete** | the engineer who did the work | writes the record; task → `reported_complete` |
+| Console — a crew report with no record yet | **Report Complete** | whoever writes it up | same form, same record |
+| Console — a record still on `reported_complete` | **Push to TM Master…** | the reviewing officer | fills TM's Job done form; on approval → `completed` |
+| PWA — Update modal | **Report Complete** | the crew member | status only; no record, so the officer still writes it up |
+| PWA — Create form | **Report Complete** | the crew member | creates an already-done job *and* its record |
+
+Both clients now use one phrase for the first step. Nothing anywhere finishes a job in one press, because there is no point at which one person both does the work and tells the PMS about it.
+
+**The Console's list had to be corrected to show this.** `TASK_UNION_SQL` hardcoded `'completed'` on every `task_records` row, on the old assumption that a record *is* a finished job. Under two steps a record can be halfway — written, not pushed — and those rows were being filed in the archive, out of the active list and so out of sight of the officer who still had to push them. The union reads the status off the task behind the record now, falling back to `'completed'` for imported history, which has no task behind it at all. Pinned by the "unified status" section of `npm run test:tm-ingest`.
+
+### The push queue
+
+`PUSHABLE` draws records whose task is `reported_complete` **or** `completed`, plus records with no task at all (manual entries). The second is backlog: ten records carried `completed` from before this rule, and excluding them would strand them permanently — unreachable by the very thing that would correct their status. A task `cancelled` while its record sat in the queue is skipped.
+
+Because a phone close-out now stores `reported_complete`, work reported from the PWA arrives in the officer's push queue instead of leaving the board looking already filed.
+
+### The gap this section recorded, closed 2026-09-06
+
+`taskSubmitCreate` in the Console's `tasks.js` wrote `status: 'completed'` while the option above it was labelled *"Close out — record the work (TM Master still to be told)"* — a label doing work the value contradicted. `closeTask` and `taskSubmitManualEntry` had been moved to `reported_complete`; that path had not. The option is gone rather than relabelled, on both clients, and `recordPush` is now the only writer of the terminal state anywhere in IDMS.
 
 ---
 
@@ -7258,14 +7354,36 @@ The Console is deliberately native, not an embedded webview: it already needs a 
 
 **Built to be left open.** The standalone page is meant to sit in a window of its own all day beside the Console, so it reopens on the department and place it was last on (per user, since a shared tablet has more than one), names that place in the window title with a count of what is waiting for you, and narrows into a side panel: below 780 px the sidebar folds into a ☰ overlay that closes itself once you pick somewhere, and the detail panel slides over rather than squeezing the list. Restoring a place that has since gone — a department removed, a crew member off this vessel — falls back rather than landing on an empty list.
 
+### 41.2a Two renderers, one screen — what may differ, and what may not
+
+The notes page and the Console's Notes screen are two implementations of this section, and they are meant to stay recognisably the *same screen*. Where one grows an affordance the other follows. This is not tidiness: a crew member is told "put it in Notes", and being told that an action exists only on the other surface is how a feature stops being used.
+
+Everything a note *is* renders the same on both: type and assignees, folder, star, pin, equipment code and its name, checklist, photos, documents, comments, archive state, and the attachment-retention line. Every action a note supports is available on both — create with attachments, complete, strike a step, assign, comment with a photo, star, reorder starred, drag to re-file, archive, unarchive, delete.
+
+Two things are deliberately one-sided, and each says so where it sits:
+
+| Only on | What | Why |
+|---|---|---|
+| notes page | The **shared-window author toggle** (§41.4d) | A window left open for anyone has no signed-in person to name. The Console is an officer's signed-in application; there is nobody else it could be. |
+| Console | The **EQUIPMENT band's** richer counterpart, Maintenance → Equipment → **Notes** (§41.6d) | The Console has the whole register, the component tree and TM's own parenthood; the band on the page is the reachable-from-here version of the same idea. |
+
+The equipment picker was on this list until v2.31.8, justified as "the register is behind a main-process call in the Console". It is not — `db.searchAssets` had been serving other Console screens the whole time, and the greyed-out radio meant a note simply could not be filed against a machine from the Console. **A convenience argument is not a reason to leave an action off one surface.** If a thing is worth doing in Notes it is worth doing in both, and the bar for adding a row to that table is that the surfaces genuinely differ in what they *are*, not in what was quicker to build.
+
+Two known limits, stated rather than hidden: the Console's *row* retention line is computed from the note's own attachments only, because the derived row carries a comment count and not the comments — the detail panel, which loads them, is correct; and the Console's list is fed by the ingest lane, so a note written on the page appears there on the next sync rather than instantly.
+
 ### 41.3 OneDrive files
 
 ```
 data/notes/
 ├── events/
 │   └── {YYYY}/                 ← {iso}-{event_id}.json — single append-only stream, all event types
+├── files/
+│   └── {item_id}/              ← documents byte-for-byte; item_id = note_id or comment_id (§41.4b)
 └── aggregates/
     └── {YYYY}/                 ← notes-aggregate-{YYYY}.json — Console-derived cold-start cache
+
+data/assets/pictures/{item_id}/  ← note and comment photos, the shared attachment convention
+data/tasks/files/{task_id}/      ← documents COPIED onto a task at promotion (§41.6)
 
 config/notesconfig.json          ← department heads, department folders, checklist templates
 ```
@@ -7282,13 +7400,13 @@ Envelope per `docs/architecture.md`, identical to Phases 4/5: `{schema_version: 
 
 | `event_type` | Payload | Notes |
 |---|---|---|
-| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "general"\|"department"\|"crew", department?, owner_crew_id?}` — see §41.4a. `origin` = `manual` \| `template` \| `emergency_offline`. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). `attachments[]` = §41.4b. |
-| `note_edited` | `{note_id, patch, before}` | Same correction pattern as `observation_correction`. |
+| `note_created` | `{note_id, title, body?, scope, folder?, equipment_code?, assignment?, steps?, template_id?, origin, group_alert?, attachments?}` | `scope` = `{level: "general"\|"department"\|"crew", department?, owner_crew_id?}` — see §41.4a. `origin` = `manual` \| `template` \| `emergency_offline` \| `task_demote` (§41.6f). `assignment` states the note type outright; without it a creation carrying an `equipment_code` is equipment-typed, which is what lets an importer say what it plainly meant in one event. `steps[]` = `[{step_id, text, equipment_code?}]`. `group_alert: true` settable only by the department head (§41.7). `attachments[]` = §41.4b. |
+| `note_edited` | `{note_id, patch, before}` | Same correction pattern as `observation_correction`. Carries a renamed `title` (editable in place on both surfaces, v2.31.9), a re-filed `folder`, an added or cleared `equipment_code`, and appended `attachments`. |
 | `note_completed` / `note_uncompleted` | `{note_id}` | First `note_completed` sets state; subsequent ones from other actors are preserved and rendered as confirmations, never dropped. |
 | `step_struck` / `step_unstruck` | `{note_id, step_id}` | Multiple strikes of the same step by different actors are all preserved — "struck by A 03:12, confirmed by B 03:14". This is the emergency-checklist timeline. |
 | `note_assigned` | `{note_id, assignee_crew_id, assignee_username?}` | **Adds** one person — a note may be carried by several (§41.6a). Assigner is the envelope `actor`. `assignee_crew_id` is authoritative (§41.4a); `assignee_username` rides along only when that person is also an IDMS login, and the set of those is what the PWA's alert check matches on. |
 | `note_unassigned` | `{note_id, assignee_crew_id?}` | With a crew_id, drops that one person; without, clears everyone. |
-| `note_assignment_set` | `{note_id, mode: "unassigned"\|"assignable"}` | The two person-less states. Ignored while anyone is assigned — naming a person always wins, so the clients clear the plate first. |
+| `note_assignment_set` | `{note_id, mode: "unassigned"\|"assignable"\|"equipment", equipment_code?}` | The three person-less note types (§41.6a). Ignored while anyone is assigned — naming a person always wins, so the clients clear the plate first. `mode: "equipment"` carries the `equipment_code` it files the note against; `unassigned` and `assignable` clear any code the note was carrying, because the radio is the note's answer to what it is. |
 | `note_starred` / `note_unstarred` | `{note_id}` | Shared, not per-user: a star marks a note important for everyone, matching the hub's non-private premise. Starred notes sort above the rest in every view. |
 | `note_reordered` | `{note_id, sort_index}` | Manual ordering, **starred notes only** — everything else stays newest-first. `sort_index` is a float so inserting between two neighbours costs one event instead of reindexing the list. |
 | `note_unarchived` | `{note_id}` | Returns an archived note to its list, and restarts any attachment retention clock (§41.14). |
@@ -7361,32 +7479,47 @@ Any crew member may comment on any note, with photos. Render newest-last under t
 
 ### 41.6 Task integration — promotion and mirrors
 
-**Promotion.** Any note (any scope) can be **Promoted to Task**. The action prefills the client's existing Task Creation screen:
+**Promotion.** **Promote to Task** is offered on an *assignable* note only — any scope, but only that kind (§41.6a). A task is work somebody carries: an *unassigned* note is a record nobody has taken on, and an *equipment* note is a record about a machine. Neither has the one thing task creation needs, so the action is **absent** on them rather than present and failing. Making a note assignable is the step that says it is work, and it is one click above the button. The action prefills the client's existing Task Creation screen:
 
 | Note field | Task Creation field |
 |---|---|
 | `title` | Job name |
 | `body` + provenance block | Description |
-| `equipment_code` | Equipment picker (pre-selected; if absent, the picker blocks submit as it already does — this is why the equipment tag exists) |
+| `equipment_code` | Equipment picker (pre-selected; an assignable note keeps its tag, §41.6a). A code named in a comment wins over the note's own tag — it is the more recent statement. If neither exists the picker blocks submit as it already does. |
+| `Label: value` lines in comments | The matching form field (§41.6e) |
 | note + comment photos | Attachments (copied, not referenced) |
 
 The provenance block is plain text appended to the description: `From note {note_id} — {author}, {date}.` followed by the comment transcript, one line per comment: `{author} ({date}): {text} [photo]`. Copied at promote time, so later deletion of the note cannot hollow out the task's history.
 
-Submit travels **each client's existing ETag-guarded definition-create path** — Console `mutateTaskDefinitionFile`, PWA `erTaskCreateInDefinitionsFile` (both guarded since Phase 6 Stage 0). There is no new write lane and no proposal inbox (v2.31 planning note: an inbox was considered and dropped once both create paths were confirmed guarded). The task is created `open`, assigned or not, per the normal screen. On success the client appends `note_promoted {note_id, task_id}` and the note becomes a **mirror** of the task it turned into.
+The form is the Console's **New Service Report** — the same `buildTaskCreationHtml` the tab renders, opened in a lightbox over the Notes screen so promoting a note does not cost you your place in the list. One task-creation form, not a second one. The lightbox does not close on a backdrop click: the form can hold several minutes of typing and a stray click is not consent to lose it.
 
-**Mirrors.** A mirror (from promotion, or from department-level `task_imported`) renders the task's live status read-only and strikes through when the task reaches a terminal state. Tapping "complete" on a mirror fires the **existing `reported_complete` action** through the existing path — the mirror stores no completion state of its own, ever. Officer sign-off in the Console remains the only path to `completed`. This is the single seam between the hub and the guarded task machinery, and it introduces no new state.
+Submit travels **each client's existing ETag-guarded definition-create path** — Console `mutateTaskDefinitionFile`, PWA `erTaskCreateInDefinitionsFile` (both guarded since Phase 6 Stage 0). There is no new write lane and no proposal inbox (v2.31 planning note: an inbox was considered and dropped once both create paths were confirmed guarded). The task is created `open`, assigned or not, per the normal screen.
+
+**On success the note is tombstoned** — `note_promoted {note_id, task_id}`, then `note_deleted`. *(v2.31.9: this supersedes the mirror model this section previously specified. A mirror is two records of one job, and two records drift — the failure §41.1 names first. The task is now the record, and the note's tombstone keeps who wrote what without keeping a second copy of the work.)*
+
+**Attachments are copied, not referenced.** Every photo and document on the note and on its comments is fetched and re-uploaded under the task — images to `data/assets/pictures/{task_id}/` with their thumbnails, documents to `data/tasks/files/{task_id}/`. Referencing them would leave the task pointing at files on the *note's* retention clock (§41.14), which tombstoning has just started. The copy runs before the form opens, so a slow or failed copy is surfaced before anyone types rather than between Save and the task existing; the promoting client therefore fixes the `task_id` in advance and hands it to the form.
+
+**Promotion is confirmed, and the confirmation says what stops existing** — that this note is deleted, how many attachments travel, and which metadata was found in its comments. A note becoming a task and back again should be rare; neither direction is a gesture that should happen by accident (§41.6f).
+
+**Availability.** Promote is offered on **assignable** notes only (§41.6a): a task is work somebody carries, and an unassigned note or one filed against a machine has nobody on it. The notes page shows the button and says the report is written in the Console, where the form lives; putting a third copy of task creation on that page is a separate decision, not a side effect of this one.
+
+**Mirrors.** Mirrors now come only from department-level `task_imported`, not from promotion. A mirror renders the task's live status read-only and strikes through when the task reaches a terminal state. Tapping "complete" on a mirror fires the **existing `reported_complete` action** through the existing path — the mirror stores no completion state of its own, ever. Officer sign-off in the Console records the work and also lands on `reported_complete`; a successful push to TM Master is the only path to `completed` (§32a, settled 2026-09-05). This is the single seam between the hub and the guarded task machinery, and it introduces no new state.
 
 **Assigned Tasks board (Console).** The board lists tasks and *assigned* notes, visually distinct (note rows carry a note glyph, no TM fields). Unassigned notes never appear. Completing a note row from the board appends `note_completed` — it does not touch any task table.
 
-### 41.6a Assignment — three states, several people
+### 41.6a Note type — three kinds, several people
 
-Assignment is one control with three states, in this order:
+One control, headed **Note Type**, with three kinds. The panel *below* the radios changes with the choice, because each kind needs a different question answered — and two of them need none at all:
 
-| State | Meaning | Where it shows |
-|---|---|---|
-| **Unassigned note** (default) | Nobody's, and not offered to anyone. | Its own list only. |
-| **Assignable** | Open to whoever picks it up. | Its own list, plus the **Notes Tray** on the Assigned Tasks board. |
-| **Assigned** — one or more named people | On those people's plates. | Its own list, each assignee's personal list (pinned), and each assignee's card on the Assigned Tasks board. |
+| Kind | Panel below | Meaning | Where it shows |
+|---|---|---|---|
+| **Unassigned note** (default) | nothing | Nobody's, and not offered to anyone. | Its own list only. |
+| **Assignable** | the **Assign to** crew list | Open to whoever picks it up; ticking one or more people is the fourth, derived state — **Assigned**. | Its own list, the **Notes Tray** on the Assigned Tasks board, and — once anyone is ticked — each assignee's personal list (pinned) and their card on that board. |
+| **Equipment** | an equipment search box | Filed against one component of the asset register by its `code` (§41.6d). | Its own list, the **EQUIPMENT** band of the Notes sidebar, and the **Notes** section of that component in Console → Maintenance → Equipment. |
+
+**The equipment tag is orthogonal to all three.** The type answers *who* a note is for; `equipment_code` answers *what* it is about. Assignable notes carry an optional tag — which is how a promoted note reaches its service report with the equipment already filled in (§41.6) — and moving between Assignable and Equipment keeps it. Only **Unassigned** clears it, because that panel has nothing to show or change a code with; a note that arrives at Unassigned still carrying one shows it as a removable chip rather than stranding it somewhere nothing can reach. Clearing on purpose is the ✕ on the picker, and dragging a note onto a *person* has never touched it.
+
+The reducer's `assignment` therefore carries four values — `unassigned`, `assignable`, `assigned`, `equipment` — of which only the first, second and fourth are ever *chosen*: `assigned` is what ticking a person makes of `assignable`. The radios read `assigned` as **Assignable**, which is where the crew list lives.
 
 Naming a person always wins: `note_assignment_set` is ignored while anyone is assigned, and the clients clear the plate before switching to a person-less state, so the control can never disagree with itself. Removing the last assignee leaves the note **assignable** rather than silently unassigned — it was offered work a moment ago, and dropping it off the board entirely is not what removing one name means.
 
@@ -7406,7 +7539,7 @@ The Console's Assigned Tasks board carries notes as well as tasks:
 
 **Dragging** moves work: onto a card to hand it over, onto the matching tray to release it. Dragging from one person's card onto another's cannot know which of two things is meant, so it asks: **Reassign** (take it off the first) or **Add Personnel** (both carry it). The `×` on a row takes *that person* off, leaving anyone else on it — "not mine", not "nobody's". Tasks and notes each refuse the other's tray rather than silently doing nothing.
 
-**Clicking** opens the full picker. For a task that is the assignment modal, where people are now **checkboxes** — several may hold one job — while *Unassigned* and *Locked* remain radio options exclusive with them and each other. For a note it opens the Notes screen, where the three states, comments and attachments live.
+**Clicking** opens the full picker. For a task that is the assignment modal, where people are now **checkboxes** — several may hold one job — while *Unassigned* and *Locked* remain radio options exclusive with them and each other. For a note it opens the Notes screen, where the note type, comments and attachments live.
 
 ### 41.6c Multi-assignee on tasks — the shared-file contract
 
@@ -7418,6 +7551,66 @@ The Console's Assigned Tasks board carries notes as well as tasks:
 | `assignees[]` | Every holder, as assign keys. Absent or empty means "whatever `assigned_to` says". |
 
 Both are written together, `assigned_to` always being `assignees[0]`, so the two agreeing is the normal state. **Disagreement is how a foreign write is detected**: if `assigned_to` names somebody who is not first in the list — including being cleared to null — a writer that does not know about `assignees` has changed the holder since, and the single field wins while the stale list is discarded. That covers a PWA reassignment and a PWA release alike, and it means the PWA needs no change to stay correct. A PWA that later wants to *show* several holders reads `assignees` when it agrees with `assigned_to`; writing it is optional and can follow under the dual-write protocol.
+
+### 41.6d Equipment notes — one register, three surfaces
+
+A note filed against equipment answers "what is this about?" the same way a task does, with a code from `config/assets.csv` (§9) — the TM Master component register, dotted-decimal, 3,857 rows, and the one identifier that never changes for a physical asset.
+
+**The picker.** Choosing **Equipment** opens a search box over the register on **both surfaces**: type a code fragment or part of a name, pick a row, and the note carries that `code`. Every typed word must appear somewhere in the code or the name, **in any order** — nobody remembers a component the way TM Master wrote it, and a plain substring match finds nothing for "trawl gearbox".
+
+Each surface reaches the register the way it already reaches everything else:
+
+| | Source | Matching |
+|---|---|---|
+| Notes page | `config/assets.csv` (§9) fetched directly, trimmed to `code → name` in `localStorage`, re-read on a miss or when the cached copy is over a week old | All words ANDed in the page |
+| Console | `db.searchAssets`, the same IPC the Rough Log and the report screens use, over the ingested `assets` table | One `LIKE` on the longest word, the rest ANDed in the renderer |
+
+**Ignore ranges are honoured by both.** §9 gives `equipmentconfig.json` an `ignore` block, and an asset whose **top-level integer code segment** falls in one of those ranges (bounds inclusive) is not IDMS work — the register's top block is the vessel itself, its drawings and its courses. The Console excludes them at the query; the page reads the config alongside the CSV and applies the ranges *before caching*, so the cached list is already the offerable list. On the live register that is 851 of 3,896 rows, `100.001.001 F/V Araho` among them.
+
+When the register cannot be read, the page says so and still accepts a code typed in full — an unreachable reference file must not make a note unfileable.
+
+**Exclusive by choice, not by accident.** Selecting Equipment clears any assignees (the same clear the other two modes already do), and selecting either person-less mode clears the `equipment_code`. Dragging a note onto a *person* is a separate gesture and leaves the code alone: a pump note handed to an oiler is still a pump note, and the detail panel keeps saying so.
+
+**The EQUIPMENT band.** The Notes sidebar carries a band below Personnel, collapsed by default, built from the codes actually in use in that department (plus General-scope notes) *and their ancestors* — so `601.001.003` is reachable by walking `601` → `601.001` → `601.001.003` even when no note is filed at the two upper levels. Selecting a node lists notes at that code **and everything beneath it**, which is what a tree node means; the count on a node follows the same rule. Nodes are drop targets: dragging a note onto one files it against that code. Names come from the cached register; a code with no name still renders, because a missing lookup must not hide a note.
+
+**The Console needs nothing new to read them.** Maintenance → Equipment already has a **Notes** section querying `notes.equipment_code` (with *include sub-components* honouring both TM's `parent_code` tree and the code prefix), fed by the `notes` ingest lane, which has carried `equipment_code` since the lane was written. An equipment-typed note appears under its component on the next sync.
+
+### 41.6e Task metadata in comments
+
+Crew already write `Priority: High` into a comment when they mean it. Promotion reads that rather than asking anyone to learn a new place to put it.
+
+**The rule.** Any comment line shaped `Label: value` where the label is one this table knows is task metadata. Everything else is prose and is left alone. Later comments win over earlier ones, and later lines win within one comment — the last thing anyone wrote about a note is the current answer.
+
+| Label (case-insensitive) | Task field |
+|---|---|
+| `Priority` | `priority` |
+| `Category`, `Type`, `Job type` | `job_type` |
+| `Equipment`, `Equipment code`, `Asset`, `Code` | `equipment_code` |
+| `Role` | `role` |
+| `Assigned to`, `Assignee` | `assigned_to` |
+| `Department`, `Dept` | `department` |
+| `Failure mode`, `Failure` | `failure_mode` |
+| `Hours`, `Equipment hours` | `interval_hours` |
+| `Interval` | `interval` |
+| `Status` | `status` |
+
+**Unknown labels are ignored, never guessed at.** A wrong guess prefills a service report with something nobody said. The label must also be short and alphabetic, which is what keeps `Ran it up at 14:30`, `see https://…` and `Spoke to the chief: he says wait` as prose.
+
+**The prose survives, the labels do not.** The transcript copied into the task's description has its metadata lines removed, so the form fields and the description do not say the same thing twice. That is exactly why a value the form cannot accept — a role that is not in the roster, say — is **named in the lightbox** instead of dropped: it has already been taken out of the transcript, so silence there would lose it altogether.
+
+This is also the shape §41.6f *writes*, which is what makes a demote-then-promote round trip lossless.
+
+### 41.6f Demotion — a task becomes a note again
+
+A task's edit modal carries **↓ Demote to Note**, the mirror image of promotion and tombstoning on its own side.
+
+The new note is **assignable** — it was work somebody was meant to do, and it still is — with the task's `job_name` as its title, its `description` as the body, and its first equipment code as the note's tag. Everything task-specific goes into the **first comment**, in the `Label: value` shape of §41.6e: category, priority, department, role, holder, equipment, failure mode, interval, equipment hours, status, plus any further equipment, supervisor notes and skill tags as plain lines. The task is then deleted from the definitions file and from the derived cache.
+
+**What does not come back**, and the confirmation says so: the task's transition history, any officer sign-off, and any `task_records` row already written from it. A note cannot hold those, and demoting a *closed* task throws away the record of it being done — which the confirmation calls out separately.
+
+**A failure after the note exists is never silent.** The note is created first, because losing a task entirely is worse than briefly having both; its creation is an appended event and events are not retracted. So if the task deletion then fails, the client says plainly that both now exist and which one to remove by hand. Reporting a partial state is the only honest option available at that point.
+
+**Both directions are confirmed on purpose.** A note going back and forth accumulates a comment per trip, and nothing about this system wants that traffic — these are conversions, not a toggle.
 
 ### 41.7 Alerts
 
@@ -7507,7 +7700,510 @@ When more than one clock applies, the **earliest** due date wins. Un-completing 
 - ~~**[OPEN]** Who may author notes at department level.~~ **Settled (v2.31.1):** anyone, deliberately — mostly-global rules keep the first release clean, and an authorship setup page stays a future option rather than a commitment.
 - **[OPEN]** Whether aggregates ship in the first release or replay-only suffices at initial volumes (41.3).
 - **[NEXT SLICE]** The Console-side attachment purge screen required by §41.14 — the reducer already computes eligibility; nothing purges yet.
+- ~~**[OPEN]** Whether switching a note to **Assignable** should keep its `equipment_code` instead of clearing it (§41.6a).~~ **Settled (v2.31.9):** it keeps it. The tag is orthogonal to the type — the type says who a note is for, the code says what it is about — and only Unassigned clears it. Settled by the same decision that made promotion prefill the equipment picker.
+- **[OPEN]** The promotion lightbox is Console-only. The notes page shows the button and points at the Console, because the PWA's task-creation form lives in `index.html` and a copy on the notes page would be a *third* implementation to keep in step. Extracting one shared form is the way to close this, not copying a second.
 - Emergency mode (41.9) is staged after the hub's first online-only release; the service worker work is tracked with PWA-SCHEMA §19.
+
+---
+
+## §42 — Procurement & Inventory
+
+**Status:** Spec ratified 2026-09-05 (v2.32). PWA built; Console lane not built.
+**Files:** `procurement.html` + `utils/procurement-reduce.js` (this repo); Procurement hub screen in `index.html`; `src/renderer/js/procurement.js` + `sync-procurement.js` (Console — future).
+**Location:** PWA: **Procurement**, a role-gated top-level department. Console: Operations → Procurement (future).
+
+### 42.1 Overview
+
+Stores and ordering for the vessel, as one closed loop: what we hold, what we need, what we ordered, what arrived. It replaces the "To Order" list that has been living in Microsoft To-Do (and, since v1.10, as an Engine Room notes folder — see §41), which records an intention to buy something and nothing else: not whether it was ordered, not whether it arrived, not whether we already had one on the shelf behind it.
+
+Four governing rules, stated once and enforced everywhere:
+
+1. **On-hand quantity is never authored — it is always derived.** No event writes a stock level. Every event records a *movement* (received, issued, adjusted, transferred) or a *count*, and the level is their sum. This is what makes the register auditable: every unit on the shelf traces to the event that put it there, and a wrong number is corrected by recording the correction, never by overwriting the history that produced it.
+
+2. **One fact, one event.** Receiving against a purchase order writes one movement carrying `po_line_id`; the order line's progress is *derived* from the movements that reference it, never stored a second time. Same reasoning as §41's rule that a task mirror holds no completion state of its own — two stores of one fact will diverge, and then neither can be trusted.
+
+3. **Items are archived, never deleted.** A part that leaves the register still owns the movements, receipts and orders that mention it. Deletion would orphan the history that justifies the spend.
+
+4. **The taxonomy is config, and it belongs to somebody else.** Storerooms, bins, categories, part numbering and the supplier list live in `procurementconfig.json` (§42.5), which this module *reads*. Items reference taxonomy entries by id, and an id the config does not explain renders as itself rather than disappearing. That tolerance is deliberate: the physical structure is being worked out separately and will change shape more than once, and no reshuffle of the storerooms may ever hide stock.
+
+### 42.2 Surfaces
+
+| Surface | Implementation | Data path |
+|---|---|---|
+| PWA — Procurement department | `procurement.html`, same origin and MSAL registration as `index.html` (the §41 Notes pattern) | Graph direct, event replay + poll |
+| ↳ department hub | `screen-proc-home` in `index.html` — tiles route into `procurement.html?view=…` | — |
+| Console: Operations → Procurement | Native renderer screen (future) | SQLite derived cache via a `procurement` ingest lane |
+
+The module is its own page for the same three reasons Notes is: `index.html` is already ~11k lines and every screen added to it is paid for by everyone on every load; a storekeeper wants the register open in a window all day while working the shelves; and a page of its own can be worked on without contending for the single file every other module also lives in.
+
+**Procurement is a real department, not a synthetic one.** Unlike Purser (role-gated hub, no config of its own), Procurement appears in the department picker on its own terms, carries `procurementconfig.json`, and owns an event stream. It is *gated* by role rather than by `departments[]` membership (§42.11) only because the crew records have no Procurement department to put anyone in yet.
+
+### 42.3 OneDrive files
+
+```
+data/procurement/
+├── events/
+│   └── {YYYY}/                 ← {iso}-{event_id}.json — single append-only stream, all event types
+└── aggregates/
+    └── {YYYY}/                 ← procurement-aggregate-{YYYY}.json — Console-derived cold-start cache (future)
+
+config/procurementconfig.json   ← locations, categories, units, suppliers, approval and reorder settings
+```
+
+One stream, all event types, exactly as §41.3 and the Phase 5 observation log: filenames `{iso}-{event_id}.json` with `:`, `.` and `-` stripped from the timestamp so lex-sort is chrono-sort, written `If-None-Match: *` so a retry 412s into a no-op. Per-item and per-order grouping happens in derived state, keyed by `item_id` / `req_id` / `po_id` in the payloads.
+
+**Why the stream and not a state file.** `fuelstate.json` (§25) is the counter-example worth naming: it holds current tank volumes and a correction log beside them, and every direct edit has to be reconciled against the transfers that also move the number. Stock has more writers than tanks do — anyone can take a part off a shelf — and there is no moment when they are all ashore. An append-only stream lets two people receive from the same pallet at the same time on different phones without a lock and without a lost update, which is the actual working condition on a receiving day.
+
+### 42.4 Event envelope and types
+
+Envelope is the standard one (`docs/architecture.md`, identical to §41.4):
+
+```json
+{
+  "schema_version": 1,
+  "event_id":   "uuid",
+  "event_type": "stock_movement",
+  "actor":      "wostara",
+  "timestamp":  "2026-09-05T18:22:04.117Z",
+  "payload":    { }
+}
+```
+
+| Event | Payload | Notes |
+|---|---|---|
+| `item_created` | `{item_id, name, unit, category_id?, part_number?, sfi_code?, barcode?, min_qty?, max_qty?, reorder_qty?, default_location_id?, suppliers?, notes?}` | `item_id`, `name` and `unit` are the only required fields. Everything else can be filled in later, from the shelf. |
+| `item_updated` | `{item_id, …changed fields only}` | Sparse patch. Absent key = unchanged; explicit `null` = cleared. |
+| `item_policy_set` | `{item_id, min_qty?, max_qty?, reorder_qty?, sfi_code?, barcode?, notes?}` | IDMS's own reorder policy over a mirrored item (§42.14). Sparse: an absent key is unchanged, an explicit `null` clears back to whatever TM Master says. Never a name, a supplier or a part number — those are TM Master's to state. |
+| `item_change_proposed` | `{item_id, proposal_id, fields, reason?}` | A correction to a field TM Master owns. Recorded against the item and shown with its author, **never applied** (§42.14). An officer makes the change in TM Master and the next export carries it back. |
+| `item_archived` / `item_unarchived` | `{item_id, reason?}` | Hides from pickers and the default register view; stock history and order references survive (rule 3). Archiving an item still holding stock is allowed but warned. |
+| `stock_movement` | see §42.7 | The only event that changes a quantity. `kind` discriminates receipt / issue / adjustment / transfer / count. |
+| `count_session_opened` | `{session_id, location_id, scope?, expected_items?, note?}` | Opens a sweep of one space (§42.7a). Moves nothing. `scope` is `"here"` (default) or `"deep"`. |
+| `count_session_closed` | `{session_id, confirmed?, expected_items?, note?}` | Closes it. `confirmed` is the `item_id`s seen and found correct — they file no movement, so this is the only record they were looked at. |
+| `count_session_abandoned` | `{session_id, reason?}` | Gives up the claim that the space was swept. Counts already filed under it stand. |
+| `requisition_created` | `{req_id, department?, need_by?, priority?, justification?, lines: [line]}` | Requester is the envelope `actor`. May be created with lines or empty. |
+| `requisition_updated` | `{req_id, …changed header fields, lines?}` | Whole-`lines` replacement while `draft`; header-only once submitted. |
+| `requisition_submitted` | `{req_id}` | draft → submitted. Locks the lines against edit by anyone but an approver. |
+| `requisition_decided` | `{req_id, decision: "approved"\|"rejected", line_decisions?, comment?}` | One event carries the whole decision, per-line approvals included — an approval that silently drops a line is the failure mode this prevents. `line_decisions` is `{[line_id]: {decision, qty_approved?}}`; absent means every line takes the header decision. |
+| `requisition_cancelled` | `{req_id, reason?}` | Requester or an approver. Terminal. |
+| `po_created` | `{po_id, po_number?, supplier_id?, currency?, expected_date?, lines: [po_line], notes?}` | `po_line.req_line_id` links back to the requisition line it satisfies; that link is what closes the loop for the person who asked. |
+| `po_updated` | `{po_id, …changed header fields, lines?}` | Whole-`lines` replacement while `draft`. Once sent, header and `expected_date` only — quantities change by cancelling and re-raising, so what was actually ordered stays legible. **One exception:** a line's `item_id` may still be set on a sent order when it was previously unset, because naming which item a line refers to is a link rather than a change to what was ordered. This is the path a free-text line takes when it is received and becomes a real item (§42.9); without it the stock would be right and the order line would never point at it, so `on_order` would silently miss. |
+| `po_sent` | `{po_id, sent_via?, sent_at?}` | draft → sent. From here the lines are quantities we are owed. |
+| `po_cancelled` | `{po_id, reason?, line_ids?}` | Whole order, or named lines. Cancelled lines stop counting toward `on_order`. |
+| `po_closed` | `{po_id, reason?}` | Manual close for an order that will never fully arrive — short shipment written off, supplier discontinued the part. Distinct from cancellation: what did arrive stays received. |
+
+There is deliberately **no `po_received` event.** Receipt is `stock_movement` with `kind: "receipt"` and a `po_line_id`; an order line's received quantity is the sum of movements pointing at it, and its status follows from that sum (§42.9). Rule 2.
+
+### 42.5 The taxonomy seam — `procurementconfig.json`
+
+> **Superseded in v2.33 by §42.14.** The taxonomy this section anticipated turned out to exist already, in TM Master, and to be far larger than a hand-kept config: 14,487 items across a 664-node stowage tree. Locations, categories, units and suppliers now arrive in the generated catalogue (§42.14); `procurementconfig.json` keeps only its `settings` block, and its taxonomy arrays remain as a fallback for a vessel with no TM Master export at all. **The tolerance rules below still hold and are what made the switch cheap** — ids stayed opaque strings, hierarchy stayed `parent_id`, and an unrecognised id still renders and still counts.
+
+This file is the boundary between this module and the physical-structure work. **This module reads it and never writes it**, with the single exception of the `settings` block below. Shape:
+
+```json
+{
+  "schema_version": 1,
+  "locations": [
+    { "location_id": "eng-store",   "name": "Engine Store", "parent_id": null,        "kind": "storeroom" },
+    { "location_id": "eng-store-a3","name": "Rack A3",      "parent_id": "eng-store", "kind": "bin" }
+  ],
+  "categories": [
+    { "category_id": "seals", "name": "Seals & Packing", "parent_id": null, "sfi_hint": "360" }
+  ],
+  "units": [
+    { "unit": "ea", "name": "Each",  "decimals": 0 },
+    { "unit": "L",  "name": "Litre", "decimals": 2 }
+  ],
+  "suppliers": [
+    { "supplier_id": "acme", "name": "Acme Marine", "email": "", "phone": "", "account_ref": "" }
+  ],
+  "settings": {
+    "approver_roles": ["Chief Engineer", "Admin"],
+    "default_currency": "USD",
+    "receiving_locations": ["eng-store"],
+    "exception_stale_days": 14
+  }
+}
+```
+
+**What this module guarantees to the taxonomy work:**
+
+- `location_id`, `category_id`, `supplier_id` and `unit` are **opaque strings**. Nothing parses them, infers hierarchy from them, or requires a particular format.
+- Hierarchy is expressed *only* by `parent_id`, and only for display and roll-up. Stock is held at whatever location an item's movements name — a storeroom or a bin, indifferently — so the taxonomy may deepen later without restating a single movement.
+- **An unknown id is rendered, not dropped.** An item at `location_id: "eng-store-a3"` when the config no longer lists that bin shows as `eng-store-a3` marked as not in the current layout, and its stock still counts toward the item total. Re-organising the storerooms can never make stock vanish from the register.
+- Lists may be empty. With no `locations[]` the module runs with a single implicit location (`"unassigned"`); with no `categories[]` items are simply uncategorised. The register is usable before the taxonomy exists.
+- Extra fields are preserved on read and ignored — the taxonomy work may add whatever it needs.
+
+**`settings` is the only block this module writes**, from the Procurement settings screen, via the ETag-guarded read-mutate-write used for `notesconfig.json` (§41.3). Locations, categories, units and suppliers are never written from the PWA.
+
+### 42.6 The item record
+
+Derived, not stored — this is the shape `reduceProcurement()` returns per item:
+
+| Field | Source | Notes |
+|---|---|---|
+| `item_id` | create | UUID, canonical identity. |
+| `name`, `unit`, `notes` | create / update | `unit` is a key into `units[]`; an unknown unit displays raw. |
+| `part_number` | create / update | Manufacturer or supplier part number. **Not unique** — two suppliers sell the same seal under two numbers, and one number gets reused across suppliers. Search matches it; nothing keys on it. |
+| `sfi_code` | create / update | Optional join to the asset register (§9). The universal join key across IDMS — set it and the item joins failure history, task records and the vault corpus for free. |
+| `barcode` | create / update | Optional; reserved for scanning (§42.13). |
+| `category_id`, `default_location_id` | create / update | Taxonomy references (§42.5). |
+| `min_qty`, `max_qty`, `reorder_qty` | create / update | Reorder policy (§42.10). All optional; absent `min_qty` means the item never raises a low-stock flag. |
+| `suppliers[]` | create / update | `[{supplier_id, supplier_part_number?, last_price?, currency?, lead_time_days?}]`. Ordered — first is preferred. |
+| `by_location` | movements | `{[location_id]: qty}`. A location reaching zero is retained at `0` rather than removed, so "we used to keep them in A3" stays visible. |
+| `on_hand` | movements | Sum of `by_location`. |
+| `on_order` | PO lines | Ordered less received, over open (`sent`, `partial`) lines only. |
+| `requested` | requisition lines | Approved-but-not-yet-ordered quantity. |
+| `last_movement_at`, `last_count_at` | movements | `last_count_at` drives the cycle-count view (§42.10). |
+| `archived` | archive events | |
+
+### 42.7 Stock movements
+
+One event type, one place where the arithmetic lives:
+
+```json
+{
+  "movement_id": "uuid",
+  "item_id":     "uuid",
+  "kind":        "receipt | issue | adjustment | transfer | count",
+  "qty":         12,
+  "location_id": "eng-store",
+  "to_location_id": null,
+  "direction":   null,
+  "counted_qty": null,
+  "po_id": null, "po_line_id": null,
+  "session_id": null,
+  "task_id": null, "equipment_code": null,
+  "unit_cost": null, "currency": null,
+  "reason": null, "note": null
+}
+```
+
+**`qty` is always a positive magnitude. `kind` decides what it does.** No signed quantities anywhere except through `direction`, because a sign convention silently inverted is the classic way an inventory ledger goes quietly wrong and stays wrong.
+
+| `kind` | Effect | Required | Notes |
+|---|---|---|---|
+| `receipt` | `+qty` at `location_id` | `qty`, `location_id` | `po_id` + `po_line_id` when receiving against an order (§42.9). Without them it is a direct receipt — stores bought ashore, a part handed over by a rider — which is legitimate and recorded as such. `unit_cost` optional. |
+| `issue` | `−qty` at `location_id` | `qty`, `location_id` | `task_id` and/or `equipment_code` optionally say what it went on; both are free-standing references, and §41's boundary holds — issuing a part **never** writes to `task_records`, TM Master or job history. |
+| `adjustment` | `±qty` at `location_id` per `direction` | `qty`, `location_id`, `direction`, `reason` | `direction` is `"increase"` or `"decrease"`. `reason` is required: damage, expiry, found, lost. An adjustment without a reason is an unexplained hole in the ledger. |
+| `transfer` | `−qty` at `location_id`, `+qty` at `to_location_id` | `qty`, `location_id`, `to_location_id` | One event, both halves — a transfer recorded as two events can half-fail. |
+| `count` | sets `location_id` to `counted_qty` | `counted_qty`, `location_id` | Records what was physically counted. The reducer stores the implied `variance` (`counted_qty` − book quantity at that point in the replay) on the derived movement, so the count reads as "counted 12, book said 15, −3" rather than as a bare correction. `session_id` when the count was filed as part of a sweep (§42.7a); absent, it is a spot correction. |
+
+**Negative on-hand is permitted and flagged, never blocked.** An issue that takes a location below zero means the book is wrong, not that the part is still on the shelf; refusing the entry would teach the crew to stop recording issues, which costs far more than a temporary negative. It surfaces on the exceptions list until a count clears it.
+
+**Over-receipt is permitted and flagged.** Receiving 12 against an order line for 10 records 12, because 12 is what arrived.
+
+### 42.7a Count sessions
+
+**Status:** Settled and built in the PWA, 2026-09-06. Console side not built.
+**PWA:** `procurement.html` — the Stock Location screen (`?view=location`).
+**Reducer:** `utils/procurement-reduce.js` — `locationSheet`, `locationsUnder`, `lastVerified`.
+
+A `count` movement is a **spot correction**: stand in front of a bin, type what is there, and the arithmetic follows. That is what §42.7 has always supported and it is unchanged.
+
+What it cannot express is a **sweep** — one space walked end to end on one date. An item counted and found right moves nothing, so it files no movement, so it leaves no trace, and a shelf audited clean last Tuesday is indistinguishable from a shelf nobody has opened in a year. Both read as *no count*. The single figure an audit turns on is the one the movement log structurally cannot hold.
+
+A session is that record and nothing else. **It moves no stock.**
+
+```json
+{
+  "session_id":  "uuid",
+  "location_id": "LOC-0142",
+  "scope":       "here | deep",
+  "status":      "open | closed | abandoned",
+  "expected":    38,
+  "note":        null
+}
+```
+
+**Counts filed under a session are ordinary `count` movements carrying a `session_id`.** Rule 1 holds unchanged — on-hand is still derived from movements, the session is a grouping laid over movements that already stand on their own, and deleting every session event would change no quantity. A spot correction is the same movement with no `session_id` on it, which is why the Count button elsewhere in the module needed no change.
+
+**`confirmed` is the half a movement cannot carry.** The `item_id`s a sweep reached and found the book right about. They move nothing and so file nothing; without the session they are indistinguishable from the items nobody ever reached. An item both counted and confirmed is one item, not two — the operator ticked it and then thought better of it.
+
+**`expected` is read off the opening event, never recomputed.** Coverage is a claim about the sweep *as it was walked*; a transfer into the space an hour later must not retrospectively turn a complete count into a partial one.
+
+**Abandoning gives up the claim, not the counts.** The counts already filed corrected real shelves, and a shelf does not become uncounted because the walk was cut short. What is abandoned is only the assertion that the space was swept.
+
+Derived per session: `items_counted`, `items_confirmed`, `items_seen` (the union), `variance_count`, `net_delta`, and `coverage` (`items_seen / expected`, null when nothing was expected). A count that found the book right is not a variance — a sweep of forty items with three wrong is a good sweep and must not read as three items' worth of work.
+
+`lastVerified(state)` gives the latest **closed** session per location; an abandoned one is not a sweep and does not count.
+
+**Items gain `last_verified_at`**, which moves for a count *or* a confirmation. `last_count_at` keeps its existing meaning and only moves when a count movement was filed, so nothing already reading it changes behaviour.
+
+#### The location sheet
+
+`locationSheet(state, catalogue, location_id, {scope})` is defined in the reducer rather than in either screen, because the Console and the phone must ask the same question of the same shelf and **a sheet that differs by device is a sheet nobody can sign.**
+
+Two kinds of row belong on it, and they are not the same thing: stock the book says is *here now*, and items whose `default_location_id` is here **though the book says none are left**. The second is the more useful half of an audit — an emptied bin is exactly where a miscount hides.
+
+| Rule | Why |
+|---|---|
+| `book_qty` is the figure for **this space**, never the item's shipwide total | Counting a bin against a ship's total is how a count sheet destroys good stock. `elsewhere` carries the difference. |
+| Unknown stock prints as unknown, not as `0` | 2,181 items carry no stock figure (§42.14). A sheet that prints 0 invites somebody to agree with it. |
+| A row summing several bins offers **no** `count_location_id` | On a `deep` sheet there is no single bin for the count to land in, and a count filed against the wrong one is worse than none. The screen offers no box on that row. |
+| A row with no stock but a home here counts against the home | So the empty bin is still asked about. |
+
+### 42.8 Requisitions
+
+A requisition is somebody saying *we need this*, which is a different act from *we have ordered this* — and keeping the two apart is most of the value of the module.
+
+```
+req_id, department?, need_by?, priority?, justification?
+lines[]: { line_id, item_id?, description?, qty, unit?, notes? }
+```
+
+`item_id` **or** `description` — a line may name an item already in the register, or describe something that has never been aboard. Free-text lines are the normal case for a first order and must not be second-class: at receipt, a free-text line offers to create the item, which is how the register grows without anyone having to sit down and populate it.
+
+Status: `draft → submitted → approved | rejected → ordered → closed`, plus `cancelled` from any non-terminal state.
+
+- `approved` becomes `ordered` when every approved line is covered by a PO line, and `closed` when every one of those PO lines is fully received. Both are derived — there is no event that says "ordered", because the PO already said it.
+- Partial approval is normal: `line_decisions` approves three of five lines, and the requisition sits `approved` with two rejected lines still visible alongside their rejection.
+- `qty_approved` may be less than `qty` requested. The requester sees both.
+
+### 42.9 Purchase orders and receiving
+
+```
+po_id, po_number?, supplier_id?, currency?, expected_date?, notes?
+lines[]: { line_id, item_id?, description?, qty_ordered, unit?, unit_price?, req_line_id? }
+```
+
+`po_number` is the human reference — the supplier's or the office's, whatever is written on the paperwork. Display and search only; `po_id` is identity.
+
+**Derived line status**, from receipts referencing `po_line_id`:
+
+| Received | Line status |
+|---|---|
+| 0 | `open` |
+| 0 < received < ordered | `partial` |
+| received ≥ ordered | `received` (`over` when strictly greater) |
+| line cancelled | `cancelled` |
+
+**Order status** is the roll-up: `draft`, `sent`, `partial` (some line has a receipt, not all lines complete), `received` (every non-cancelled line complete), `cancelled`, `closed`.
+
+**Receiving (check-in)** is the module's busiest screen, and it is built for a person standing at a pallet with a phone in one hand:
+
+1. Pick the order — open orders first, most recently sent at the top, searchable by `po_number` or supplier. **Or "no order"**, for stores that arrive without paperwork.
+2. Each line shows ordered, already received, and outstanding, with the outstanding quantity pre-filled, so the common case — it all came — is one tap per line.
+3. One receiving location for the whole delivery, defaulted from `settings.receiving_locations`, overridable per line.
+4. Optional unit cost per line, defaulted from the order.
+5. Commit writes **one `stock_movement` per line with a non-zero quantity** — never one event for the whole delivery, because the lines are separate facts and one of them may later turn out to be wrong on its own.
+
+A short shipment is simply a smaller quantity: the line goes `partial` and stays on the outstanding list. Nothing needs to be said about the rest, and nobody has to remember to come back and close anything.
+
+**Idempotency.** A receipt commit interrupted part-way leaves the lines it already wrote; re-running it shows the reduced outstanding quantities, so the retry receives the remainder rather than doubling the delivery. Movement events are individually `If-None-Match: *` guarded on their own `movement_id`, so a retried *identical* write 412s into a no-op.
+
+### 42.10 Reorder, low stock and counting
+
+**Low stock is `on_hand + on_order < min_qty`.** Including what is already on order is the whole point: the failure this module exists to stop is ordering a second time because nobody could see the first order is on its way. Items with no `min_qty` never appear.
+
+**Suggested order quantity** is `max_qty − (on_hand + on_order)` where `max_qty` is set, otherwise `reorder_qty`, otherwise the shortfall against `min_qty`. It is a suggestion in a pre-filled field, never an automatic order.
+
+**Cycle counting.** There is no annual stock-take mode: a count is a `stock_movement` like any other, and counting ten items on a quiet afternoon is the intended shape. What is offered least-recently-verified-first is the **space list** on the Stock Location screen (§42.7a), ordered by the `closed_at` of each space's last closed session, with never-swept spaces first and spaces holding nothing left out — a room with nothing in it is not overdue a count, it is empty. The item register itself is search-first and does not sort on count recency; `last_count_at` and `last_verified_at` are shown on the row and in the item detail, not sorted on. (Earlier versions of this paragraph said the register sorted by `last_count_at` ascending. It never has.)
+
+**Exceptions list** — one screen, the things that need a human: negative on-hand, over-receipts, orders past `expected_date` with outstanding lines, approved requisition lines older than `settings.exception_stale_days` with no PO, and items below minimum with nothing on order.
+
+### 42.11 Permissions
+
+Deliberately close to §41's mostly-global stance — the record of who did what is the oversight — with one real gate, because approving spend is not the same as recording a shelf.
+
+| Action | Who |
+|---|---|
+| Read everything | Anyone with the Procurement department |
+| Create/edit items, all stock movements, counts | Anyone with the Procurement department |
+| Raise and submit a requisition | Anyone |
+| **Approve or reject a requisition** | `settings.approver_roles`, plus `permission_tier: "admin"` |
+| Create, send, cancel or close a PO | Approvers |
+| Edit `settings` | Approvers |
+
+**Department gate.** Procurement is offered to `permission_tier: "admin"`, to roles listed in `settings.approver_roles`, and to any user carrying `"Procurement"` in `departments[]` — the last being the path that takes over once the crew records have the department. Same shape as `userIsPurser()`, generalised.
+
+**`browser` is a reserved actor here too** (§41.4d). A shared window may record movements — that is exactly what a receiving station is — but it can never approve a requisition or send an order, because those need a name.
+
+### 42.12 Console side — built (v2.35)
+
+`Operations → Procurement` in IDMS-Console 0.8.5. **Two renderers of one contract**, the rule the Notes Hub pair already follows: the same event stream, the same catalogue, and `utils/procurement-reduce.js` mirrored byte-identical into `src/renderer/js/` (the `crew-display.js` convention). Agreement is structural, not a thing anyone has to maintain.
+
+| Piece | File |
+|---|---|
+| Ingest lane | `src/renderer/js/sync-procurement.js` |
+| Screen | `src/renderer/js/procurement.js` |
+| Reducer mirror | `src/renderer/js/procurement-reduce.js` |
+| Graph helpers | `graph.js` — event stream, catalogue, ETag-guarded `settings` write |
+| Tables, IPC, diagnostics | `src/main/main.js` — `procurement` in `DIAG_REGISTRY` |
+| Harness | `src/renderer/_procurement-harness.html` |
+
+**The lane** is `sync-notes.js` in shape: raw events into `procurement_events`, then the whole derived cache rebuilt through the shared reducer — whole-cache on change, because one derivation path cannot drift from itself. It lists every file and subtracts what it holds rather than seeking past a cursor, for the reason §41's lane does: an event file is named from the timestamp inside it, so a back-dated write sorts below a high-water mark and is lost for good.
+
+**The catalogue** is the input the Notes lane has no equivalent of, and it arrives through the existing conditional-GET path (`graphGetPreferMirror` against the folder listing's eTag), so an unchanged 1.8 MB file costs a listing call and no download.
+
+**SQLite earns its place rather than merely mirroring.** 14,487 items is far too many to hand to the renderer and filter in JavaScript, so `getProcurementItems` filters in SQL, requiring every search term to match somewhere — the way a person searches, where "seal 90" finds the 90 mm shaft seal and nothing else. Derived requisition and order lines carry an `item_name` folded in at derive time, since the Console holds no in-memory register to resolve one from; it is a cache of the reduced item's name and a rename in TM Master reaches it on the next derive.
+
+**What is only on the Console:** approving a requisition and sending an order (§42.11) — officer actions, on the officer's machine, with per-line decisions and trimmed quantities. **What is only on the page:** nothing, deliberately.
+
+Still to come, and the reason the Console is worth having beyond parity: spend by category and supplier over a trip, consumption history feeding `min_qty` proposals (§42.15), the join from `sfi_code` to failure history, and printable order documents.
+
+### 42.13 Open items
+
+- ~~**[SEAM]** `procurementconfig.json` locations / categories / units / suppliers are owned by the physical-structure work.~~ **Settled (v2.33):** the taxonomy is TM Master's, projected through the catalogue — §42.14. The tolerance rules written for the config are what made the switch cheap.
+- ~~**[OPEN]** The reconciliation lane.~~ **Answered (v2.34):** it belongs to the existing service-report export path to TM Master, which is being extended into a general reconcile-and-push lane. This module supplies the input and builds no lane of its own — §42.15. What remains open is the *state* a proposal carries once that lane can push it (raised / pushed / confirmed by export / rejected), which will be a new event on this stream rather than a mutation.
+- **[OPEN]** Whether to publish the 448 computed minimum proposals (§42.15) into `item_policy_set` events, and under whose signature. It is a policy decision about how the vessel orders, not a computation, and it rests on an assumed lead time until `est_delivery_days` is populated or learned.
+- **[OPEN]** Whether the 138 units of measure should ever be reconciled. `Each`, `EA`, `PCE` and `pcs` are the same unit under four names, which makes any cross-item quantity roll-up meaningless. Normalising is TM Master's job, not this module's, but somebody has to decide it is worth doing.
+- **[OPEN]** Whether `sfi_code` on an item should be single or a list. Single for now — a gasket used on three pumps is the case that will decide it.
+- **[OPEN]** Costs are recorded (`unit_cost`, `currency`) but nothing converts currency or reconciles to an invoice. Spend reporting is Console work and needs a decision on whether IDMS is ever the financial record or always a shadow of one.
+- **[FUTURE]** Barcode scanning at receipt and issue. `barcode` is on the item record for it; the camera path and the offline queue are the §19 service-worker lift, shared with §41.9.
+- **[FUTURE]** Reserving stock against an approved requisition or a scheduled task, which is what would make `available` differ from `on_hand`.
+- **[FUTURE]** Consumption-driven `min_qty` suggestions from movement history, and lead-time-aware reorder points.
+
+### 42.14 The catalogue — TM Master as the item master
+
+**This supersedes the working assumption in §42.5 that the taxonomy would be a hand-kept config file.** The vessel already has an item master: 14,487 items and a 664-node stowage tree in TM Master, exported and mirrored into the Engineering Vault at `50 Procurement/` as one note per item and one per stowage node. That is the register. This module does not get to invent a second one.
+
+Two rules follow, and neither is negotiable:
+
+1. **TM Master is the system of record for what an item *is*** — its name, unit, supplier, part numbers, stowage, compliance flags. This module reads a projection of it and **never writes back**. That is the ratified rule for TM Master writes across IDMS, not a limitation of this screen.
+2. **The vessel still owns what it *does*.** Movements, counts, requisitions and orders are IDMS's own event stream, layered on the TM Master baseline. Stock on the shelf changes far faster than an export cycle, and a register that could only be as fresh as the last export would be useless on a receiving day.
+
+#### The pipeline
+
+```
+TM Master  ──export──▶  Vault notes (status: mirror)  ──project──▶  catalogue JSON  ──▶  procurement.html
+            (xlsx)      50 Procurement/50.3, 50.4        tools/build-procurement-catalogue.py
+```
+
+The second hop is `tools/build-procurement-catalogue.py` in this repo. It reads the Vault notes and writes only into the IDMS OneDrive folder — nothing writes to the Vault, which is what keeps the corpus a corpus. Rerun it after every fresh export:
+
+```
+python tools/build-procurement-catalogue.py [--vault PATH] [--out PATH] [--dry-run]
+```
+
+#### Files
+
+```
+data/procurement/
+├── catalogue.json          ← ~1.8 MB. Everything needed to search, list and count.
+└── catalogue-detail.json   ← ~2.1 MB. Specification, remarks, maker detail — fetched
+                              lazily, on the first item anybody opens.
+```
+
+**Columnar and dictionary-encoded.** A `fields` header plus rows of values, with the low-cardinality columns (`uom`, `item_type`, `item_category`, `supplier`, `currency`) replaced by indexes into tables shipped alongside. Repeating forty key names and the string `"Spare part"` across 14,487 objects is most of the file otherwise — the naïve encoding is 4.6 MB, this one is 1.8. Boolean flags are packed into one integer per row against `flag_bits`. Both clients decode through `procurementReduce.hydrateCatalogue()` so neither has to know the encoding.
+
+**Six columns are dropped**, listed in `never_populated`: `material_group`, `dangerous_goods`, `dangerous_goods_class`, `ihm_status`, `hs_code`, `hs_description`. The export carries them on every row and fills them on none.
+
+**Caching.** The catalogue is held in IndexedDB, not `localStorage` — it would not fit, and it would be evicted against the event cache. On open, the cached copy renders immediately; one small Graph metadata request then compares eTags and the full file is re-fetched only when it has actually changed, which is once per export. A vessel that cannot reach OneDrive keeps working from the cached copy, labelled as one.
+
+#### `baseline_at`, and what a movement means
+
+The catalogue's quantities describe TM Master **at the moment the export was taken**, carried as `baseline_at`. The reducer seeds `by_location` from `in_stock` at the item's default stowage, then applies movements — but **only those with `timestamp > baseline_at`**. Anything at or before it was already absorbed into the exported figure, so applying it again would double-count. Such movements stay in the ledger, greyed and marked *already in the baseline*, and are counted in `superseded_movements`; the history reads continuously even where the arithmetic stops.
+
+A consequence worth stating plainly: **a fresh export supersedes the movements older than it.** If a count recorded here has not yet been keyed into TM Master when the next export is taken, the export wins and the count is lost from the arithmetic. That divergence is the reconciliation report — the shelf said X, TM Master says Y — and is exactly what the exceptions screen is for.
+
+**`in_stock: null` means unknown, not zero.** 2,181 items carry no stock figure in the export. They render as `—`, never as `0`, and never raise a low-stock flag; reporting 2,181 phantom shortages would bury the 152 real ones.
+
+#### The policy overlay
+
+**13,885 of the 14,487 items carry no minimum at all** — only 602 have one. A register nobody can set a minimum on is a register nobody can act on, and minimums must not require an officer to open TM Master. So IDMS keeps its own reorder policy over the mirror, in `item_policy_set` events:
+
+| Field | Owner |
+|---|---|
+| `min_qty`, `max_qty`, `reorder_qty` | **IDMS** — policy, not fact. Overlay wins; clear it and TM Master's value returns. |
+| `sfi_code` | **IDMS** — the export carries none, and this is the join to the asset register (§9), task records and failure history. |
+| `barcode`, `notes` | **IDMS** |
+| everything else | **TM Master** — read here, corrected there |
+
+`procurementReduce.effective(item, field)` is the only correct way to read one of these: overlay first, then the mirror. The UI marks an overlaid value so nobody mistakes it for TM Master's.
+
+#### Proposals
+
+An edit to a TM-owned field is recorded as an `item_change_proposed` event and **never applied**. It shows on the item with who asked, when, and why; an officer makes the change in TM Master and the next export carries it back. A legacy `item_updated` against a mirrored item is treated the same way rather than being silently applied or silently dropped.
+
+#### Local items
+
+An item created here that TM Master has never heard of — stores bought ashore, a part received against a free-text order line — is a normal `item_created` with `source: 'local'`, and works exactly as §42.6 describes. `item_created` against an id the catalogue already supplies is ignored, so a stale local create can never rewrite a mirrored item.
+
+#### `on_order`, from two places
+
+TM Master reports 1,255 items on order at baseline; this module raises orders of its own. They are kept apart as `on_order_tm` and the derived PO remainder, and added for `on_order`. Collapsing them would make it impossible to tell an order raised aboard from one raised ashore.
+
+#### What the register says right now
+
+| | |
+|---|---|
+| Items | 14,487 |
+| Stowage locations | 664, across 10 decks and shore stores |
+| No stowage recorded | 2,864 |
+| No stock figure in the export | 2,181 |
+| Negative on hand | 35 |
+| No minimum set | 13,885 |
+| On order in TM Master | 1,255 |
+| Critical occurrences | 58 |
+| Blocked | 689 |
+
+#### Source data this module does not correct
+
+- **One shifted row.** `ITM-04387` carries a maker name in `OnOrder` and a part number in `Price`. The builder coerces non-numeric values in numeric columns to unknown and reports them; the fix belongs in TM Master.
+- **138 distinct units of measure**, including `Each`, `EA`, `PCE` and `pcs` all meaning the same thing. Displayed as written. Quietly normalising somebody else's vocabulary is how a register stops matching the shelf label.
+- **Stowage is a path, not a code.** `Maindeck\Fwd Shop\SH 5\5-2`. Lists show the last segment; the item screen shows the whole path.
+
+### 42.15 Writing back to TM Master, and where minimums would come from
+
+Two things sit downstream of §42.14 and are recorded here so the module is built to meet them rather than to be retrofitted.
+
+#### The push-back lane
+
+IDMS already exports service reports to TM Master, and that lane is being extended into a general reconcile-and-push path. **This module must not grow a second one.** Its two write-shaped event types are deliberately in the right shape to be *input* to that lane rather than a dead-end record:
+
+| Event | What the lane would do with it |
+|---|---|
+| `item_change_proposed` | A correction to a TM-owned field, with `fields`, `reason`, actor and timestamp. This is already a proposal in the ratified sense — it goes to TM Master when an officer signs it, and comes back on the next export. |
+| `stock_movement` where `timestamp <= baseline_at` | The superseded set (§42.14). These are movements the vessel recorded that the export has now overwritten — precisely the keying worklist a reconcile pass needs. `superseded_movements` on the derived item is the count. |
+
+When the lane lands, a proposal gains a state — *raised, pushed, confirmed by export, rejected* — which is a new event on this stream, not a mutation of the proposal. Until then a proposal is simply raised and visible, and §42.1 rule 1 is unaffected either way: **the arithmetic still runs off the baseline plus the movements, whichever direction the corrections are travelling.**
+
+The reconciliation question in §42.13 resolves through this lane rather than inside this module.
+
+#### Minimums: what the history actually supports
+
+Assessed 2026-09-05 against the real data, because "derive minimums from consumption" is easy to say and the numbers decide whether it is worth building.
+
+**The signal.** TM Master carries three consumption columns (2024, 2025, 2026 — the last a part year, annualised on elapsed fraction). Across 14,487 items:
+
+| | Items | Share |
+|---|---|---|
+| Moved in all three years | 107 | 0.7% |
+| Moved in two of three | 341 | 2.4% |
+| Moved in one of three | 2,204 | 15.2% |
+| **No movement recorded at all** | **11,835** | **81.7%** |
+
+Of the 2,652 that moved at all, the median three-year total is 3 units, and 1,375 of them average one unit a year or less. Most of this register is genuinely slow-moving spares, where consumption history is not a rate and never will be.
+
+**The gap that matters more.** A minimum is *consumption × (lead time + restock interval)*. Two of those three are in hand — consumption above, and a restock interval of **16 days** (median gap across the 19 offloads in `scheduleconfig.json`, 15 of them Dutch Harbor). **Lead time is not: `est_delivery_days` is set on 1 item of 14,487.** With a restock cycle that short, lead time dominates the answer entirely:
+
+| Assumed lead | Items whose minimum would be ≥ 2 |
+|---|---|
+| 7 days | 165 |
+| 30 days | 323 |
+| 90 days | 647 |
+
+A four-fold swing on a number nobody has recorded. Any minimum published today rests on that assumption, and it must be stated on the screen rather than buried.
+
+**Service reports do not help here.** There are 6,091 completed task records spanning 2017–2026 — a genuinely deep history — but `items_used` is populated on **7** of them. What was fitted to a job lives in the free-text `service_report` field. Text mining it into an ordering decision is not a basis for one.
+
+**What is defensible now.** Banding by how much movement history stands behind each item, at an assumed 30-day lead:
+
+| Band | | Items |
+|---|---|---|
+| A | three years, steady | 56 |
+| B | three years, lumpy | 51 |
+| C | two years | 341 |
+| D | one year, real quantity — suggestive, needs an eye | 657 |
+| E | one year, 1–5 units — noise, not a rate | 1,547 |
+
+**Bands A–C are 448 items, 3.1% of the register**, 408 of which have no TM minimum today. Only 8 of the 58 critical-flagged items fall in them — critical spares are exactly the slow movers consumption history cannot speak to, and they need an engineer's judgement, not a regression.
+
+67 of the 448 are already below their proposed minimum, which is the immediate value: a short list of things the vessel genuinely uses and is genuinely short of.
+
+**The flywheel.** The reason to build this anyway is that the module generates its own better input. Every issue recorded here carries a quantity, a date and optionally a `task_id` or `equipment_code` — which is the structured parts-on-job capture that `items_used` never got. A season of that is worth more than three columns of annual totals, and it arrives whether or not anybody sets out to collect it. Lead times likewise: `po_sent` to first receipt measures the real one per supplier, which is §42.13's lead-time item and the thing that would move the 448 into the thousands.
+
+**Not built.** Proposals are computed offline for now (`data/procurement/proposed-minimums.json`, generated, read by nothing). Publishing them into `item_policy_set` events is a decision about the vessel's ordering policy, not a computation, and it belongs to an officer.
 
 ---
 

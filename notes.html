@@ -153,6 +153,44 @@
   .assign-row span { display: flex; flex-direction: column; }
   .assign-row em { font-style: normal; color: var(--text-muted); font-size: 11.5px; }
   .assign-sep { margin: 8px 0 3px; color: var(--text-muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+
+  /* ── Equipment picker (Note Type → Equipment) ──────────── */
+  .eq-current { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 8px;
+    background: var(--accent-glow); border: 1px solid var(--border-accent); border-radius: var(--radius-sm); font-size: 13px; }
+  .eq-current .c { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .eq-current .n { color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .eq-current button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 0 2px; }
+  .eq-current button:hover { color: var(--danger); }
+  .eq-search { margin-bottom: 6px; }
+  .eq-results { max-height: 240px; overflow-y: auto; }
+  .eq-result { display: flex; gap: 9px; align-items: baseline; padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; }
+  .eq-result:hover { background: var(--bg-2); }
+  .eq-result .c { color: var(--accent-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .eq-result .n { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .eq-note { color: var(--text-muted); font-size: 12px; line-height: 1.5; padding: 4px 2px; }
+  .eq-optional { color: var(--text-muted); font-size: 11.5px; padding: 0 2px 6px; }
+
+  /* ── Editable title ────────────────────────────────────── */
+  .detail-head .note-title { cursor: text; border-radius: var(--radius-sm); padding: 1px 4px; margin: -1px -4px; }
+  .detail-head .note-title:hover { background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--border); }
+  #title-edit { flex: 1; font-size: 16px; font-weight: 600; font-family: var(--font); line-height: 1.3;
+    background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-accent);
+    border-radius: var(--radius-sm); padding: 4px 6px; resize: vertical; min-height: 46px; }
+  #title-edit:focus { outline: none; }
+  .title-hint { color: var(--text-muted); font-size: 11px; padding: 4px 16px 0; }
+  .eq-note b { color: var(--text-secondary); font-weight: 500; }
+
+  /* ── Equipment band in the sidebar ─────────────────────── */
+  .eq-head { cursor: pointer; user-select: none; }
+  .eq-head:hover { color: var(--text-secondary); }
+  .eq-head .chev { color: var(--text-muted); }
+  .eq-head .total { margin-left: auto; letter-spacing: 0; text-transform: none; }
+  .tree-item.eq { font-size: 13px; gap: 6px; padding-top: 5px; padding-bottom: 5px; }
+  .tree-item.eq .eq-caret { width: 11px; flex-shrink: 0; color: var(--text-muted); font-size: 9px; text-align: center; }
+  .tree-item.eq .eq-caret.on:hover { color: var(--accent); }
+  .tree-item.eq .c { color: var(--accent-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .tree-item.eq.active .c { color: var(--accent); }
+  .tree-item.eq .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .note-meta .alertflag { color: var(--danger); font-weight: 600; }
   .note-meta .eq { color: var(--accent-dim); }
   .note-meta .mirror { color: var(--accent); }
@@ -368,6 +406,16 @@ var NT = {
   view: { kind: 'department', owner: null, folder: null },
   openNote: null,
   showArchived: false, showCompleted: false, showInactive: false,
+  // The asset register (§9), read straight from OneDrive and cached per
+  // browser — see ntEnsureAssets. Null until the first read answers.
+  assets: null,            // [{code, name}] in register order
+  assetName: null,         // Map code → name
+  assetsState: 'idle',     // 'idle' | 'loading' | 'ok' | 'fail'
+  assetsWhy: '',           // why the register could not be read, for the picker
+  showEquipment: false,    // the sidebar's Equipment band — collapsed by default
+  eqOpen: {},              // asset code → expanded, in that band
+  eqQuery: '',             // what is typed in the equipment picker
+  editingTitle: null,      // note_id whose title is open for renaming
   stagedPhoto: null,       // File staged on the comment box
   stagedNew: [],           // Files staged on the add bar
   dragNoteId: null,
@@ -605,11 +653,16 @@ async function ntEnterApp() {
   // reopens where it was rather than sending you back to your own list every
   // time. Per user, since a shared tablet has more than one.
   ntRestorePlace();
+  ntRestoreEqState();
+  if (NT.view.kind === 'equipment') ntEqReveal(NT.view.owner);
   ntRenderWho();
 
   ntWireDropBar();
   ntLoadCache();
   ntRenderAll();
+  // The register only matters once the band or the picker is actually looked
+  // at, but a band already open on load wants its names with the codes.
+  if (NT.showEquipment) ntEnsureAssets();
   await ntSyncNow();
   if (NT.syncTimer) clearInterval(NT.syncTimer);
   NT.syncTimer = setInterval(ntSyncNow, 60000);
@@ -839,6 +892,165 @@ async function ntRemoveSection(path) {
   } catch (e) { ntToast('Could not remove — ' + ntWhyFailed(e)); }
 }
 
+// ── The asset register (§9, §41.6d) ─────────────────────────
+// config/assets.csv is the TM Master component export: 3,857 dotted-decimal
+// codes, replaced by hand when the register changes, never written by anything
+// here. The Console ingests it into SQLite; this page reads the file itself,
+// because a picker that cannot name a code is a picker nobody will use.
+//
+// Cached per browser. A reference file replaced by hand is not something a
+// week-old copy gets wrong in a way that matters, and re-reading half a
+// megabyte on every load of an all-day window would be rude.
+
+var NT_ASSETS_KEY     = 'nt_assets_v1';
+var NT_ASSETS_MAX_AGE = 7 * 86400000;
+
+// A CSV scanner rather than a split on commas: asset names carry commas and
+// quotes of their own ("Specification, Estimating, Drawing…"), and the free-text
+// installation column can carry a newline inside its quotes.
+function ntParseCsv(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  var rows = [], row = [], field = '', quoted = false;
+  for (var i = 0; i < text.length; i++) {
+    var ch = text[i];
+    if (quoted) {
+      if (ch !== '"') { field += ch; continue; }
+      if (text[i + 1] === '"') { field += '"'; i++; continue; }
+      quoted = false;
+    } else if (ch === '"') { quoted = true; }
+    else if (ch === ',')   { row.push(field); field = ''; }
+    else if (ch === '\n')  { row.push(field); field = ''; rows.push(row); row = []; }
+    else if (ch !== '\r')  { field += ch; }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+// Columns 0 and 3 are Code and Name (§9). Everything else is carried by the
+// Console's ingest and is not this page's business.
+//
+// `ignore` is equipmentconfig.json's ignore ranges. Codes inside them are not
+// IDMS work — the register's top block is the vessel itself, its drawings and
+// its courses — and §9 says they are never offered for autocomplete. The
+// Console's asset search excludes them at the query; reading the CSV directly
+// means doing it here, or the picker would offer "F/V Araho" as a component
+// somebody could file a note against.
+function ntAssetsFromCsv(text, ignore) {
+  var rows = ntParseCsv(text);
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    var code = (rows[i][0] || '').trim();
+    if (!code || ntCodeIgnored(code, ignore)) continue;
+    out.push({ code: code, name: (rows[i][3] || '').trim() });
+  }
+  return out;
+}
+
+// Range comparison is on the top-level integer segment only, the same rule the
+// Console's ingest applies (§9).
+function ntCodeIgnored(code, ranges) {
+  if (!ranges || !ranges.length) return false;
+  var top = parseInt(String(code).split('.')[0], 10);
+  if (isNaN(top)) return false;
+  return ranges.some(function (r) {
+    var from = parseInt(r.from, 10), to = parseInt(r.to, 10);
+    return !isNaN(from) && !isNaN(to) && top >= from && top <= to;
+  });
+}
+
+function ntAdoptAssets(list) {
+  NT.assets = list;
+  NT.assetName = new Map();
+  list.forEach(function (a) { NT.assetName.set(a.code, a.name); });
+  NT.assetsState = 'ok';
+  NT.assetsWhy = '';
+}
+
+// The name behind a code, when the register has been read. A code with no name
+// still renders everywhere — a missing lookup must never hide a note.
+function ntAssetName(code) {
+  return (NT.assetName && NT.assetName.get(code)) || '';
+}
+
+function ntEnsureAssets(force) {
+  if (NT.assetsState === 'loading') return Promise.resolve();
+  if (NT.assets && !force) return Promise.resolve();
+
+  if (!force) {
+    try {
+      var c = JSON.parse(localStorage.getItem(NT_ASSETS_KEY) || 'null');
+      if (c && c.rows && c.rows.length && (Date.now() - new Date(c.fetched).getTime()) < NT_ASSETS_MAX_AGE) {
+        ntAdoptAssets(c.rows.map(function (r) { return { code: r[0], name: r[1] }; }));
+        return Promise.resolve();
+      }
+    } catch (e) {}
+  }
+
+  NT.assetsState = 'loading';
+  // equipmentconfig.json rides along so the ignore ranges are applied to the
+  // list that gets cached — a picker filtered on read would go stale the
+  // moment the cache was written.
+  return Promise.all([
+    ntFetch(ntGraphUrl(ONEDRIVE_BASE + '/config/assets.csv'), { method: 'GET' })
+      .then(function (resp) {
+        if (resp.status === 404) throw new Error('assets.csv is not on OneDrive yet');
+        if (!resp.ok) throw new Error('assets.csv → ' + resp.status);
+        return resp.text();
+      }),
+    ntGetJson(ONEDRIVE_BASE + '/config/equipmentconfig.json').catch(function () { return null; })
+  ])
+    .then(function (both) {
+      var text = both[0];
+      var list = ntAssetsFromCsv(text, ((both[1] || {}).ignore || {}).ranges || []);
+      if (!list.length) throw new Error('assets.csv parsed to no rows');
+      ntAdoptAssets(list);
+      try {
+        localStorage.setItem(NT_ASSETS_KEY, JSON.stringify({
+          fetched: new Date().toISOString(),
+          rows: list.map(function (a) { return [a.code, a.name]; })
+        }));
+      } catch (e) { /* over quota — the register just re-reads next time */ }
+      ntRenderTree();
+      if (NT.openNote) ntRenderDetail();
+    })
+    .catch(function (e) {
+      NT.assetsState = 'fail';
+      NT.assetsWhy = ntWhyFailed(e);
+      if (NT.openNote) ntRenderDetail();
+    });
+}
+
+// ── Asset codes as a hierarchy ──────────────────────────────
+// The code is dotted-decimal and its own tree: 601.001.003 sits under 601.001
+// sits under 601. That is the tree the Equipment band draws, and the reason a
+// node lists everything beneath it as well as itself.
+
+function ntCodeAncestors(code) {
+  var parts = String(code).split('.');
+  var out = [];
+  for (var i = 1; i <= parts.length; i++) out.push(parts.slice(0, i).join('.'));
+  return out;
+}
+
+function ntCodeUnder(code, root) {
+  return code === root || String(code).indexOf(root + '.') === 0;
+}
+
+// Segment by segment, numerically where both segments are numbers — otherwise
+// 601.1 would sort after 601.10 and an engineer would not find the row.
+function ntCodeCmp(a, b) {
+  var pa = String(a).split('.'), pb = String(b).split('.');
+  for (var i = 0; i < Math.max(pa.length, pb.length); i++) {
+    var x = pa[i], y = pb[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    var nx = Number(x), ny = Number(y);
+    if (!isNaN(nx) && !isNaN(ny)) { if (nx !== ny) return nx - ny; }
+    else if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
 // ── Event sync (replay + poll) ──────────────────────────────
 
 function ntCacheKey(year) { return 'nt_events_cache_' + year; }
@@ -972,6 +1184,14 @@ function ntIsDeptHead(deptKey) {
 // one note, shown on the plate of each person carrying it, so completing it
 // anywhere completes it for everyone (§41.6a).
 function ntInView(n, v) {
+  // An equipment view is a node of the code tree, so it holds the notes filed
+  // at that code AND everything beneath it — that is what a tree node means.
+  // Scoped the same way the Personnel list is, so the band and the list it
+  // opens never disagree about what this department can see.
+  if (v.kind === 'equipment') {
+    if (!n.equipment_code || !ntEqInScope(n)) return false;
+    return ntCodeUnder(n.equipment_code, v.owner);
+  }
   if (v.kind === 'crew') {
     if (notesReduce.isAssignedTo(n, v.owner)) return true;
     if (n.scope.level !== 'crew') return false;
@@ -987,6 +1207,13 @@ function ntInView(n, v) {
     return (n.folder || null) === (v.folder || null);
   }
   return false;
+}
+
+// Equipment is a vessel-wide register, but the band sits under this
+// department's own places, so it shows what this department can reach: its own
+// notes, and the General ones that belong to everybody.
+function ntEqInScope(n) {
+  return n.scope.level === 'general' || (n.scope.department || null) === NT.dept;
 }
 
 // Pinned first, then starred, then newest. A pin outranks a star and is not a
@@ -1163,7 +1390,137 @@ function ntRenderTree() {
     }
   }
 
+  h += ntEquipmentBand();
+
   document.getElementById('tree').innerHTML = h;
+}
+
+// ── The Equipment band (§41.6d) ─────────────────────────────
+// Last in the sidebar and collapsed until asked for, because most notes are
+// not about a machine and the band would otherwise be a wall of numbers above
+// nothing. Built from the codes actually in use plus their ancestors, so a
+// note filed deep is still reachable by walking down from the top.
+
+function ntEqCodesInUse() {
+  var used = {};
+  for (var id in NT.notes) {
+    var n = NT.notes[id];
+    if (n.deleted || n.merged_into || !n.equipment_code) continue;
+    if (n.archived && !NT.showArchived) continue;
+    if (!ntEqInScope(n)) continue;
+    used[n.equipment_code] = true;
+  }
+  return Object.keys(used);
+}
+
+// code → [child codes], for every code in use and every ancestor of one.
+function ntEqTree(codes) {
+  var kids = {};
+  codes.forEach(function (code) {
+    var chain = ntCodeAncestors(code);
+    chain.forEach(function (c, i) {
+      if (!kids[c]) kids[c] = [];
+      if (i > 0 && kids[chain[i - 1]].indexOf(c) < 0) kids[chain[i - 1]].push(c);
+    });
+  });
+  for (var k in kids) kids[k].sort(ntCodeCmp);
+  return kids;
+}
+
+function ntEquipmentBand() {
+  var codes = ntEqCodesInUse();
+  var kids  = ntEqTree(codes);
+  var roots = Object.keys(kids).filter(function (c) { return c.indexOf('.') < 0; }).sort(ntCodeCmp);
+
+  var total = 0;
+  roots.forEach(function (c) { total += ntCounts({ kind: 'equipment', owner: c, folder: null }).open; });
+
+  var h = '<div class="tree-head eq-head" onclick="ntToggleEquipmentBand()">' +
+          '<span class="chev">' + (NT.showEquipment ? '▾' : '▸') + '</span> Equipment' +
+          '<span class="total">' + (codes.length || '') + '</span></div>';
+  if (!NT.showEquipment) return h;
+
+  if (!roots.length) {
+    h += '<div class="eq-note" style="padding-left:10px">Nothing is filed against a piece of ' +
+         'equipment here yet. Open a note, set its type to <b>Equipment</b>, and it appears in this tree.</div>';
+    return h;
+  }
+  roots.forEach(function (c) { h += ntEqRow(c, kids, 0); });
+  return h;
+}
+
+function ntEqRow(code, kids, depth) {
+  var view   = { kind: 'equipment', owner: code, folder: null };
+  var active = NT.view.kind === 'equipment' && NT.view.owner === code;
+  var counts = ntCounts(view);
+  var has    = (kids[code] || []).length;
+  var open   = !!NT.eqOpen[code];
+  var name   = ntAssetName(code);
+  var esc    = ntAttr(code).replace(/'/g, "\\'");
+
+  var h = '<div class="tree-item eq' + (active ? ' active' : '') + '"' +
+    ' style="padding-left:' + (10 + depth * 13) + 'px"' +
+    ' title="' + ntAttr(code + (name ? ' — ' + name : '')) + '"' +
+    ' data-view=\'' + ntAttr(JSON.stringify(view)) + '\'' +
+    ' onclick=\'ntSetView(' + ntAttr(JSON.stringify(view)) + ')\'' +
+    ' ondragover="ntTreeDragOver(event,this)"' +
+    ' ondragleave="this.classList.remove(\'drop-target\')"' +
+    ' ondrop="ntTreeDrop(event,this)">' +
+    '<span class="eq-caret' + (has ? ' on' : '') + '"' +
+      (has ? ' onclick="event.stopPropagation();ntEqToggle(\'' + esc + '\')"' : '') + '>' +
+      (has ? (open ? '▾' : '▸') : '·') + '</span>' +
+    '<span class="c">' + ntEsc(code) + '</span>' +
+    '<span class="n">' + ntEsc(name) + '</span>' +
+    (counts.open ? '<span class="count' + (counts.mine ? ' alert' : '') + '">' + counts.open + '</span>' : '') +
+    '</div>';
+
+  if (has && open) {
+    kids[code].forEach(function (c) { h += ntEqRow(c, kids, depth + 1); });
+  }
+  return h;
+}
+
+function ntToggleEquipmentBand() {
+  NT.showEquipment = !NT.showEquipment;
+  // The names are what make a wall of codes readable, so the register is
+  // fetched the moment the band is actually opened rather than on every load.
+  if (NT.showEquipment) ntEnsureAssets();
+  ntSaveEqState();
+  ntRenderTree();
+}
+
+function ntEqToggle(code) {
+  if (NT.eqOpen[code]) delete NT.eqOpen[code];
+  else NT.eqOpen[code] = true;
+  ntSaveEqState();
+  ntRenderTree();
+}
+
+function ntEqStateKey() { return 'nt_eq_' + ((NT.user && NT.user.username) || 'anon'); }
+
+function ntSaveEqState() {
+  try {
+    localStorage.setItem(ntEqStateKey(), JSON.stringify({ open: NT.showEquipment, nodes: Object.keys(NT.eqOpen) }));
+  } catch (e) {}
+}
+
+function ntRestoreEqState() {
+  try {
+    var st = JSON.parse(localStorage.getItem(ntEqStateKey()) || 'null');
+    if (!st) return;
+    NT.showEquipment = !!st.open;
+    NT.eqOpen = {};
+    (st.nodes || []).forEach(function (c) { NT.eqOpen[c] = true; });
+  } catch (e) {}
+}
+
+// Reveal a code in the band: open every ancestor above it, and the band with
+// them. Used when a place is restored, and after filing a note against a code.
+function ntEqReveal(code) {
+  if (!code) return;
+  NT.showEquipment = true;
+  ntCodeAncestors(code).slice(0, -1).forEach(function (c) { NT.eqOpen[c] = true; });
+  ntSaveEqState();
 }
 
 // One top-level entry: a folder row, or a group row followed by its folders.
@@ -1416,6 +1773,10 @@ function ntRenderList() {
   } else if (NT.view.kind === 'department') {
     locTitle = NT.view.folder || (ntDeptLabel(NT.dept) + ' notes');
     locSub = NT.view.folder ? 'section · ' + ntDeptLabel(NT.dept) : 'visible to everyone';
+  } else if (NT.view.kind === 'equipment') {
+    var eqName = ntAssetName(NT.view.owner);
+    locTitle = NT.view.owner + (eqName ? ' — ' + eqName : '');
+    locSub = 'equipment · this code and everything under it';
   } else {
     var c = ntCrewById(NT.view.owner);
     locTitle = ntFullName(c) || ntShortName(NT.view.owner);
@@ -1461,7 +1822,10 @@ function ntNoteRow(n) {
       return ntShortName(a.crew_id);
     }).join(', ')) + '</span>';
   }
-  if (n.equipment_code) meta += '<span class="eq">' + ntEsc(n.equipment_code) + '</span>';
+  if (n.equipment_code) {
+    meta += '<span class="eq" title="' + ntAttr(ntAssetName(n.equipment_code) || 'Equipment') + '">⚙ ' +
+            ntEsc(n.equipment_code) + '</span>';
+  }
   if (n.task_id) meta += '<span class="mirror">task ' + ntEsc(n.task_id) + '</span>';
   if (n.archived) meta += '<span>archived</span>';
   var exp = ntExpiryLine(n);
@@ -1595,6 +1959,21 @@ async function ntTreeDrop(ev, el) {
     return;
   }
 
+  // Dropping on an equipment node files the note against that code. It is not
+  // a re-filing: the note keeps its place and its folder, and gains the machine
+  // it is about. Anyone already carrying it is cleared, the same as choosing
+  // Equipment on the radios would.
+  if (view.kind === 'equipment') {
+    try {
+      if (n.assignees.length) await ntAppendEvent('note_unassigned', { note_id: n.note_id });
+      await ntAppendEvent('note_assignment_set', {
+        note_id: n.note_id, mode: 'equipment', equipment_code: view.owner
+      });
+      ntToast('Filed against ' + view.owner + (ntAssetName(view.owner) ? ' — ' + ntAssetName(view.owner) : ''));
+    } catch (e) { ntToast('Could not file — ' + ntWhyFailed(e)); }
+    return;
+  }
+
   var scope;
   if (view.kind === 'general') scope = { level: 'general' };
   else                         scope = { level: 'department', department: NT.dept };
@@ -1667,11 +2046,19 @@ function ntRenderDetail() {
   var othersCommented = n.comments.some(function (c) { return c.actor !== n.author; });
   var lastDone = n.completions.length ? n.completions[n.completions.length - 1] : null;
 
+  // The title is editable in place. A note is written in a hurry on a tablet
+  // and read for weeks afterwards, so the first line of it has to be
+  // correctable without deleting the note and losing its comments.
   var h = '<div class="detail-head">' +
     '<button class="star-btn' + (n.starred ? ' on' : '') + '" style="font-size:18px" onclick="ntToggleStar(\'' + ntAttr(n.note_id) + '\')">' +
       (n.starred ? '★' : '☆') + '</button>' +
-    '<div class="note-title"' + (n.completed ? ' style="text-decoration:line-through;color:var(--text-muted)"' : '') + '>' + ntEsc(n.title) + '</div>' +
-    '<button class="close-x" onclick="ntCloseDetail()">✕</button></div>';
+    (NT.editingTitle === n.note_id
+      ? '<textarea id="title-edit" maxlength="200" rows="2">' + ntEsc(n.title) + '</textarea>'
+      : '<div class="note-title" title="Click to rename" onclick="ntBeginTitleEdit(\'' + ntAttr(n.note_id) + '\')"' +
+        (n.completed ? ' style="text-decoration:line-through;color:var(--text-muted)"' : '') + '>' + ntEsc(n.title) + '</div>') +
+    '<button class="close-x" onclick="ntCloseDetail()">✕</button></div>' +
+    (NT.editingTitle === n.note_id
+      ? '<div class="title-hint">Enter saves · Escape cancels</div>' : '');
 
   var exp = notesReduce.hasAttachments(n) ? notesReduce.attachmentExpiry(n) : null;
   h += '<div class="detail-sec kv">' +
@@ -1682,8 +2069,11 @@ function ntRenderDetail() {
         }).join(', ')) + '</b> by ' + ntEsc(ntShortName(n.assigned_by || '')) +
         (n.assignees.length > 1 ? ' <span class="warn">· one note, shared — completing it completes it for everyone</span>' : '')
       : n.assignment === 'assignable' ? '<br><b>Assignable</b> — open to anyone' : '') +
-    (n.equipment_code ? '<br>Equipment <b>' + ntEsc(n.equipment_code) + '</b>' : '') +
-    (n.task_id ? '<br>Promoted → task <b>' + ntEsc(n.task_id) + '</b> (mirror — status arrives in the task-integration slice)' : '') +
+    (n.equipment_code
+      ? '<br>Equipment <b>' + ntEsc(n.equipment_code) + '</b>' +
+        (ntAssetName(n.equipment_code) ? ' — ' + ntEsc(ntAssetName(n.equipment_code)) : '')
+      : '') +
+    (n.task_id ? '<br>Promoted → service report <b>' + ntEsc(n.task_id) + '</b>' : '') +
     (n.completed && lastDone ? '<br>Completed by <b>' + ntEsc(ntShortName(lastDone.actor)) + '</b> ' + ntWhen(lastDone.timestamp) : '') +
     (exp ? '<br><span class="warn">Attachments kept until ' + ntWhen(exp.due) + ' (' + exp.reason + ' — ' + exp.days + ' days). Archive the note to keep them.</span>' : '') +
     '</div>';
@@ -1736,38 +2126,75 @@ function ntRenderDetail() {
     '<button class="btn" onclick="ntAddComment()">Add</button>' +
     '</div></div></div>';
 
-  // Assignment, three states in one control (§41.6a). Unassigned is the
-  // default and the top row; Assignable offers the note without naming
-  // anyone; ticking people is the third state, and several may be ticked —
-  // one note carried by several, never a copy each.
-  var noteDept = n.scope.department || NT.dept;
-  var pool = NT.crew.filter(function (c) {
-    return ntDeptKey(c.department) === noteDept &&
-           (c.status === 'active' || notesReduce.isAssignedTo(n, c.crew_id));
-  }).sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+  // Note Type, three kinds in one control (§41.6a). The panel BELOW the radios
+  // changes with the choice, because each kind needs a different question
+  // answered and two of them need none: Unassigned asks nothing, Assignable
+  // asks who (several may be ticked — one note carried by several, never a copy
+  // each), Equipment asks which machine.
+  var kind = notesReduce.noteType(n);
+  var nid  = ntAttr(n.note_id);
 
-  h += '<div class="detail-sec"><h4>Assignment</h4><div class="assign-box">';
+  h += '<div class="detail-sec"><h4>Note Type</h4><div class="assign-box">';
   h += '<label class="assign-row"><input type="radio" name="assign-mode" value="unassigned"' +
-       (n.assignment === 'unassigned' ? ' checked' : '') +
-       ' onchange="ntSetAssignMode(\'' + ntAttr(n.note_id) + '\',\'unassigned\')">' +
+       (kind === 'unassigned' ? ' checked' : '') +
+       ' onchange="ntSetNoteType(\'' + nid + '\',\'unassigned\')">' +
        '<span><b>Unassigned note</b><em>Nobody\'s — it just sits here</em></span></label>';
   h += '<label class="assign-row"><input type="radio" name="assign-mode" value="assignable"' +
-       (n.assignment === 'assignable' ? ' checked' : '') +
-       ' onchange="ntSetAssignMode(\'' + ntAttr(n.note_id) + '\',\'assignable\')">' +
+       (kind === 'assignable' ? ' checked' : '') +
+       ' onchange="ntSetNoteType(\'' + nid + '\',\'assignable\')">' +
        '<span><b>Assignable</b><em>Open to anyone — shows in the Notes Tray</em></span></label>';
-  h += '<div class="assign-sep">Assign to</div>';
-  h += pool.map(function (c) {
-    var on = notesReduce.isAssignedTo(n, c.crew_id);
-    return '<label class="assign-row"><input type="checkbox"' + (on ? ' checked' : '') +
-           ' onchange="ntToggleAssignee(\'' + ntAttr(n.note_id) + '\',\'' + ntAttr(c.crew_id) + '\',this.checked)">' +
-           '<span>' + ntEsc(ntFullName(c)) + (c.status !== 'active' ? ' <em>(inactive)</em>' : '') +
-           (c.role_label ? ' <em>' + ntEsc(c.role_label) + '</em>' : '') + '</span></label>';
-  }).join('') || '<div class="kv" style="padding:4px 2px">Nobody active in this department.</div>';
-  h += '</div></div>';
+  h += '<label class="assign-row"><input type="radio" name="assign-mode" value="equipment"' +
+       (kind === 'equipment' ? ' checked' : '') +
+       ' onchange="ntSetNoteType(\'' + nid + '\',\'equipment\')">' +
+       '<span><b>Equipment</b><em>Filed against one machine — shows under it in the Console</em></span></label>';
+  h += '</div>';
+
+  // Equipment rides alongside every kind now: the type says WHO a note is for,
+  // the code says WHAT it is about, and they are different questions. It is
+  // optional under Assignable — where it survives to prefill the service
+  // report on promotion — and the point of Equipment. Under Unassigned there
+  // is no picker, but a code already on the note is still shown and clearable,
+  // so a tag can never end up stranded where nothing can reach it.
+  if (kind === 'assignable') {
+    var noteDept = n.scope.department || NT.dept;
+    var pool = NT.crew.filter(function (c) {
+      return ntDeptKey(c.department) === noteDept &&
+             (c.status === 'active' || notesReduce.isAssignedTo(n, c.crew_id));
+    }).sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+    h += '<div class="assign-sep">Assign to</div><div class="assign-box">';
+    h += pool.map(function (c) {
+      var on = notesReduce.isAssignedTo(n, c.crew_id);
+      return '<label class="assign-row"><input type="checkbox"' + (on ? ' checked' : '') +
+             ' onchange="ntToggleAssignee(\'' + nid + '\',\'' + ntAttr(c.crew_id) + '\',this.checked)">' +
+             '<span>' + ntEsc(ntFullName(c)) + (c.status !== 'active' ? ' <em>(inactive)</em>' : '') +
+             (c.role_label ? ' <em>' + ntEsc(c.role_label) + '</em>' : '') + '</span></label>';
+    }).join('') || '<div class="kv" style="padding:4px 2px">Nobody active in this department.</div>';
+    h += '</div>';
+    h += ntEquipmentPicker(n, true);
+  } else if (kind === 'equipment') {
+    h += ntEquipmentPicker(n);
+  } else if (n.equipment_code) {
+    h += ntEquipmentPicker(n, true, true);
+  }
+  h += '</div>';
 
   h += '<div class="detail-actions">';
   h += '<button class="btn ghost" onclick="ntAddNoteFiles(\'' + ntAttr(n.note_id) + '\')">＋ Add photo or document</button>';
-  h += '<button class="btn ghost" disabled title="Arrives with the task-integration slice">Promote to Task</button>';
+  // Only an assignable note becomes a task. A task is work somebody carries;
+  // an unassigned note is a record nobody has taken on, and an equipment note
+  // is a record about a machine. Neither has the one thing task creation needs
+  // — a person — so offering the button on them would be an invitation to a
+  // form that cannot be completed.
+  //
+  // The service report itself is written in the Console for now: the form
+  // lives there, and a third copy of task creation on this page is not
+  // something to add lightly. The button says so rather than sitting greyed
+  // out with no explanation.
+  if (kind === 'assignable') {
+    h += '<button class="btn ghost" onclick="ntPromoteHint()" ' +
+         'title="Open this note in the Console to write the service report">Promote to Task…</button>';
+  }
   h += n.archived
     ? '<button class="btn ghost" onclick="ntUnarchive(\'' + ntAttr(n.note_id) + '\')">Unarchive</button>'
     : '<button class="btn ghost" onclick="ntArchive(\'' + ntAttr(n.note_id) + '\')">Archive</button>';
@@ -1780,8 +2207,157 @@ function ntRenderDetail() {
   }
   h += '</div>';
 
+  // The 60-second sync redraws this panel underneath whoever is using it, so a
+  // search half-typed has to survive the redraw or the picker is unusable on a
+  // window left open all day.
+  var hadFocus = document.activeElement && document.activeElement.id === 'eq-search';
   el.innerHTML = h;
   el.querySelectorAll('img[data-thumb]').forEach(ntHydrateImg);
+  ntRenderEqResults();
+  if (hadFocus) {
+    var box = document.getElementById('eq-search');
+    if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  }
+  ntWireTitleEdit(n);
+}
+
+// ── Renaming a note ─────────────────────────────────────────
+// One note_edited carrying the new title, the same correction pattern
+// everything else uses. Nothing is rewritten: the stream keeps what it said
+// before, and the panel keeps the note's author and date unchanged.
+
+function ntBeginTitleEdit(id) {
+  NT.editingTitle = id;
+  ntRenderDetail();
+}
+
+function ntWireTitleEdit(n) {
+  var box = document.getElementById('title-edit');
+  if (!box) return;
+  box.focus();
+  box.setSelectionRange(box.value.length, box.value.length);
+  box.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ntSaveTitle(n); }
+    else if (ev.key === 'Escape')           { ev.preventDefault(); NT.editingTitle = null; ntRenderDetail(); }
+  });
+  // Clicking away keeps what was typed rather than discarding it — losing a
+  // correction because the tablet was tapped elsewhere is the wrong default.
+  box.addEventListener('blur', function () { if (NT.editingTitle === n.note_id) ntSaveTitle(n); });
+}
+
+async function ntSaveTitle(n) {
+  var box = document.getElementById('title-edit');
+  if (!box) return;
+  var title = box.value.trim().replace(/\s+/g, ' ');
+  NT.editingTitle = null;
+  if (!title || title === n.title) { ntRenderDetail(); return; }
+  try {
+    await ntAppendEvent('note_edited', {
+      note_id: n.note_id, patch: { title: title }, before: { title: n.title }
+    });
+  } catch (e) {
+    ntToast('Could not rename — ' + ntWhyFailed(e));
+    ntRenderDetail();
+  }
+}
+
+// ── The equipment picker (§41.6d) ───────────────────────────
+// Shown under the Equipment radio and nowhere else. Searches the asset
+// register by code or name; when the register cannot be read it says so and
+// still accepts a code typed in full, because an unreachable reference file
+// must not make a note unfileable.
+
+function ntEquipmentPicker(n, optional, chipOnly) {
+  if (!chipOnly) ntEnsureAssets();
+  var h = '<div class="assign-sep">Equipment' +
+          (optional && !chipOnly ? ' <em style="text-transform:none;letter-spacing:0">— optional</em>' : '') + '</div>';
+  if (optional && !chipOnly && !n.equipment_code) {
+    h += '<div class="eq-optional">Tagging the machine here means a service report made from this note ' +
+         'arrives with its equipment already filled in.</div>';
+  }
+
+  if (n.equipment_code) {
+    var nm = ntAssetName(n.equipment_code);
+    h += '<div class="eq-current"><span class="c">' + ntEsc(n.equipment_code) + '</span>' +
+         '<span class="n">' + ntEsc(nm || (NT.assetsState === 'ok' ? 'not in the register' : '')) + '</span>' +
+         '<button title="Clear the equipment" onclick="ntClearEquipment(\'' + ntAttr(n.note_id) + '\')">✕</button></div>';
+  }
+
+  // Unassigned has no picker — only the chip above, so the tag stays visible
+  // and removable rather than becoming unreachable.
+  if (chipOnly) return h;
+
+  h += '<input class="field eq-search" id="eq-search" autocomplete="off" spellcheck="false"' +
+       ' placeholder="' + (n.equipment_code ? 'Search for a different code or name…' : 'Search code or name…') + '"' +
+       ' value="' + ntAttr(NT.eqQuery) + '" oninput="ntEqSearchInput(this.value)">';
+  h += '<div class="eq-results" id="eq-results"></div>';
+  return h;
+}
+
+function ntEqSearchInput(v) {
+  NT.eqQuery = v;
+  ntRenderEqResults();
+}
+
+// Rendered on its own so typing filters the list without redrawing the panel
+// the box lives in — which would take the focus and the caret with it.
+function ntRenderEqResults() {
+  var host = document.getElementById('eq-results');
+  if (!host) return;
+  var n = NT.openNote ? NT.notes[NT.openNote] : null;
+  if (!n) { host.innerHTML = ''; return; }
+  var nid = ntAttr(n.note_id);
+  var q = NT.eqQuery.trim();
+
+  if (NT.assetsState === 'loading' && !NT.assets) {
+    host.innerHTML = '<div class="eq-note">Reading the equipment register…</div>';
+    return;
+  }
+  if (!NT.assets) {
+    host.innerHTML = '<div class="eq-note">The equipment register could not be read' +
+      (NT.assetsWhy ? ' — <b>' + ntEsc(NT.assetsWhy) + '</b>' : '') + '.' +
+      (q ? ' File this note against <b>' + ntEsc(q) + '</b> anyway?' +
+           '<div class="eq-result" onclick="ntSetEquipment(\'' + nid + '\',\'' + ntAttr(q).replace(/'/g, "\\'") + '\')">' +
+           '<span class="c">' + ntEsc(q) + '</span><span class="n">use this code as typed</span></div>'
+         : ' Type a code in full and it will still be filed against it.') + '</div>';
+    return;
+  }
+  if (!q) {
+    host.innerHTML = '<div class="eq-note">' + NT.assets.length +
+      ' components in the register. Type part of a code or a name.</div>';
+    return;
+  }
+
+  // Every word must appear somewhere in the code or the name, in any order.
+  // Nobody remembers a component's name the way TM wrote it — "trawl gearbox
+  // 12" has to find "Trawl Winch Gearbox No. 12", and a plain substring match
+  // finds nothing for it.
+  var terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  var hits = [];
+  for (var i = 0; i < NT.assets.length && hits.length < 60; i++) {
+    var a = NT.assets[i];
+    var hay = (a.code + ' ' + a.name).toLowerCase();
+    var all = true;
+    for (var t = 0; t < terms.length; t++) {
+      if (hay.indexOf(terms[t]) < 0) { all = false; break; }
+    }
+    if (all) hits.push(a);
+  }
+  // A code prefix is the strongest thing anyone can type here, so those first.
+  hits.sort(function (a, b) {
+    var ap = a.code.indexOf(q) === 0 ? 0 : 1, bp = b.code.indexOf(q) === 0 ? 0 : 1;
+    return ap - bp || ntCodeCmp(a.code, b.code);
+  });
+
+  if (!hits.length) {
+    host.innerHTML = '<div class="eq-note">Nothing in the register matches <b>' + ntEsc(q) + '</b>.</div>';
+    return;
+  }
+  host.innerHTML = hits.map(function (a) {
+    return '<div class="eq-result" onclick="ntSetEquipment(\'' + nid + '\',\'' + ntAttr(a.code) + '\')">' +
+           '<span class="c">' + ntEsc(a.code) + '</span>' +
+           '<span class="n">' + ntEsc(a.name) + '</span></div>';
+  }).join('');
 }
 
 // Graph content requires an Authorization header, so <img src> can't load it
@@ -1812,8 +2388,10 @@ async function ntOpenFile(path) {
 
 function ntNewScope() {
   if (NT.view.kind === 'general') return { level: 'general' };
-  if (NT.view.kind === 'department') return { level: 'department', department: NT.dept };
-  return { level: 'crew', department: NT.dept, owner_crew_id: NT.view.owner };
+  if (NT.view.kind === 'crew') return { level: 'crew', department: NT.dept, owner_crew_id: NT.view.owner };
+  // Department level for an equipment view too: a note filed against a machine
+  // belongs to the department, not to whoever happened to be looking at it.
+  return { level: 'department', department: NT.dept };
 }
 
 async function ntQuickAdd() {
@@ -1836,6 +2414,9 @@ async function ntQuickAdd() {
       title: title,
       scope: ntNewScope(),
       folder: NT.view.folder || null,
+      // Added while standing on an equipment node, it is filed against that
+      // code — the reducer reads a creation carrying one as equipment-typed.
+      equipment_code: NT.view.kind === 'equipment' ? NT.view.owner : null,
       origin: 'manual',
       attachments: attachments
     });
@@ -1872,13 +2453,57 @@ async function ntToggleStep(noteId, stepId) {
   } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
-async function ntSetAssignMode(id, mode) {
+// The Note Type radios (§41.6a). Naming people outranks every person-less
+// kind, so switching to one clears the plate first — otherwise the radio would
+// appear to do nothing. Switching to Unassigned or Assignable also clears any
+// equipment code, which the reducer does: the radio is the note's own answer
+// to what it is, and leaving a stale code behind would keep it hanging under a
+// machine it is no longer about.
+async function ntSetNoteType(id, mode) {
   var n = NT.notes[id];
+  NT.eqQuery = '';
   try {
-    // Naming people outranks both person-less states, so switching to one
-    // clears the plate first — otherwise the radio would appear to do nothing.
     if (n && n.assignees.length) await ntAppendEvent('note_unassigned', { note_id: id });
-    await ntAppendEvent('note_assignment_set', { note_id: id, mode: mode });
+    await ntAppendEvent('note_assignment_set', {
+      note_id: id,
+      mode: mode,
+      // Re-selecting Equipment keeps whatever code the note already had; the
+      // picker below is how it changes.
+      equipment_code: mode === 'equipment' ? ((n && n.equipment_code) || null) : null
+    });
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
+}
+
+// Picking a code tags the note. It does NOT change the note's kind: tagging an
+// assignable note with the machine it is about is a normal thing to do, and it
+// must not take the note off anyone's plate.
+async function ntSetEquipment(id, code) {
+  code = String(code || '').trim();
+  if (!code) return;
+  var n = NT.notes[id];
+  NT.eqQuery = '';
+  try {
+    await ntAppendEvent('note_edited', {
+      note_id: id,
+      patch:  { equipment_code: code },
+      before: { equipment_code: (n && n.equipment_code) || null }
+    });
+    ntEqReveal(code);
+    ntRenderTree();
+    ntToast('Filed against ' + code + (ntAssetName(code) ? ' — ' + ntAssetName(code) : ''));
+  } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
+}
+
+// Clears the code and leaves the note's kind alone — the code and the kind are
+// separate questions now, and the radios above answer the other one.
+async function ntClearEquipment(id) {
+  NT.eqQuery = '';
+  try {
+    await ntAppendEvent('note_edited', {
+      note_id: id,
+      patch:  { equipment_code: null },
+      before: { equipment_code: (NT.notes[id] || {}).equipment_code || null }
+    });
   } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
@@ -2103,6 +2728,13 @@ function ntToggleArchived() {
   NT.showArchived = !NT.showArchived;
   document.getElementById('btn-archived').textContent = NT.showArchived ? 'Hide archived' : 'Show archived';
   ntRenderList();
+}
+
+// Promotion opens the service report form, which lives in the Console. Said
+// once, plainly, rather than leaving a dead button on the panel.
+function ntPromoteHint() {
+  ntToast('Open this note in IDMS Console — Personnel › Notes — and use Promote to Task there. ' +
+          'The service report form lives in the Console.');
 }
 
 function ntToast(msg) {

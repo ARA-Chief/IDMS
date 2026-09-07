@@ -1216,6 +1216,108 @@
   <!-- Modal overlay host for the Purser Check Out form (built dynamically). -->
   <div id="pu-checkout-modal-host"></div>
 
+  <!-- ── PROCUREMENT HUB (§42) ──
+       A real top-level department, not a synthetic one: it owns
+       procurementconfig.json and an event stream of its own. The hub is the
+       only part that lives here — every tile opens procurement.html, which is
+       where the module actually is, for the same reasons Notes is its own page
+       (this file is already ~11k lines, a storekeeper wants it open in a
+       window all day, and a separate page does not contend for this one). -->
+  <div class="screen" id="screen-proc-home">
+    <header class="topbar">
+      <div class="topbar-left" style="position:relative">
+        <div class="user-avatar" id="pr-home-avatar" onclick="togglePrUserMenu()" style="cursor:pointer">PR</div>
+        <div class="user-info" onclick="togglePrUserMenu()" style="cursor:pointer">
+          <span class="user-name" id="pr-home-username">—</span>
+          <span class="user-role" id="pr-home-role">Procurement · F/T Araho</span>
+        </div>
+        <div id="pr-user-menu" style="display:none;position:absolute;top:44px;left:0;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-md);min-width:200px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Signed in as</div>
+            <div id="pr-user-menu-name" style="font-size:14px;font-weight:500;color:var(--text-secondary)">—</div>
+          </div>
+          <button id="pr-menu-btn-switch-dept" onclick="closePrUserMenu();showDeptPicker()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer">Switch Department</button>
+          <button onclick="switchUser()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--text-primary);cursor:pointer;border-top:1px solid var(--border)">Switch User</button>
+          <button onclick="signOut()" style="width:100%;background:transparent;border:none;padding:12px 14px;text-align:left;font-size:14px;color:var(--danger);cursor:pointer;border-top:1px solid var(--border)">Sign Out</button>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="sync-indicator synced" id="pr-sync-indicator">
+          <span class="sync-dot"></span>
+          <span class="sync-label">Synced</span>
+        </div>
+      </div>
+    </header>
+    <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Procurement</div>
+    <div class="er-hub-grid">
+      <button class="er-hub-tile" onclick="openProcurement('register')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 9h20v14H4z"/><path d="M4 9l2.5-4h15L24 9"/><path d="M11 14h6"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Inventory</div>
+        <div class="er-hub-tile-sub">What we hold, and where</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcurement('checkin')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 4v13"/><path d="M9 12l5 5 5-5"/><path d="M5 21h18"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Check In</div>
+        <div class="er-hub-tile-sub">Receive a delivery</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcurement('low')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 5l10 18H4L14 5z"/><path d="M14 12v5"/><path d="M14 20h.01"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Low Stock</div>
+        <div class="er-hub-tile-sub">Short, counting what is on order</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcurement('reqs')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 4h14v20H7z"/><path d="M11 10h6"/><path d="M11 15h6"/><path d="M11 20h3"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Requisitions</div>
+        <div class="er-hub-tile-sub">Ask for something</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcurement('orders')">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 7h18l-1.5 13H6.5L5 7z"/><path d="M10 7V5a4 4 0 018 0v2"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Orders</div>
+        <div class="er-hub-tile-sub">What is on its way</div>
+      </button>
+      <button class="er-hub-tile" onclick="openProcProfile()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="10" r="4" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M6 25c0-4.418 3.582-8 8-8s8 3.582 8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Profile</div>
+        <div class="er-hub-tile-sub">Your crew record</div>
+      </button>
+      <button class="er-hub-tile" onclick="window.location.href='notes.html'">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20.5 4.2l3.3 3.3"/>
+            <path d="M5 23.5l1-4.7L20 4.8a1.9 1.9 0 012.7 0l1.5 1.5a1.9 1.9 0 010 2.7L9.7 22.5l-4.7 1z"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Notes</div>
+        <div class="er-hub-tile-sub notes-tile-sub">Shared scratch pad</div>
+      </button>
+    </div>
+  </div>
+
   <!-- ── FACTORY: LOG EVENTS — SECTION PICKER ── -->
   <div class="screen" id="screen-factory-log-events">
     <div class="subscreen-header">
@@ -1910,9 +2012,20 @@
             <option value="vessel">Vessel / General</option>
           </select>
         </div>
-        <!-- Task Status — mirrors the Console Update modal so a field user
-             can create an already-closed task as a service report without
-             a separate input form. Default 'open' preserves prior behaviour. -->
+        <!-- Task Status — mirrors the Console's Task Creation form so a field
+             user can create an already-done job as a service report without a
+             separate input form. Default 'open' preserves prior behaviour.
+
+             THERE IS NO 'completed' OPTION. Reporting a job complete is one
+             step and pushing it to TM Master is another, taken by someone else
+             in the Console, so the terminal status is not a thing this form —
+             or any dropdown on either client — can select. Picking Report
+             Complete is still what makes this submit write the task_records
+             row; what it no longer does is claim the PMS has been told.
+
+             This used to read `value="completed"` with a label explaining that
+             it did not mean completed, which is a lot of work for a word to do.
+             The value is the status now. -->
         <div class="er-form-row" style="margin-bottom:0">
           <label class="er-form-label">Task Status</label>
           <select id="er-create-status" class="er-form-input">
@@ -1922,7 +2035,7 @@
             <option value="waiting_opportunity">Waiting Opportunity</option>
             <option value="shipyard">Shipyard</option>
             <option value="other">Other</option>
-            <option value="completed">Close (Completed)</option>
+            <option value="reported_complete">Report Complete</option>
             <option value="cancelled">Cancelled</option>
           </select>
         </div>
@@ -2349,6 +2462,9 @@ function showScreen(id) {
   if (id === 'screen-purser-home' && PURSER_ACTIVE) {
     currentDepartment = 'Purser';
   }
+  if (id === 'screen-proc-home' && PROC_ACTIVE) {
+    currentDepartment = 'Procurement';
+  }
 }
 
 // Role gate for the Purser department tile + menu. Driven purely by
@@ -2356,6 +2472,93 @@ function showScreen(id) {
 // departments[] array, so non-Pursers can't see the tile even if mis-tagged.
 function userIsPurser() {
   return ((currentUser && currentUser.role) || '').trim().toLowerCase() === 'purser';
+}
+
+// ── Procurement gate (§42.11) ────────────────
+// The tile is offered to admins, to anyone carrying Procurement on their crew
+// record, and to the approver roles. The authoritative check is in
+// procurement.html against the live config; this one only decides whether the
+// tile is worth showing, and reads a cached copy of the config so an edited
+// approver_roles list reaches the picker on the next sign-in rather than never.
+var PROC_ACTIVE = false;
+var PROC_CFG_CACHE_KEY = 'fw_proccfg';
+var PROC_DEFAULT_ROLES = ['Chief Engineer', 'Admin'];
+
+function procApproverRoles() {
+  try {
+    var c = JSON.parse(localStorage.getItem(PROC_CFG_CACHE_KEY) || 'null');
+    var r = c && c.settings && c.settings.approver_roles;
+    if (Array.isArray(r) && r.length) return r;
+  } catch (e) {}
+  return PROC_DEFAULT_ROLES;
+}
+
+// Fire-and-forget: never on the critical path of a sign-in. The gate uses
+// whatever the last successful read cached, falling back to the defaults.
+function refreshProcurementConfig() {
+  if (!graphToken) return;
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/config/procurementconfig.json:/content';
+  fetch(url, { headers: { Authorization: 'Bearer ' + graphToken }, cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (cfg) {
+      if (cfg) { try { localStorage.setItem(PROC_CFG_CACHE_KEY, JSON.stringify(cfg)); } catch (e) {} }
+    })
+    .catch(function () {});
+}
+
+function userIsProcurement() {
+  if (!currentUser) return false;
+  if ((currentUser.permission_tier || '') === 'admin') return true;
+  if ((currentUser.departments || []).indexOf('Procurement') !== -1) return true;
+  return procApproverRoles().indexOf(currentUser.role) !== -1;
+}
+
+// Every department a user can actually reach, including the role-gated ones
+// that do not appear in departments[]. routeAfterLogin counts these, or a
+// single-department user would be sent straight past the picker and could
+// never reach Purser or Procurement at all.
+function reachableDepartments() {
+  var seen = {}, out = [];
+  (currentUser.departments || []).forEach(function (d) {
+    if (!seen[d]) { seen[d] = true; out.push(d); }
+  });
+  if (userIsPurser() && !seen['Purser']) { seen['Purser'] = true; out.push('Purser'); }
+  if (userIsProcurement() && !seen['Procurement']) { seen['Procurement'] = true; out.push('Procurement'); }
+  return out;
+}
+
+function openProcurement(view) {
+  window.location.href = 'procurement.html' + (view ? '?view=' + encodeURIComponent(view) : '');
+}
+
+function togglePrUserMenu() {
+  var el = document.getElementById('pr-user-menu');
+  if (!el) return;
+  el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+}
+function closePrUserMenu() {
+  var el = document.getElementById('pr-user-menu');
+  if (el) el.style.display = 'none';
+}
+
+function renderProcHubTopbar() {
+  var av = document.getElementById('pr-home-avatar');
+  if (av) av.textContent = currentUser.initials || 'PR';
+  var un = document.getElementById('pr-home-username');
+  if (un) un.textContent = getDisplayFullName(currentUser) || currentUser.name || '—';
+  var mn = document.getElementById('pr-user-menu-name');
+  if (mn) mn.textContent = currentUser.name || currentUser.username || '—';
+  var sd = document.getElementById('pr-menu-btn-switch-dept');
+  if (sd) sd.style.display = (reachableDepartments().length > 1) ? '' : 'none';
+}
+
+function openProcProfile() {
+  currentDepartment = 'Procurement';
+  if (typeof openEngineProfile === 'function') {
+    openEngineProfile('screen-proc-home');
+  } else {
+    showScreen('screen-profile');
+  }
 }
 
 // ════════════════════════════════════════
@@ -2534,7 +2737,13 @@ function routeAfterLogin() {
   // app is read first, then what is waiting for you, so two popups never
   // stack on top of one another.
   try { pwaCheckUpdates(function () { ntaCheckAlerts(true); }); } catch (e) {}
-  depts.length === 1 ? enterDepartment(depts[0]) : showDeptPicker();
+  try { refreshProcurementConfig(); } catch (e) {}
+  // Role-gated departments (Purser, Procurement) do not appear in
+  // departments[], so the count has to include them — otherwise a
+  // single-department user is routed straight past the picker and can never
+  // reach them.
+  var reachable = reachableDepartments();
+  reachable.length === 1 ? enterDepartment(reachable[0]) : showDeptPicker();
 }
 
 // ── DEPARTMENT PICKER ────────────────────
@@ -2580,11 +2789,19 @@ function showDeptPicker() {
     depts.push('Purser');
     seen['Purser'] = true;
   }
+  // Procurement is a real department with its own config and event stream
+  // (§42), but the crew records carry no Procurement department yet, so it is
+  // injected on the role gate the same way until they do.
+  if (userIsProcurement() && !seen['Procurement']) {
+    depts.push('Procurement');
+    seen['Procurement'] = true;
+  }
 
   depts.forEach(function(dept) {
     // Purser is a synthetic, role-gated module — always active when shown
     // (visibility is controlled upstream by userIsPurser, not by ACTIVE_MODULES).
-    var isActive = (dept === 'Purser') || (ACTIVE_MODULES.indexOf(dept) !== -1);
+    var isActive = (dept === 'Purser') || (dept === 'Procurement') ||
+                   (ACTIVE_MODULES.indexOf(dept) !== -1);
     var btn = document.createElement('button');
     btn.style.cssText = [
       'width:100%', 'padding:20px', 'border-radius:var(--radius-lg)',
@@ -2706,6 +2923,7 @@ function deptHomeScreen(dept) {
   if (dept === 'Engine Room') return 'screen-engine-home';
   if (dept === 'Factory')     return 'screen-factory-home';
   if (dept === 'Purser')      return 'screen-purser-home';
+  if (dept === 'Procurement') return 'screen-proc-home';
   return 'screen-home';
 }
 
@@ -2727,9 +2945,23 @@ function enterDepartment(dept) {
     showScreen('screen-purser-home');
     return;
   }
-  // Leaving Purser by selecting a different dept clears the flag so showScreen
-  // doesn't stomp on currentDepartment.
+  // Procurement short-circuits the same way: no dept config, no equipment, no
+  // FMEA, no sync timer. The hub is painted here; the module itself is
+  // procurement.html, which every tile opens.
+  if (dept === 'Procurement') {
+    PROC_ACTIVE = true;
+    PURSER_ACTIVE = false;
+    updateUserDisplay();
+    try { localStorage.setItem('fw_session', JSON.stringify({ user: currentUser, department: dept })); } catch (e) {}
+    renderProcHubTopbar();
+    showScreen('screen-proc-home');
+    return;
+  }
+
+  // Leaving Purser or Procurement by selecting a different dept clears the
+  // flags so showScreen doesn't stomp on currentDepartment.
   PURSER_ACTIVE = false;
+  PROC_ACTIVE = false;
 
   if (ACTIVE_MODULES.indexOf(dept) === -1) {
     document.getElementById('inactive-dept').textContent  = dept;
@@ -3982,13 +4214,22 @@ var ER_TASK_STATUSES = [
   ['shipyard',            'Shipyard'],
   ['other',               'Other'],
   ['reported_complete',   'Report Complete'],
-  ['completed',           'Close (Completed)'],
+  ['completed',           'Completed (TM Master has it)'],
   ['cancelled',           'Cancelled']
 ];
 // `reported_complete` is ACTIVE, not terminal — terminal is
 // ('completed','cancelled'). Get this wrong and crew reports read as closed
 // and drop out of the supervisor's Active Tasks queue.
 // MUST stay in sync with Console ACTIVE_STATUSES in BOTH main.js and tasks.js.
+//
+// WHAT 'completed' MEANS (settled 2026-09-05, Console
+// docs/tm-write-path-roundtrip.md §5a): a job is REPORTED COMPLETE when the
+// work is done and captured in IDMS; it is COMPLETED when TM Master has it.
+// Only a successful push to TM Master may assert the second, and this app can
+// neither perform that push nor observe it. So NOTHING here ever writes
+// 'completed' — the status is read-only from the phone's point of view, shown
+// on a task the push has already moved. It stays in this map so a task that
+// reached it renders as itself rather than as 'Unknown'.
 var ER_TASK_ACTIVE_STATUSES = ['open','investigating','waiting_parts','waiting_opportunity','shipyard','other','reported_complete'];
 
 // What the phone's UPDATE modal offers. Deliberately contains no terminal
@@ -3996,8 +4237,11 @@ var ER_TASK_ACTIVE_STATUSES = ['open','investigating','waiting_parts','waiting_o
 // Console (which writes the task_records row via db:closeTask). Locked
 // decision 2026-07-27, extended 2026-07-27 to drop 'cancelled' from the phone
 // for the same reason — it too removed work from the pool with no review.
-// The CREATE modal is untouched and still offers both terminal statuses; that
-// path already writes a completion record correctly.
+//
+// The CREATE modal offers 'reported_complete' and 'cancelled' as well, because
+// creating an already-done job IS the phone's service-report path and it does
+// write the record. Since 2026-09-06 it offers no 'completed' either, so the
+// two modals now agree: nothing on this phone writes the terminal state.
 var ER_TASK_UPDATE_STATUSES = ['open','investigating','waiting_parts','waiting_opportunity','shipyard','other','reported_complete'];
 
 var ER_TASKS_STATE = {
@@ -5496,7 +5740,11 @@ function erTaskUpdateStatusHint() {
   var hint = document.getElementById('er-task-update-status-hint');
   if (!sel || !hint) return;
   if (sel.value === 'reported_complete') {
-    hint.textContent = 'This tells the engineer the work is done. The task stays open until they sign it off in the Console.';
+    // Two steps, not one, and the crew member should know there are two —
+    // otherwise a job they can still see on the board a week later reads as a
+    // lost report rather than as one waiting on TM Master (§32a).
+    hint.textContent = 'This tells the engineer the work is done. The job stays on the board until it is '
+                     + 'written up and pushed to TM Master from the Console.';
     hint.style.display = 'block';
   } else {
     hint.style.display = 'none';
@@ -5504,9 +5752,8 @@ function erTaskUpdateStatusHint() {
   }
 }
 
-// Dropdown label — the action phrasing ("Report Complete", "Close
-// (Completed)"). erTaskStatusLabel below is the row-pill counterpart and
-// returns the state instead.
+// Dropdown label — the action phrasing ("Report Complete"). erTaskStatusLabel
+// below is the row-pill counterpart and returns the state instead ("Reported").
 function erTaskStatusOptionLabel(s) {
   for (var i = 0; i < ER_TASK_STATUSES.length; i++) {
     if (ER_TASK_STATUSES[i][0] === s) return ER_TASK_STATUSES[i][1];
@@ -5518,7 +5765,8 @@ function erTaskStatusLabel(s) {
   for (var i = 0; i < ER_TASK_STATUSES.length; i++) {
     if (ER_TASK_STATUSES[i][0] === s) {
       // Row pills want the state, not the action verb the dropdown uses:
-      // "Close (Completed)" → "Completed", "Report Complete" → "Reported".
+      // "Report Complete" → "Reported". 'completed' is here to render a task
+      // the Console's push has already moved; nothing on the phone writes it.
       if (s === 'completed')         return 'Completed';
       if (s === 'reported_complete') return 'Reported';
       return ER_TASK_STATUSES[i][1];
@@ -6229,7 +6477,19 @@ async function submitErTaskCreate() {
 
   var job_type  = (document.getElementById('er-create-category')   || {}).value || 'CHK';
   var priority  = (document.getElementById('er-create-priority')   || {}).value || 'Normal';
-  var status    = (document.getElementById('er-create-status')     || {}).value || 'open';
+  // 'reported_complete' is what the form offers and what gets stored — one
+  // value, no translation. Picking it means "I am reporting this done now",
+  // which is what makes this submit write a task_records row and file a
+  // task_closure rough log; the record is what puts the job in the officer's
+  // TM Master queue.
+  //
+  // There were two variables here for a day. The form said 'completed' and the
+  // task stored 'reported_complete', on the reasoning that 'completed' was what
+  // the FORM meant by closing now. It was a translation nobody reading either
+  // half would expect, and it kept a word on screen that the whole rule exists
+  // to stop meaning. The Console dropped the same indirection on 2026-09-06.
+  var status       = (document.getElementById('er-create-status')  || {}).value || 'open';
+  var isClosingNow = status === 'reported_complete';
   var role      = ((document.getElementById('er-create-role')      || {}).value || '').trim();
   var assigned  = ((document.getElementById('er-create-assigned')  || {}).value || '').trim();
   var fmCode    = (document.getElementById('er-create-fm')         || {}).value || '';
@@ -6327,7 +6587,12 @@ async function submitErTaskCreate() {
     // Console captures via its own form map onto what we already have in the
     // create form (description → service_report, notes → remark, etc.).
     // Cancelled doesn't generate a record — Console's Cancelled path doesn't either.
-    if (status === 'completed') {
+    //
+    // This record is what makes the job pushable: the Console's push queue
+    // draws records whose task is 'reported_complete', so a job closed out from
+    // the phone now arrives in the officer's TM Master queue instead of
+    // disappearing from the board as though it were already filed.
+    if (isClosingNow) {
       var record = {
         record_id:         erUuid(),
         task_id:           taskId,
@@ -6357,11 +6622,12 @@ async function submitErTaskCreate() {
         await erTaskWriteEquipmentRecord(record, primaryEqId, year);
       } catch (recErr) {
         // Don't block UI flow on a record-write failure — the task itself was
-        // saved with status=completed and a transition event, so the Console
-        // will still see it as closed; the missing record can be backfilled
-        // by re-closing the task from the Console (Close button → Task
-        // Creation re-route writes the record). Surface to console for
-        // diagnosis.
+        // saved as reported_complete with a transition event, so the Console
+        // will still see the work as reported done; the missing record can be
+        // backfilled by re-closing the task from the Console (Close button →
+        // Task Creation re-route writes the record). Note the task stays in
+        // Active Tasks either way, which is the right place for a job whose
+        // record did not get written. Surface to console for diagnosis.
         console.warn('[ER Create] Completion record write failed', recErr);
       }
     }
@@ -6371,15 +6637,15 @@ async function submitErTaskCreate() {
     renderEngineTasksList();
 
     var rlBody, rlSource;
-    if (status === 'completed') {
+    if (isClosingNow) {
       rlSource = 'task_closure';
-      rlBody   = 'Task created and closed: ' + title + (desc ? ' — ' + desc.slice(0, 200) : '');
+      rlBody   = 'Task created and closed: ' + job_name + (desc ? ' — ' + desc.slice(0, 200) : '');
     } else if (status === 'cancelled') {
       rlSource = 'task_creation';
-      rlBody   = 'Task created (cancelled): ' + title;
+      rlBody   = 'Task created (cancelled): ' + job_name;
     } else {
       rlSource = 'task_creation';
-      rlBody   = 'Task created: ' + title;
+      rlBody   = 'Task created: ' + job_name;
     }
     erWriteTaskRoughLogEntry({
       id:           erUuid(),
@@ -7125,6 +7391,7 @@ function switchUser() {
   currentUser       = { username: '', name: '', initials: '', role: '', departments: [] };
   currentDepartment = '';
   PURSER_ACTIVE     = false;
+  PROC_ACTIVE       = false;
   viewingIncidentId = null;
   warningIncidentId = null;
   localStorage.removeItem('fw_active');
@@ -7151,6 +7418,7 @@ function signOut() {
   currentUser       = { username: '', name: '', initials: '', role: '', departments: [] };
   currentDepartment = '';
   PURSER_ACTIVE     = false;
+  PROC_ACTIVE       = false;
   viewingIncidentId = null;
   warningIncidentId = null;
   localStorage.removeItem('fw_active');
@@ -10745,7 +11013,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.10';
+var PWA_VERSION  = '1.16';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {
