@@ -8,6 +8,31 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.18 — 2026-09-07
+
+- **Contacts.** Everyone the vessel buys from — 1,745 of them — is on the phone
+  now, with its own tile on the Procurement screen. Search by name, e-mail,
+  phone, country or anything in the remarks.
+- **What a card tells you first is when we last used them, and for what.** Then
+  how many orders, what we have spent, and the last 25 orders with what each one
+  was for. A phone number on its own is a phone number; with that beside it, it
+  is a decision about whether to call.
+- **Tap the number and it dials. Tap the address and it composes.**
+- **Fix anything that is wrong.** Phone, e-mail, terms, remarks — the lot. Your
+  correction sticks: TM Master's contact list is the starting point, not the
+  last word, so the next export will not undo it. Everything nobody has touched
+  still comes from TM.
+- **Retiring keeps the card.** Old orders still point at it, so it is hidden
+  from the list rather than deleted. Retiring is an approver's call; correcting
+  a phone number is anybody's.
+- **Orders say who they are going to again.** Every order and purchase order
+  used to show its supplier as a code like CON-0660 — and the New order form's
+  supplier list was empty, so you could not name one at all. Both now use the
+  contact book, and the supplier field is a search rather than a list of 1,745.
+- Look for the **Orders only** filter: 82 names appear on TM orders with no
+  contact record behind them at all. They are usually a duplicate of somebody
+  who is in the book.
+
 ## 1.17 — 2026-09-07
 
 - **Stock Location has its own tile now.** It is on the Procurement screen

@@ -58,6 +58,36 @@ check('byte-identical with the IDMS canonical copy',
   fs.readFileSync(IDMS + '/utils/procurement-reduce.js').equals(
     fs.readFileSync(CON + '/src/renderer/js/procurement-reduce.js')));
 
+// The contact book's reducer is mirrored on the same terms and for the same
+// reason: it decides what an edit does to a TM baseline, and two copies that
+// have drifted are two answers to "did my correction survive the re-export".
+check('the contact reducer is byte-identical too',
+  fs.readFileSync(IDMS + '/utils/contacts-reduce.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/contacts-reduce.js')));
+
+// The form and the reducer carry the same field list, in two files and two
+// repos. A field on the form that the reducer does not know is dropped on
+// save — silently, because dropping it is the reducer behaving correctly.
+{
+  const cr = { window: {}, module: undefined, console };
+  cr.self = cr;
+  vm.createContext(cr);
+  vm.runInContext(fs.readFileSync(IDMS + '/utils/contacts-reduce.js', 'utf8'), cr);
+  const editable = (cr.window.contactsReduce || {}).EDITABLE_FIELDS || [];
+  const page = fs.readFileSync(IDMS + '/procurement.html', 'utf8');
+  const grab = name => {
+    const at = page.indexOf('var ' + name + ' = [');
+    if (at === -1) return [];
+    return (page.slice(at, page.indexOf('];', at)).match(/\{ k: '([a-z_]+)'/g) || [])
+      .map(m => m.replace(/.*'([a-z_]+)'.*/, '$1'));
+  };
+  const onForm = grab('CTC_FIELDS').concat(grab('CTC_FLAGS'));
+  check('the PWA contact form has fields at all', onForm.length > 10, onForm.length + ' found');
+  const unknown = onForm.filter(k => !editable.includes(k));
+  check('every field the form writes is one the reducer accepts', unknown.length === 0,
+        unknown.length ? 'the reducer would drop: ' + unknown.join(', ') : '');
+}
+
 // ── the column lists the SQL actually names ──────────────────────────────────
 const main = fs.readFileSync(CON + '/src/main/main.js', 'utf8');
 function insertCols(table) {
