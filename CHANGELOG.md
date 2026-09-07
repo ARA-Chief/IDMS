@@ -8,6 +8,34 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.16 — 2026-09-06
+
+- **Stock Location: walk a space and count it properly.** Open the Procurement
+  page and pick **Stock Location** along the top, then choose the room or shelf
+  you are standing in — you get a count sheet for it. Type what is actually
+  there and it corrects the book, the same as the Count button always did. What
+  is new is that the sheet keeps track of the whole walk.
+- **Tick the ones that were right.** Most of a shelf is correct, and until now
+  that left no record at all: an item you checked and found right looked exactly
+  the same as one nobody had opened in a year. Tick it and the space now shows
+  as swept. **Only tick what you actually looked at** — this is the record that
+  says the space was counted.
+- **Put it down and pick it up.** Your ticks survive closing the page, so a
+  forty-line shelf does not have to be done in one go.
+- **The empty bins are on the sheet too.** If the book says a part lives here
+  but shows none left, it still gets a line — an empty bin is exactly where a
+  miscount hides.
+- The sheet shows the figure for **that space**, not the ship's total, and an
+  item with no stock figure at all reads as **unknown** rather than as 0.
+- Counting a whole room including its shelves — switch the sheet from **This
+  space only** to **Including sublocations** — shows you everything under it,
+  but only offers a box where there is one bin for the number to go into.
+- The front screen lists the spaces **least recently counted first**, so the
+  shelves nobody has been near are the ones you see.
+- Tap any line to see the item underneath it — maker, part number, the ship's
+  total, and everywhere else the book has it — without losing your place on the
+  sheet.
+
 ## 1.15 — 2026-09-06
 
 - **"Report Complete" is what it is called now, everywhere.** The status you

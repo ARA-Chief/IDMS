@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.36 — F/V Araho**
+**Version 2.38 — F/V Araho**
+
+v2.38 *(2026-09-06)* — **§42.7a new: the count session, and the shared location sheet.** A `count` movement is a spot correction and always was; what the register could not say is that a *space* was swept. An item counted and found right moves nothing, so it files no movement, so it leaves no trace — a shelf walked end to end last Tuesday and a shelf nobody has opened in a year both read as "no count", and that is the one figure an audit turns on. Three events carry the sweep as its own thing: `count_session_opened` names a space and a scope (`here` for the bin, `deep` for it and everything under it) and records what the sheet held when it was opened; `count_session_closed` carries `confirmed[]`, the items seen and found right, which is the only evidence they were looked at; `count_session_abandoned` gives up the claim that the space was swept while leaving the counts already filed standing. **The arithmetic is untouched** — counts under a session are ordinary `count` movements carrying a `session_id`, a spot correction is the same movement with none, and deleting every session event changes no quantity. `expected` is read off the opening event rather than recomputed, so a transfer into the space an hour later cannot retrospectively turn a complete count into a partial one. Items gain `last_verified_at`, which moves for a count **or** a confirmation; `last_count_at` is unchanged, so nothing already reading it changes meaning. `locationSheet()` lives in the reducer rather than in either screen, because a sheet that differs by device is a sheet nobody can sign: it puts both the stock the book places in the space *and* the items whose home is there though the book says none are left — an emptied bin being exactly where a miscount hides — carries the book figure for **that space** rather than the shipwide total, prints unknown stock as unknown rather than as 0, and offers no count box on a deep row summing several bins, there being no single bin for the count to land in. New PWA screen **Stock Location** (`procurement.html?view=location`), PWA 1.16, whose space list is ordered by each space's last closed session. §42.10's cycle-counting paragraph is corrected while it is open: it claimed since v2.32 that the register sorts by `last_count_at` ascending, which it never has — the register is search-first, and least-recently-swept-first is the space list's ordering, not the register's. Console side not built.
 
 v2.37 *(2026-09-06)* — **The two steps get their own names; §32a's known gap closed; `completed` removed from the last dropdown that offered it.** Reporting a job done and telling TM Master about it are two steps taken by two people, and neither client said so. Both called the first one *Close*. The Console's row button is now **Report Complete** (the engineer; writes the `task_records` row, task → `reported_complete`) and a record still sitting on `reported_complete` carries **Push to TM Master…** (the officer; the only path to `completed`), which opens the same approval screen the toolbar does, preselected on that job. The PWA's create form drops `value="completed"` — it offered a close-out option whose label explained that it did not mean completed, and `submitErTaskCreate` translated it to `reported_complete` on the way out; the value is the status now and `storedStatus` is gone. **§32a's known gap is closed**: `taskSubmitCreate` no longer writes `completed`, so nothing on either client can reach the terminal state except `recordPush`. Also corrected in the Console, and the reason the two steps were invisible: `TASK_UNION_SQL` hardcoded `'completed'` on every `task_records` row, so a record written but not yet pushed was filed in the archive — out of the active list, and so out of sight of the officer who still had to push it. The union reads the status off the task behind the record now, falling back to `'completed'` for imported history, which has no task behind it. That means a record can come back from a `status:'active'` query, so `getTasksUnified` gained a `source` filter and the Assigned Work board asks for `source:'task'` rather than dropping records after the fetch had already counted them.
 
@@ -7775,6 +7777,9 @@ Envelope is the standard one (`docs/architecture.md`, identical to §41.4):
 | `item_change_proposed` | `{item_id, proposal_id, fields, reason?}` | A correction to a field TM Master owns. Recorded against the item and shown with its author, **never applied** (§42.14). An officer makes the change in TM Master and the next export carries it back. |
 | `item_archived` / `item_unarchived` | `{item_id, reason?}` | Hides from pickers and the default register view; stock history and order references survive (rule 3). Archiving an item still holding stock is allowed but warned. |
 | `stock_movement` | see §42.7 | The only event that changes a quantity. `kind` discriminates receipt / issue / adjustment / transfer / count. |
+| `count_session_opened` | `{session_id, location_id, scope?, expected_items?, note?}` | Opens a sweep of one space (§42.7a). Moves nothing. `scope` is `"here"` (default) or `"deep"`. |
+| `count_session_closed` | `{session_id, confirmed?, expected_items?, note?}` | Closes it. `confirmed` is the `item_id`s seen and found correct — they file no movement, so this is the only record they were looked at. |
+| `count_session_abandoned` | `{session_id, reason?}` | Gives up the claim that the space was swept. Counts already filed under it stand. |
 | `requisition_created` | `{req_id, department?, need_by?, priority?, justification?, lines: [line]}` | Requester is the envelope `actor`. May be created with lines or empty. |
 | `requisition_updated` | `{req_id, …changed header fields, lines?}` | Whole-`lines` replacement while `draft`; header-only once submitted. |
 | `requisition_submitted` | `{req_id}` | draft → submitted. Locks the lines against edit by anyone but an approver. |
@@ -7866,6 +7871,7 @@ One event type, one place where the arithmetic lives:
   "direction":   null,
   "counted_qty": null,
   "po_id": null, "po_line_id": null,
+  "session_id": null,
   "task_id": null, "equipment_code": null,
   "unit_cost": null, "currency": null,
   "reason": null, "note": null
@@ -7880,11 +7886,61 @@ One event type, one place where the arithmetic lives:
 | `issue` | `−qty` at `location_id` | `qty`, `location_id` | `task_id` and/or `equipment_code` optionally say what it went on; both are free-standing references, and §41's boundary holds — issuing a part **never** writes to `task_records`, TM Master or job history. |
 | `adjustment` | `±qty` at `location_id` per `direction` | `qty`, `location_id`, `direction`, `reason` | `direction` is `"increase"` or `"decrease"`. `reason` is required: damage, expiry, found, lost. An adjustment without a reason is an unexplained hole in the ledger. |
 | `transfer` | `−qty` at `location_id`, `+qty` at `to_location_id` | `qty`, `location_id`, `to_location_id` | One event, both halves — a transfer recorded as two events can half-fail. |
-| `count` | sets `location_id` to `counted_qty` | `counted_qty`, `location_id` | Records what was physically counted. The reducer stores the implied `variance` (`counted_qty` − book quantity at that point in the replay) on the derived movement, so the count reads as "counted 12, book said 15, −3" rather than as a bare correction. |
+| `count` | sets `location_id` to `counted_qty` | `counted_qty`, `location_id` | Records what was physically counted. The reducer stores the implied `variance` (`counted_qty` − book quantity at that point in the replay) on the derived movement, so the count reads as "counted 12, book said 15, −3" rather than as a bare correction. `session_id` when the count was filed as part of a sweep (§42.7a); absent, it is a spot correction. |
 
 **Negative on-hand is permitted and flagged, never blocked.** An issue that takes a location below zero means the book is wrong, not that the part is still on the shelf; refusing the entry would teach the crew to stop recording issues, which costs far more than a temporary negative. It surfaces on the exceptions list until a count clears it.
 
 **Over-receipt is permitted and flagged.** Receiving 12 against an order line for 10 records 12, because 12 is what arrived.
+
+### 42.7a Count sessions
+
+**Status:** Settled and built in the PWA, 2026-09-06. Console side not built.
+**PWA:** `procurement.html` — the Stock Location screen (`?view=location`).
+**Reducer:** `utils/procurement-reduce.js` — `locationSheet`, `locationsUnder`, `lastVerified`.
+
+A `count` movement is a **spot correction**: stand in front of a bin, type what is there, and the arithmetic follows. That is what §42.7 has always supported and it is unchanged.
+
+What it cannot express is a **sweep** — one space walked end to end on one date. An item counted and found right moves nothing, so it files no movement, so it leaves no trace, and a shelf audited clean last Tuesday is indistinguishable from a shelf nobody has opened in a year. Both read as *no count*. The single figure an audit turns on is the one the movement log structurally cannot hold.
+
+A session is that record and nothing else. **It moves no stock.**
+
+```json
+{
+  "session_id":  "uuid",
+  "location_id": "LOC-0142",
+  "scope":       "here | deep",
+  "status":      "open | closed | abandoned",
+  "expected":    38,
+  "note":        null
+}
+```
+
+**Counts filed under a session are ordinary `count` movements carrying a `session_id`.** Rule 1 holds unchanged — on-hand is still derived from movements, the session is a grouping laid over movements that already stand on their own, and deleting every session event would change no quantity. A spot correction is the same movement with no `session_id` on it, which is why the Count button elsewhere in the module needed no change.
+
+**`confirmed` is the half a movement cannot carry.** The `item_id`s a sweep reached and found the book right about. They move nothing and so file nothing; without the session they are indistinguishable from the items nobody ever reached. An item both counted and confirmed is one item, not two — the operator ticked it and then thought better of it.
+
+**`expected` is read off the opening event, never recomputed.** Coverage is a claim about the sweep *as it was walked*; a transfer into the space an hour later must not retrospectively turn a complete count into a partial one.
+
+**Abandoning gives up the claim, not the counts.** The counts already filed corrected real shelves, and a shelf does not become uncounted because the walk was cut short. What is abandoned is only the assertion that the space was swept.
+
+Derived per session: `items_counted`, `items_confirmed`, `items_seen` (the union), `variance_count`, `net_delta`, and `coverage` (`items_seen / expected`, null when nothing was expected). A count that found the book right is not a variance — a sweep of forty items with three wrong is a good sweep and must not read as three items' worth of work.
+
+`lastVerified(state)` gives the latest **closed** session per location; an abandoned one is not a sweep and does not count.
+
+**Items gain `last_verified_at`**, which moves for a count *or* a confirmation. `last_count_at` keeps its existing meaning and only moves when a count movement was filed, so nothing already reading it changes behaviour.
+
+#### The location sheet
+
+`locationSheet(state, catalogue, location_id, {scope})` is defined in the reducer rather than in either screen, because the Console and the phone must ask the same question of the same shelf and **a sheet that differs by device is a sheet nobody can sign.**
+
+Two kinds of row belong on it, and they are not the same thing: stock the book says is *here now*, and items whose `default_location_id` is here **though the book says none are left**. The second is the more useful half of an audit — an emptied bin is exactly where a miscount hides.
+
+| Rule | Why |
+|---|---|
+| `book_qty` is the figure for **this space**, never the item's shipwide total | Counting a bin against a ship's total is how a count sheet destroys good stock. `elsewhere` carries the difference. |
+| Unknown stock prints as unknown, not as `0` | 2,181 items carry no stock figure (§42.14). A sheet that prints 0 invites somebody to agree with it. |
+| A row summing several bins offers **no** `count_location_id` | On a `deep` sheet there is no single bin for the count to land in, and a count filed against the wrong one is worse than none. The screen offers no box on that row. |
+| A row with no stock but a home here counts against the home | So the empty bin is still asked about. |
 
 ### 42.8 Requisitions
 
@@ -7941,7 +7997,7 @@ A short shipment is simply a smaller quantity: the line goes `partial` and stays
 
 **Suggested order quantity** is `max_qty − (on_hand + on_order)` where `max_qty` is set, otherwise `reorder_qty`, otherwise the shortfall against `min_qty`. It is a suggestion in a pre-filled field, never an automatic order.
 
-**Cycle counting.** The register sorts by `last_count_at` ascending, so the least recently verified stock is what the count view offers first. There is no annual stock-take mode: a count is a `stock_movement` like any other, and counting ten items on a quiet afternoon is the intended shape.
+**Cycle counting.** There is no annual stock-take mode: a count is a `stock_movement` like any other, and counting ten items on a quiet afternoon is the intended shape. What is offered least-recently-verified-first is the **space list** on the Stock Location screen (§42.7a), ordered by the `closed_at` of each space's last closed session, with never-swept spaces first and spaces holding nothing left out — a room with nothing in it is not overdue a count, it is empty. The item register itself is search-first and does not sort on count recency; `last_count_at` and `last_verified_at` are shown on the row and in the item detail, not sorted on. (Earlier versions of this paragraph said the register sorted by `last_count_at` ascending. It never has.)
 
 **Exceptions list** — one screen, the things that need a human: negative on-hand, over-receipts, orders past `expected_date` with outstanding lines, approved requisition lines older than `settings.exception_stale_days` with no PO, and items below minimum with nothing on order.
 
