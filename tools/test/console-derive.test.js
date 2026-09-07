@@ -58,6 +58,36 @@ check('byte-identical with the IDMS canonical copy',
   fs.readFileSync(IDMS + '/utils/procurement-reduce.js').equals(
     fs.readFileSync(CON + '/src/renderer/js/procurement-reduce.js')));
 
+// The contact book's reducer is mirrored on the same terms and for the same
+// reason: it decides what an edit does to a TM baseline, and two copies that
+// have drifted are two answers to "did my correction survive the re-export".
+check('the contact reducer is byte-identical too',
+  fs.readFileSync(IDMS + '/utils/contacts-reduce.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/contacts-reduce.js')));
+
+// The form and the reducer carry the same field list, in two files and two
+// repos. A field on the form that the reducer does not know is dropped on
+// save — silently, because dropping it is the reducer behaving correctly.
+{
+  const cr = { window: {}, module: undefined, console };
+  cr.self = cr;
+  vm.createContext(cr);
+  vm.runInContext(fs.readFileSync(IDMS + '/utils/contacts-reduce.js', 'utf8'), cr);
+  const editable = (cr.window.contactsReduce || {}).EDITABLE_FIELDS || [];
+  const page = fs.readFileSync(IDMS + '/procurement.html', 'utf8');
+  const grab = name => {
+    const at = page.indexOf('var ' + name + ' = [');
+    if (at === -1) return [];
+    return (page.slice(at, page.indexOf('];', at)).match(/\{ k: '([a-z_]+)'/g) || [])
+      .map(m => m.replace(/.*'([a-z_]+)'.*/, '$1'));
+  };
+  const onForm = grab('CTC_FIELDS').concat(grab('CTC_FLAGS'));
+  check('the PWA contact form has fields at all', onForm.length > 10, onForm.length + ' found');
+  const unknown = onForm.filter(k => !editable.includes(k));
+  check('every field the form writes is one the reducer accepts', unknown.length === 0,
+        unknown.length ? 'the reducer would drop: ' + unknown.join(', ') : '');
+}
+
 // ── the column lists the SQL actually names ──────────────────────────────────
 const main = fs.readFileSync(CON + '/src/main/main.js', 'utf8');
 function insertCols(table) {
@@ -143,6 +173,11 @@ for (const id in state.items) {
     last_known_price: (it.last_known_price === 0 || it.last_known_price) ? Number(it.last_known_price) : null,
     currency: it.currency || null,
     consumption_json: JSON.stringify(it.consumption || {}),
+    usage_years: Object.keys(it.consumption || {})
+      .filter(y => Number((it.consumption || {})[y]) > 0).length,
+    est_delivery_days: (it.est_delivery_days === 0 || it.est_delivery_days)
+      ? Number(it.est_delivery_days) : null,
+    review_minmax: it.review_minmax ? 1 : 0,
     by_location_json: JSON.stringify(it.by_location || {}),
     policy_json: JSON.stringify(policy),
     proposals_json: JSON.stringify(it.proposals || []),
@@ -191,6 +226,27 @@ check('every catalogue item becomes a row', items.length === doc.counts.items + 
 check('movements derived', movements.length >= 2);
 check('requisitions derived', requisitions.length === 1);
 check('purchase orders derived', pos.length === 1);
+
+// ── the copy above is a copy, and copies drift ───────────────────────────────
+console.log('\nthe derive this file mirrors');
+const deriveSrc = fs.readFileSync(CON + '/src/renderer/js/sync-procurement.js', 'utf8');
+// The item row literal, from `items.push({` to the line that closes it.
+const pushAt = deriveSrc.indexOf('items.push({');
+const pushEnd = deriveSrc.indexOf('\n    });', pushAt);
+const realKeys = pushAt === -1 || pushEnd === -1 ? [] :
+  (deriveSrc.slice(pushAt, pushEnd).match(/^\s{6}([a-z_]+):/gm) || [])
+    .map(m => m.trim().replace(':', ''));
+check('the real derive was found in sync-procurement.js', realKeys.length > 10,
+      realKeys.length + ' fields read');
+if (realKeys.length > 10) {
+  const mine = Object.keys(items[0] || {});
+  const lost = realKeys.filter(k => !mine.includes(k));
+  const invented = mine.filter(k => !realKeys.includes(k));
+  check('this file mirrors every field it writes', lost.length === 0,
+        lost.length ? 'the Console writes these and this copy does not: ' + lost.join(', ') : '');
+  check('and invents none of its own', invented.length === 0,
+        invented.length ? 'this copy writes these and the Console does not: ' + invented.join(', ') : '');
+}
 
 // ── the actual contract: rows satisfy the INSERT ─────────────────────────────
 console.log('\nrows satisfy the prepared statements');

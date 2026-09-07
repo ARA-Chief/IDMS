@@ -188,8 +188,9 @@ if (start !== -1 && end > start) {
   const sandbox = {
     procurementReduce: R,
     PC: { state: R.reduce(sweep, cat), catalogue: cat, loc: null },
-    pcLocations: () => cat.locations,
-    pcDecks: () => Object.keys(cat.locations).map(k => cat.locations[k]).filter(l => !l.parent_id),
+    pcLocations: () => sandbox.PC.catalogue.locations,
+    pcDecks: () => Object.keys(sandbox.PC.catalogue.locations)
+                     .map(k => sandbox.PC.catalogue.locations[k]).filter(l => !l.parent_id),
     pcEsc: s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
                  .replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
     pcFmtQty: n => String(Number(n) || 0),
@@ -198,7 +199,8 @@ if (start !== -1 && end > start) {
     pcToast: () => {},
     pcHead: () => {},
     pcRenderAll: () => {},
-    pcAppendEvent: async () => {},
+    pcAppendEvent: async (type, payload) => { sandbox.appended.push({ type, payload }); },
+    appended: [],
     pcOpenItem: () => {},
     pcDetailFor: () => ({ maker: 'Blankenship Equipment Belting', makers_type: 'Polycord 8mm' }),
     pcEnsureDetail: async () => ({}),
@@ -211,8 +213,9 @@ if (start !== -1 && end > start) {
   const names = Object.keys(sandbox);
   // eslint-disable-next-line no-new-func
   const load = new Function(...names,
-    block + '\nreturn { slocSheetHtml, slocViewRoot, slocSession, slocState, slocLabel,'
-          + ' slocTrail, slocDetailHtml, slocPick, slocUnplacedCount };');
+    block + '\nreturn { slocSheetHtml, slocSheetBlock, slocViewRoot, slocSession, slocState,'
+          + ' slocLabel, slocTrail, slocDetailHtml, slocPick, slocUnplacedCount, slocStart,'
+          + ' SLOC_SHEET_CAP, SLOC_UNPLACED };');
   const api = load(...names.map(k => sandbox[k]));
 
   sandbox.PC.loc = api.slocState();
@@ -263,6 +266,19 @@ if (start !== -1 && end > start) {
   check('but its detail names both spaces',
     (api.slocDetailHtml(splitRow).match(/class="sloc-where/g) || []).length, 2);
 
+  // What happened to it lately, which is usually the answer when a count does
+  // not match the book. Back on the swept shelf, not the split one above.
+  sandbox.PC.state = R.reduce(sweep, cat);
+  sandbox.PC.loc.at = 'LOC-0003';
+  const boltDetail = api.slocDetailHtml(rows.find(r => r.name === 'Bolt'));
+  check('the last things that happened to it',
+    boltDetail.indexOf('Recent movements') !== -1, true);
+  check('a count that moved the book reads as a variance',
+    boltDetail.indexOf('(+2)') !== -1, true);
+  const sealDetail = api.slocDetailHtml(rows.find(r => r.name === 'Seal'));
+  check('an item the export never gave a figure says so, in the detail too',
+    sealDetail.indexOf('no stock figure in the export') !== -1, true);
+
   // The 2,864 items TM never gave an address. They are a door on this screen or
   // they are on no screen about stowage at all.
   check('nothing unplaced in this fixture', api.slocUnplacedCount(), 0);
@@ -271,6 +287,88 @@ if (start !== -1 && end > start) {
        { item_id: 'ITM-09999', name: 'Loose bolt', unit: 'ea' })
   ], cat);
   check('an item with no stowage lands there', api.slocUnplacedCount(), 1);
+  check('and the space it lands in is named, not left blank',
+    api.slocLabel({ location_id: api.SLOC_UNPLACED, path: '' }), 'Unlocalized Stock');
+
+  // It is 2,864 items and the obvious place to work through when assigning
+  // homes, so it has to be walkable like any other space. It has no node in
+  // the stowage tree, and a guard written as "is this a real location" locked
+  // it out of the one action the sheet exists for.
+  sandbox.PC.loc.at = api.SLOC_UNPLACED;
+  sandbox.PC.loc.scope = 'here';
+  sandbox.appended.length = 0;
+  api.slocStart().catch(() => {});     // the append is made before the first await
+  check('an audit can be opened on it', sandbox.appended.length, 1);
+  check('and it opens on that space',
+    sandbox.appended[0] && sandbox.appended[0].payload.location_id, api.SLOC_UNPLACED);
+  check('over the sheet as it stood',
+    sandbox.appended[0] && sandbox.appended[0].payload.expected_items, 1);
+
+  // ── A sheet too long to lay out ─────────────────────────────────────────
+  // Unlocalized Stock holds 2,864 items and Fwd Shop 583. Laying every one of
+  // them out, each carrying a number input, is a phone that stops responding
+  // before it draws anything. The cap is visible, and the filter reaches past
+  // it — a sheet that silently showed a subset would be signed for stock
+  // nobody saw.
+  T.head('a sheet too long to lay out');
+  const bigCat = {
+    baseline_at: null,
+    locations: {
+      'LOC-0001': { location_id: 'LOC-0001', path: 'Maindeck', deck: 'Maindeck', depth: 1,
+                    parent_id: null, items_here: 0, items_deep: 500, sublocations: 1 },
+      'LOC-0009': { location_id: 'LOC-0009', path: 'Maindeck\\Fwd Shop', deck: 'Maindeck',
+                    depth: 2, parent_id: 'LOC-0001', items_here: 500, items_deep: 500,
+                    sublocations: 0 }
+    },
+    items: {}
+  };
+  for (let i = 1; i <= 500; i++) {
+    bigCat.items['ITM-1' + String(i).padStart(4, '0')] = {
+      name: 'Bolt M' + i, unit: 'ea', location_id: 'LOC-0009',
+      in_stock: i, makers_part_no: 'PN-' + i, consumption: {}
+    };
+  }
+  sandbox.PC.catalogue = bigCat;
+  sandbox.PC.state = R.reduce([], bigCat);
+  sandbox.PC.loc = api.slocState();
+  sandbox.PC.loc.at = 'LOC-0009';
+
+  const bigRows = R.locationSheet(sandbox.PC.state, bigCat, 'LOC-0009', { scope: 'here' });
+  check('the whole shelf is on the sheet', bigRows.length, 500);
+  const sheetBlock = api.slocSheetBlock(bigRows, null);
+  check('but only the cap is laid out',
+    (sheetBlock.match(/class="ci-line/g) || []).length, api.SLOC_SHEET_CAP);
+  check('and the sheet says what it is not showing',
+    sheetBlock.indexOf('Showing the first ' + api.SLOC_SHEET_CAP + ' of 500') !== -1, true);
+  check('a long sheet is given a filter', sheetBlock.indexOf('id="sloc-sq"') !== -1, true);
+
+  sandbox.PC.loc.sheetQ = 'PN-137';
+  const filtered = api.slocSheetBlock(bigRows, null);
+  check('the filter reaches past the cap',
+    (filtered.match(/class="ci-line/g) || []).length, 1);
+  check('and says how much of the sheet it kept', filtered.indexOf('1 of 500') !== -1, true);
+
+  sandbox.PC.loc.sheetQ = 'no such part';
+  check('a filter matching nothing is not reported as an empty shelf',
+    api.slocSheetBlock(bigRows, null).indexOf('Nothing on this sheet matches') !== -1, true);
+
+  sandbox.PC.loc.sheetQ = '';
+  check('a shelf you can see the end of is given no filter at all',
+    api.slocSheetBlock(bigRows.slice(0, 10), null).indexOf('id="sloc-sq"') === -1, true);
 }
+
+// ── The two doors ──────────────────────────────────────────────────────────
+// The gate on ?view= was a second, hand-written copy of the view list, and it
+// went stale the moment Stock Location was added to VIEWS: the tile opened and
+// landed on the register. Both halves are checked, because a tile that opens
+// the wrong screen is indistinguishable from a tile that works.
+T.head('the hub opens the screen the tile names');
+check('the ?view= gate reads VIEWS rather than a list of its own',
+  html.indexOf('VIEWS.some(function (x) { return x.id === v; })') !== -1, true);
+check('and Stock Location is one of them',
+  html.indexOf("{ id: 'location',   label: 'Stock Location' }") !== -1, true);
+check('the hub carries a tile for it',
+  fs.readFileSync(path.join(REPO, 'index.html'), 'utf8')
+    .indexOf("openProcurement('location')") !== -1, true);
 
 process.exit(T.done() ? 0 : 1);

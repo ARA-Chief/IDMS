@@ -1,5 +1,9 @@
 # IDMS Schema Specification
-**Version 2.38 — F/V Araho**
+**Version 2.40 — F/V Araho**
+
+v2.40 *(2026-09-07)* — **§42.16 new: the contact book, and the supplier field that never worked.** The Console seeded 1,745 contacts from TM Master's contact export on 2026-09-06 and this spec never recorded it, so the phone had no book — and that was not only a missing screen. `procurementconfig.json`'s supplier list has never had a single entry in it, which meant `pcSupplierName()` returned the id it was given: every order and PO on the phone printed its supplier as a raw `CON-####`, and the New order form's supplier `<select>` offered exactly one option, "— none —", so **no order raised on the phone could name who it was going to.** Both are fixed by the book: names resolve from it, and the form's dropdown is now a search over it, because 1,745 options in a `<select>` is the same mistake as 14,487. The rules live in `utils/contacts-reduce.js`, **byte-identical with the Console's copy** the way `procurement-reduce.js` is, and enforced as such by `tools/test/console-derive.test.js`. The one rule worth stating twice: **the TM export is a baseline, not the truth** — add / edit / retire are `contact_created` / `contact_updated` / `contact_archived` / `contact_restored` events replayed over whatever baseline is current, **field by field, last write wins**, so a phone number corrected aboard survives the next export while the fields nobody touched still come from TM. Order history, spend and "last referenced" are TM's and no event may write them. Retiring never deletes: the order register still points at the card. The phone reads its order history off the baseline's own folded figures and its 25-order `recent` tail rather than fetching `order-register.json`, which is 2.7 MB to re-derive numbers already in hand — the supplier join is still made exactly once, in the seed, and nothing re-resolves a supplier from its name. New PWA screen **Contacts** (`procurement.html?view=contacts`) with its own hub tile, PWA 1.18. Two things measured against the real book and got wrong the first time, both now in `tools/test/contacts.test.js`: a comma is **not** a separator in the e-mail field (54 contacts are written `Surname, Given <addr>`, and splitting on it linked the surname to nothing) and a slash is **not** a separator in the phone field (93 numbers are written `207/594-4500`, and splitting on it dials 594-4500 — a wrong number rather than no number). 14 e-mail fields hold no address at all and 7 phone fields cannot be dialled; those are printed, not linked. Console-side Order history and Minimums remain Console-only, deliberately.
+
+v2.39 *(2026-09-07)* — **§42.7a: the Console side is built, and the phone half is brought level with it.** The Console's Stock Location screen (`IDMS-Console/docs/stock-location.md`) landed the day after §42.7a and moved ahead of the phone in five places, four of which mattered. **A sheet is now filtered and capped on both surfaces**: Unlocalized Stock is 2,864 rows and Fwd Shop 583, and a phone asked to lay out 2,864 rows each carrying a number input stops responding before it draws anything — so a sheet over 25 rows gets a filter box, the render stops at 400, and the sheet **says** what it is not showing, a silent truncation being a sheet somebody signs for stock they never saw. **Unlocalized Stock is a space that can be audited**: it has no node in the stowage tree, and the phone's guard was written as "is this a real location", which locked the 2,864 addressless items out of the one action the screen exists for. **The item detail carries what the Console's third pane carries** — the state of the thing (critical, blocked in TM, added in IDMS, no stock figure in the export), category, unit of measure, the date on the last known price, and the last six movements, which is usually where the answer is when a count does not match. **Filing a count moves the focus to the next line**, and both search boxes redraw only their own list and put the caret back, so a filter can be typed without losing focus mid-word. Two differences stay and are now written down as deliberate rather than left to look like drift: the Console keeps a **tree pane** open beside the sheet where the phone drills down (a persistent tree on a 375px screen is a tree pane and no sheet), and **Print sheet** is Console-only (a phone is where you type a count, not where you print one). Also: Stock Location gets its **own tile** on the Procurement hub, beside Inventory rather than buried in the page's own sidebar, matching the Console's promotion of it to a nav entry — and the `?view=` gate that tile depends on was a second hand-written copy of the view list which had gone stale the moment Stock Location was added, so the tile would have opened the register; it reads `VIEWS` now. Separately, a **§42.14 policy-overlay bug** found while comparing the two Low stock views: the PWA's table printed the raw catalogue `min_qty`, so an item put on the list by an IDMS overlay showed a minimum of 0 beside a Suggest column working from the overlay's real figure — 13,885 items have no TM minimum, so an overlay is the only minimum most of the register will ever have, and this is the column that says why the row is there. It reads `effective()` now and marks an overlaid minimum `IDMS`, as the Console's row already did. **The rule, stated once:** a screen showing a policy-overlaid field reads it through `effective()`, never off the item. New suite `tools/test/views.test.js` renders the page's own `pcViewLow` and reads the number out of it, because this class of mistake raises no error and breaks no arithmetic test. PWA 1.17.
 
 v2.38 *(2026-09-06)* — **§42.7a new: the count session, and the shared location sheet.** A `count` movement is a spot correction and always was; what the register could not say is that a *space* was swept. An item counted and found right moves nothing, so it files no movement, so it leaves no trace — a shelf walked end to end last Tuesday and a shelf nobody has opened in a year both read as "no count", and that is the one figure an audit turns on. Three events carry the sweep as its own thing: `count_session_opened` names a space and a scope (`here` for the bin, `deep` for it and everything under it) and records what the sheet held when it was opened; `count_session_closed` carries `confirmed[]`, the items seen and found right, which is the only evidence they were looked at; `count_session_abandoned` gives up the claim that the space was swept while leaving the counts already filed standing. **The arithmetic is untouched** — counts under a session are ordinary `count` movements carrying a `session_id`, a spot correction is the same movement with none, and deleting every session event changes no quantity. `expected` is read off the opening event rather than recomputed, so a transfer into the space an hour later cannot retrospectively turn a complete count into a partial one. Items gain `last_verified_at`, which moves for a count **or** a confirmation; `last_count_at` is unchanged, so nothing already reading it changes meaning. `locationSheet()` lives in the reducer rather than in either screen, because a sheet that differs by device is a sheet nobody can sign: it puts both the stock the book places in the space *and* the items whose home is there though the book says none are left — an emptied bin being exactly where a miscount hides — carries the book figure for **that space** rather than the shipwide total, prints unknown stock as unknown rather than as 0, and offers no count box on a deep row summing several bins, there being no single bin for the count to land in. New PWA screen **Stock Location** (`procurement.html?view=location`), PWA 1.16, whose space list is ordered by each space's last closed session. §42.10's cycle-counting paragraph is corrected while it is open: it claimed since v2.32 that the register sorts by `last_count_at` ascending, which it never has — the register is search-first, and least-recently-swept-first is the space list's ordering, not the register's. Console side not built.
 
@@ -7894,8 +7898,9 @@ One event type, one place where the arithmetic lives:
 
 ### 42.7a Count sessions
 
-**Status:** Settled and built in the PWA, 2026-09-06. Console side not built.
-**PWA:** `procurement.html` — the Stock Location screen (`?view=location`).
+**Status:** Settled and built on both surfaces. PWA 2026-09-06, Console 2026-09-06, brought level 2026-09-07.
+**PWA:** `procurement.html` — the Stock Location screen (`?view=location`), with its own tile on the Procurement hub in `index.html`.
+**Console:** `IDMS-Console/src/renderer/js/stocklocation.js`, nav key `stocklocation`; `IDMS-Console/docs/stock-location.md` is the long form.
 **Reducer:** `utils/procurement-reduce.js` — `locationSheet`, `locationsUnder`, `lastVerified`.
 
 A `count` movement is a **spot correction**: stand in front of a bin, type what is there, and the arithmetic follows. That is what §42.7 has always supported and it is unchanged.
@@ -7941,6 +7946,35 @@ Two kinds of row belong on it, and they are not the same thing: stock the book s
 | Unknown stock prints as unknown, not as `0` | 2,181 items carry no stock figure (§42.14). A sheet that prints 0 invites somebody to agree with it. |
 | A row summing several bins offers **no** `count_location_id` | On a `deep` sheet there is no single bin for the count to land in, and a count filed against the wrong one is worse than none. The screen offers no box on that row. |
 | A row with no stock but a home here counts against the home | So the empty bin is still asked about. |
+
+#### What the two surfaces owe each other
+
+The sheet is the same function on both, and the questions are the same three —
+*where am I, what is here, what is this thing*. What may differ is only how the
+three are stacked.
+
+| | Console | PWA |
+|---|---|---|
+| Where am I | a tree pane held open beside the sheet | drill-down: deck, space, shelf |
+| What is here | the sheet, top right | the sheet, below the crumb |
+| What is this | a third pane, bottom right | opens under its own row |
+| Print a sheet to walk with | yes | no — a phone is where you type a count |
+
+Everything else is shared and is expected to stay shared. Two rules hold on both:
+
+- **A long sheet is filtered and capped, and says so.** Over 25 rows it gets a
+  filter box; the render stops at 400 rows and prints what it is not showing.
+  Unlocalized Stock is 2,864 rows and Fwd Shop 583 — laying every one of them
+  out, each with a number input, is a phone that stops responding. Truncating
+  *silently* would be worse than either: a sheet claiming to be the whole space
+  and not being it is a sheet somebody signs for stock they never saw. The audit
+  bar still counts against the **whole** sheet, because coverage is a claim
+  about the space and not about what is currently on screen.
+- **Unlocalized Stock is a space like any other.** It has no node in the stowage
+  tree and is still 2,864 items and the obvious place to work through when
+  assigning homes, so it is a sheet, it is countable, and it can be audited. A
+  guard written as *is this a real location* locks it out; the guard is
+  *is this a real location **or** the reserved unplaced id*.
 
 ### 42.8 Requisitions
 
@@ -8204,6 +8238,54 @@ A four-fold swing on a number nobody has recorded. Any minimum published today r
 **The flywheel.** The reason to build this anyway is that the module generates its own better input. Every issue recorded here carries a quantity, a date and optionally a `task_id` or `equipment_code` — which is the structured parts-on-job capture that `items_used` never got. A season of that is worth more than three columns of annual totals, and it arrives whether or not anybody sets out to collect it. Lead times likewise: `po_sent` to first receipt measures the real one per supplier, which is §42.13's lead-time item and the thing that would move the 448 into the thousands.
 
 **Not built.** Proposals are computed offline for now (`data/procurement/proposed-minimums.json`, generated, read by nothing). Publishing them into `item_policy_set` events is a decision about the vessel's ordering policy, not a computation, and it belongs to an officer.
+
+### 42.16 The contact book
+
+**Status:** Settled and built on both surfaces. Console 2026-09-06, PWA 2026-09-07.
+**Baseline:** `data/procurement/contacts.json` (~1.1 MB, 1,745 contacts) — written by the Console's `tools/vault-export/import-procurement-seed.js` from TM Master's contact export plus the supplier names that appear on orders and in no export.
+**Reducer:** `utils/contacts-reduce.js`, mirrored **byte-identical** at `IDMS-Console/src/renderer/js/contacts-reduce.js`.
+**PWA:** `procurement.html` — the Contacts screen (`?view=contacts`), with its own tile on the Procurement hub.
+**Console:** `IDMS-Console/src/renderer/js/proc-contacts.js`; `IDMS-Console/docs/procurement-registry.md` is the long form.
+
+Who the vessel buys from, when they were last used, and for what. That last part is the reason the screen exists: a phone number on its own is a phone number, and with "last used 13 days ago, ARA-1292-SS-2026, wharfage" beside it, it is a decision about whether to call.
+
+#### The rule the whole lane rests on
+
+**TM Master's contact export is a baseline, not the truth.**
+
+```
+contact_created    { contact_id, ...editable fields }
+contact_updated    { contact_id, ...the fields being written }
+contact_archived   { contact_id, reason? }
+contact_restored   { contact_id }
+```
+
+They are appended to the ordinary procurement event stream (§42.3) and replayed over whatever baseline is current, **field by field, last write wins**. A phone number corrected aboard therefore survives the next contact export, and every field nobody touched still comes from TM. **Nothing writes the baseline file.**
+
+| Rule | Why |
+|---|---|
+| An event touches only the fields it **carries** | A client that knows fewer fields than the one that wrote before it must not blank the ones it has never heard of — two apps on two release cycles is the normal case, not the edge one. Sending a field empty is how a field is cleared, which is why the form sends all of them rather than a diff. |
+| Only the fields in `EDITABLE_FIELDS` may be written | `order_count`, `order_spend`, `first_order`, `last_order` and `source` are TM's, folded in by the seed. A stale client cannot write an order count. |
+| `contact_created` never applies over a contact the baseline supplied | A stale create replaying onto a fresh export must not blank what TM now knows. |
+| A contact added aboard gets a `CONX-` id | The seed assigns `CON-####` by sort position and those shift on every re-seed. Two numbering schemes that can never meet. |
+| Retiring flags, never removes | The order register still points at the card, and a card that vanishes takes the other end of that history with it. A retired contact is hidden from the default list and nothing more. |
+
+#### What the two surfaces owe each other
+
+Same book, same slices (`All`, `Orders only`, `Added aboard`, `Never used`, `No way to reach`, `Blocked`, `Retired`), same orderings (name, last used, longest dormant, most orders, most spent). *Dormant* means a supplier that went quiet, not one that was never used, so contacts with no history at all sort behind them on both surfaces.
+
+One difference, deliberate: **the Console recomputes order history from `order-register.json`; the PWA reads it off the baseline.** `contacts.json` already carries `order_count`, `order_spend`, `first_order`, `last_order` and a `recent` tail of up to 25 orders per contact, folded in by the same seed that resolved the supplier join. The Console has the 2.7 MB register open anyway for its Order history screen; the phone does not, and fetching it to re-derive figures already in hand is not a trade worth making over a satellite link. **The join is still made exactly once, in the seed** — neither surface re-resolves a supplier from its name, because two matching rules eventually disagree, and then a supplier's history depends on which surface you asked.
+
+#### The supplier field
+
+`pcSupplierName(id)` reads the book first, `procurementconfig.json` second, and falls back to the id itself — §42.5's tolerance is unchanged, and an id nothing explains still renders rather than disappearing. Before the book existed the config was the only source and it has never had an entry in it, so every order printed a raw `CON-####` and the New order form offered no supplier at all. The form's field is a search over the book now, not a `<select>`: 1,745 options is the same mistake as §42.14's 14,487. Retired contacts are not offered — keeping the card is not a reason to send it a new order.
+
+#### Reading TM's own text
+
+Neither of these is a detail, because both produce a control that looks like it works:
+
+- **The comma is not a separator in the e-mail field.** 54 of the 936 contacts that have an e-mail are written `Surname, Given <address>`; splitting on the comma makes a `mailto:` out of the surname, addressed to nothing. Split on `;` only, take what is inside `<>` when it is there, and print anything without an `@` rather than linking it — 14 fields hold a website somebody typed into the wrong box.
+- **The slash is not a separator in the phone field.** 93 of the 1,008 numbers are written `207/594-4500`, which is TM's way of setting off the area code. Splitting on it dials 594-4500 — a **wrong number rather than no number**, which is the worse of the two failures. Split on `;` only; a fragment under 7 digits, or one over 15 because an extension is stuck on the end, is printed rather than dialled. 1,005 of 1,012 dial.
 
 ---
 

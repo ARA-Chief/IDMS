@@ -168,18 +168,40 @@
   .ci-name.sloc-tap { cursor: pointer; }
   .sloc-what { color: var(--accent); }
   .sloc-detail { padding: 0 14px 14px; }
-  .sloc-kv { display: grid; gap: 8px 16px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-  .sloc-kv .k { display: block; font-size: 10.5px; letter-spacing: .05em;
+  .sloc-kv, .ctc-kv { display: grid; gap: 8px 16px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .sloc-kv .k, .ctc-kv .k { display: block; font-size: 10.5px; letter-spacing: .05em;
     text-transform: uppercase; color: var(--text-muted); }
-  .sloc-kv .v { font-size: 13.5px; color: var(--text-secondary); word-break: break-word; }
+  .sloc-kv .v, .ctc-kv .v { font-size: 13.5px; color: var(--text-secondary); word-break: break-word; }
   .sloc-where { display: flex; align-items: baseline; gap: 8px; font-size: 13px; padding: 3px 0; }
   .sloc-where .nm { flex: 1; min-width: 0; text-align: left; background: none; border: none;
     color: var(--accent); font-size: 13px; font-family: inherit; cursor: pointer; padding: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sloc-where .q { color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .sloc-where.here .nm { color: var(--text-primary); font-weight: 600; }
+  /* The last half-dozen things that happened to the item: what kind, how much,
+     and who — three columns because the middle one is the one being scanned. */
+  .sloc-mv { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; padding: 3px 0; }
+  .sloc-mv .k { flex: 0 0 74px; color: var(--text-muted); text-transform: uppercase;
+    font-size: 10.5px; letter-spacing: .05em; }
+  .sloc-mv .v { flex: 0 0 auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .sloc-mv .w { flex: 1; min-width: 0; text-align: right; color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sloc-crumb a { color: var(--accent); text-decoration: none; }
   .sloc-crumb a:active { text-decoration: underline; }
+
+  /* ── Contacts ─────────────────────────────────────────── */
+  /* A number on a supplier's card should dial and an address should compose.
+     This is the surface somebody is holding when they need to make the call. */
+  .ctc-link { color: var(--accent); text-decoration: none; word-break: break-word; }
+  .ctc-link:active { text-decoration: underline; }
+  .ctc-orderno { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: var(--accent); margin-top: 8px; }
+  .ctc-flags { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    margin: 6px 0 4px; }
+  /* A checkbox with a 20px hit area is a checkbox nobody taps on a boat. */
+  .ctc-flag { display: flex; align-items: center; gap: 9px; font-size: 13.5px;
+    color: var(--text-secondary); padding: 9px 0; cursor: pointer; }
+  .ctc-flag input { width: 20px; height: 20px; accent-color: var(--accent); flex: 0 0 auto; }
 
   /* On a phone the sheet is read one line at a time and the count box has to
      stay reachable, so the row wraps and the input keeps its own line rather
@@ -379,6 +401,7 @@
 
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="utils/procurement-reduce.js"></script>
+<script src="utils/contacts-reduce.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════
 // IDMS Procurement — standalone page, schema §42.
@@ -420,7 +443,14 @@ var PC = {
   catalogue: null,         // hydrated: { baseline_at, items, locations, counts }
   catStatus: 'none',       // none | cached | fresh | stale | failed
   catBuiltAt: null,
-  detail: null             // catalogue-detail.json, fetched on first item opened
+  detail: null,            // catalogue-detail.json, fetched on first item opened
+
+  // §42.16 — the contact book. Its baseline is a second file, fetched on first
+  // use rather than at sign-in: a megabyte nobody has asked for yet.
+  contactsDoc: null,       // contacts.json as it came off OneDrive
+  contacts: null,          // reduced: { contacts, order } — baseline + contact_* events
+  contactStatus: 'none',   // none | loading | fresh | stale | failed
+  ctc: null                // the Contacts screen's own view state
 };
 
 var REGISTER_CAP = 300;    // rows rendered at once; 14,487 will not go on a page
@@ -606,9 +636,7 @@ async function pcEnterApp() {
 
   try {
     var v = new URLSearchParams(location.search).get('view');
-    if (v && ['register','low','checkin','reqs','orders','exceptions','settings'].indexOf(v) !== -1) {
-      PC.view = v;
-    }
+    if (v && VIEWS.some(function (x) { return x.id === v; })) PC.view = v;
   } catch (e) {}
 
   pcLoadCache();
@@ -728,6 +756,70 @@ async function pcEnsureDetail() {
   return PC.detail;
 }
 
+// ── The contact book (§42.16) ───────────────────────────────
+// Same shape as the catalogue beside it: a columnar baseline on OneDrive, an
+// eTag-conditional fetch, an IndexedDB copy so the boat still has the book with
+// no signal. What differs is that this baseline is *written over* — the
+// contact_* events on the ordinary procurement stream are replayed on top of
+// it, so an edit made aboard survives the next TM Master export.
+
+function pcContactsPath() { return ONEDRIVE_BASE + '/data/procurement/contacts.json'; }
+
+async function pcEnsureContacts() {
+  if (PC.contacts) return PC.contacts;
+  if (PC.contactStatus === 'loading') return null;
+  PC.contactStatus = 'loading';
+
+  var cached = null;
+  try { cached = await pcIdbGet('contacts'); } catch (e) {}
+  var etag = null;
+  try { etag = await pcCatEtag(pcContactsPath()); } catch (e) {}
+
+  if (cached && cached.doc && (etag === null || cached.etag === etag)) {
+    PC.contactsDoc = cached.doc;
+    PC.contactStatus = etag === null ? 'stale' : 'fresh';
+    pcReduceContacts();
+    return PC.contacts;
+  }
+
+  try {
+    var doc = await pcGetJson(pcContactsPath());
+    if (!doc) throw new Error('no contact book');
+    PC.contactsDoc = doc;
+    PC.contactStatus = 'fresh';
+    pcReduceContacts();
+    try { await pcIdbPut('contacts', { etag: etag, doc: doc }); } catch (e) {}
+  } catch (e) {
+    if (cached && cached.doc) {
+      PC.contactsDoc = cached.doc;
+      PC.contactStatus = 'stale';
+      pcReduceContacts();
+    } else {
+      // No book and no cache. Anything added here is still an event and will
+      // survive the first seed when it runs, so the screen is not disabled.
+      PC.contactsDoc = null;
+      PC.contacts = contactsReduce.reduce(PC.events, null);
+      PC.contactStatus = 'failed';
+    }
+  }
+  return PC.contacts;
+}
+
+function pcReduceContacts() {
+  PC.contacts = contactsReduce.reduce(
+    PC.events, contactsReduce.hydrateContacts(PC.contactsDoc));
+}
+
+// Fetch once, in the background, and redraw when it lands. Called by the views
+// that show a supplier's name — a raw CON-#### on an order is not a supplier.
+var _pcContactsWanted = false;
+function pcWantContacts() {
+  if (PC.contacts || _pcContactsWanted) return;
+  _pcContactsWanted = true;
+  pcEnsureContacts().then(function () { pcRenderAll(); })
+    .catch(function () { _pcContactsWanted = false; });
+}
+
 function pcDetailFor(itemId) {
   if (!PC.detail || !PC.detail.items) return null;
   var n = String(itemId || '').replace(/^ITM-0*/, '');
@@ -799,8 +891,18 @@ function pcCatName(id) {
   var c = PC.cfg.categories.filter(function (x) { return x.category_id === id; })[0];
   return c ? c.name : id;
 }
+// The contact book first, then the config, then the id itself.
+//
+// procurementconfig.json's supplier list has never had an entry in it, so until
+// the book arrived every order and PO on this screen showed its supplier as a
+// raw CON-#### — the one thing on an order nobody can read. §42.16 makes the
+// book the answer; the config stays as the fallback for a vessel with no TM
+// contact export, and an id nothing explains still renders as itself rather
+// than disappearing (§42.5).
 function pcSupplierName(id) {
   if (!id) return '—';
+  var c = PC.contacts && PC.contacts.contacts[id];
+  if (c && c.name) return c.name;
   var s = PC.cfg.suppliers.filter(function (x) { return x.supplier_id === id; })[0];
   return s ? s.name : id;
 }
@@ -949,6 +1051,10 @@ async function pcAppendEvent(eventType, payload, opts) {
 
 function pcReduce() {
   PC.state = procurementReduce.reduce(PC.events, PC.catalogue);
+  // Only once the book is here. Reducing contact events over no baseline would
+  // drop every edit to a TM contact, because the contact it names does not
+  // exist yet — the reducer is right to ignore them, so this waits.
+  if (PC.contactsDoc || PC.contacts) pcReduceContacts();
 }
 
 // ── Small helpers ───────────────────────────────────────────
@@ -1057,6 +1163,9 @@ var VIEWS = [
   { id: 'checkin',    label: 'Check in' },
   { id: 'reqs',       label: 'Requisitions' },
   { id: 'orders',     label: 'Orders' },
+  // Who we buy from, when we last used them, and for what. Its own door rather
+  // than a panel on an order, the same way the Console gives it a nav entry.
+  { id: 'contacts',   label: 'Contacts' },
   { id: 'exceptions', label: 'Exceptions' },
   { id: 'settings',   label: 'Settings' }
 ];
@@ -1123,8 +1232,8 @@ function pcRenderAll() {
   pcRenderNav();
   var fn = {
     register: pcViewRegister, location: pcViewLocation, low: pcViewLow, checkin: pcViewCheckin,
-    reqs: pcViewReqs, orders: pcViewOrders, exceptions: pcViewExceptions,
-    settings: pcViewSettings
+    reqs: pcViewReqs, orders: pcViewOrders, contacts: pcViewContacts,
+    exceptions: pcViewExceptions, settings: pcViewSettings
   }[PC.view] || pcViewRegister;
   fn();
 }
@@ -1886,8 +1995,19 @@ async function pcMoveSave(itemId, kind) {
 // standing there, which is the whole reason this half lives on the phone.
 //
 // This is the same screen as the Console's stocklocation.js, and the pair are
-// meant to stay recognisably one screen. What is only here: nothing. What is
-// only there: nothing.
+// meant to stay recognisably one screen. The sheet is literally the same
+// function — procurementReduce.locationSheet — because a sheet that differs by
+// device is a sheet nobody can sign.
+//
+// Two things differ, both deliberately:
+//
+//   * The Console keeps a **tree pane** open beside the sheet. A persistent
+//     tree on a 375px screen is a tree pane and no sheet, so the phone drills
+//     down instead: pick a deck, pick a space, tap a line to open its detail
+//     under the row. The same three questions — where am I, what is here, what
+//     is this thing — stacked rather than set side by side.
+//   * **Print sheet** is Console-only. A phone is where you type a count, not
+//     where you print one.
 //
 // Two ways to correct a number, and they are deliberately different things:
 //
@@ -1912,6 +2032,13 @@ var SLOC_TICKS_KEY = 'idms.sloc.ticks';
 // calls it Unlocalized Stock and so does this.
 var SLOC_UNPLACED = 'unassigned';
 
+// A big space is a real space: Fwd Shop holds 583 items and Unlocalized Stock
+// holds 2,864. The sheet is filtered and capped rather than silently truncated,
+// and the cap is well above any shelf a person actually walks — it is here so
+// that asking a phone for Unlocalized Stock does not lay out thousands of rows,
+// each carrying a number input, before it draws anything at all.
+var SLOC_SHEET_CAP = 400;
+
 function slocState() {
   if (!PC.loc) {
     PC.loc = {
@@ -1920,9 +2047,11 @@ function slocState() {
       session: null,     // the open session id, when auditing
       entered: {},       // item_id -> typed but not yet filed
       ticks: {},         // item_id -> true, seen and correct, held until close
-      expected: 0,
-      q: '',
+      expected: 0,       // how many rows the sheet held when the audit opened
+      q: '',             // space search on the deck view
+      sheetQ: '',        // filter within the open sheet
       sel: null,         // item_id whose detail is open under its row
+      focusNext: null,   // item_id whose count box to focus after the next render
       busy: {}
     };
   }
@@ -1979,8 +2108,12 @@ function slocChildren(id) {
 
 // The last segment — the bin, not the four decks above it.
 function slocLabel(l) {
-  var parts = String((l && l.path) || '').split('\\');
-  return parts[parts.length - 1] || (l && (l.path || l.location_id)) || '';
+  if (!l) return '';
+  // Unlocalized Stock has no node in the stowage tree, so it has no path to
+  // take a last segment from — it is named here rather than rendering blank.
+  if (l.location_id === SLOC_UNPLACED) return 'Unlocalized Stock';
+  var parts = String(l.path || '').split('\\');
+  return parts[parts.length - 1] || l.path || l.location_id || '';
 }
 
 function slocSheet(locationId, scope) {
@@ -1989,6 +2122,13 @@ function slocSheet(locationId, scope) {
 }
 
 function slocVerified() { return procurementReduce.lastVerified(PC.state); }
+
+function slocDays(iso) {
+  if (!iso) return null;
+  var then = new Date(iso).getTime();
+  if (!isFinite(then)) return null;
+  return Math.floor((Date.now() - then) / 86400000);
+}
 
 // The audit open on the space being walked, whoever opened it and wherever.
 // Read out of the reduced state, never remembered: an audit opened on the
@@ -2037,57 +2177,89 @@ function pcViewLocation() {
 function slocViewRoot() {
   var s = slocState();
   var locs = pcLocations();
-  var verified = slocVerified();
   var all = Object.keys(locs).map(function (k) { return locs[k]; });
   var decks = pcDecks();
-  var counted = Object.keys(verified).length;
+  var holding = all.filter(function (l) { return (l.items_here || 0) > 0; });
+  var verified = slocVerified();
+  var swept = holding.filter(function (l) { return verified[l.location_id]; }).length;
 
   pcHead('Stock Location',
     all.length.toLocaleString() + ' spaces across ' + decks.length + ' decks · ' +
-    (counted ? counted + ' counted' : 'none counted yet'), '');
+    swept + ' of ' + holding.length + ' holding stock counted', '');
+
+  document.getElementById('body').innerHTML =
+    '<div class="toolbar"><input class="field" id="sloc-q" ' +
+      'placeholder="Find a space — shop, locker, shelf, bin…" value="' + pcEsc(s.q) + '" ' +
+      'oninput="slocSearch(this.value)"></div>' +
+    '<div id="sloc-root-list"></div>';
+
+  slocRenderRootList();
+}
+
+// Everything below the search box, redrawn on its own. Rebuilding the box along
+// with it would take the caret out of the field mid-word, which is the one
+// thing a search box may not do.
+function slocRenderRootList() {
+  var s = slocState();
+  var el = document.getElementById('sloc-root-list');
+  if (!el) return;
+
+  var locs = pcLocations();
+  var verified = slocVerified();
+  var all = Object.keys(locs).map(function (k) { return locs[k]; });
+  var decks = pcDecks();
+  var holding = all.filter(function (l) { return (l.items_here || 0) > 0; });
+  var swept = holding.filter(function (l) { return verified[l.location_id]; }).length;
+
+  var q = s.q.trim().toLowerCase();
+  if (q) {
+    var hits = all.filter(function (l) {
+        return String(l.path).toLowerCase().indexOf(q) !== -1;
+      }).sort(function (a, b) { return String(a.path).localeCompare(String(b.path)); }).slice(0, 60);
+    el.innerHTML = hits.length
+      ? '<div class="reg-count">' + hits.length + ' space' + (hits.length === 1 ? '' : 's') + ' matching.</div>' +
+        hits.map(function (l) { return slocSpaceRow(l, verified[l.location_id]); }).join('')
+      : '<div class="empty"><b>No space by that name</b>' +
+        'The tree is TM Master&#39;s, spelled its way — try one word rather than the whole path.</div>';
+    return;
+  }
 
   // Spaces that actually hold something, least recently swept first. A room
   // with nothing in it is not overdue a count, it is empty.
-  var due = all.filter(function (l) { return (l.items_here || 0) > 0; })
-    .map(function (l) { return { loc: l, v: verified[l.location_id] || null }; })
+  var due = holding.map(function (l) { return { loc: l, v: verified[l.location_id] || null }; })
     .sort(function (a, b) {
       var ka = a.v ? a.v.closed_at : '', kb = b.v ? b.v.closed_at : '';
       if (ka === kb) return (b.loc.items_here || 0) - (a.loc.items_here || 0);
       return ka < kb ? -1 : 1;        // never counted ('') sorts first
     }).slice(0, 12);
 
-  var q = s.q.trim().toLowerCase();
-  var hits = q ? all.filter(function (l) {
-      return String(l.path).toLowerCase().indexOf(q) !== -1;
-    }).sort(function (a, b) { return String(a.path).localeCompare(String(b.path)); }).slice(0, 60)
-    : [];
-
-  document.getElementById('body').innerHTML =
-    '<div class="toolbar"><input class="field" id="sloc-q" ' +
-      'placeholder="Find a space — shop, locker, shelf, bin…" value="' + pcEsc(s.q) + '" ' +
-      'oninput="slocSearch(this.value)"></div>' +
-    (q ? (hits.length
-        ? '<div class="reg-count">' + hits.length + ' space' + (hits.length === 1 ? '' : 's') + ' matching.</div>' +
-          hits.map(function (l) { return slocSpaceRow(l, verified[l.location_id]); }).join('')
-        : '<div class="empty"><b>No space by that name</b>' +
-          'The tree is TM Master&#39;s, spelled its way — try one word rather than the whole path.</div>')
-      : '<div class="reg-count">Pick a deck, then walk down to the shelf. The number you type ' +
-          'goes in as a count against that space, not against the ship.</div>' +
-        '<div class="deck-grid">' +
-        '<button class="deck-tile" onclick="slocGo(&quot;' + SLOC_UNPLACED + '&quot;)">' +
-          '<div class="deck-name">Unlocalized Stock</div>' +
-          '<div class="deck-count">' + slocUnplacedCount().toLocaleString() + '</div>' +
-          '<div class="deck-sub">items the export never placed</div></button>' +
-        decks.map(function (d) {
-          return '<button class="deck-tile" onclick="slocGo(&quot;' + pcEsc(d.location_id) + '&quot;)">' +
-            '<div class="deck-name">' + pcEsc(d.path) + '</div>' +
-            '<div class="deck-count">' + (d.items_deep || 0).toLocaleString() + '</div>' +
-            '<div class="deck-sub">items in ' + (d.sublocations || 0) + ' spaces</div></button>';
-        }).join('') + '</div>' +
-        '<div class="sloc-head">Longest since a count</div>' +
-        '<div class="reg-count">Spaces holding stock, least recently swept first. A space with ' +
-          'nothing in it is not overdue — it is empty.</div>' +
-        due.map(function (d) { return slocSpaceRow(d.loc, d.v); }).join(''));
+  el.innerHTML =
+    '<div class="reg-count">Pick a deck, then walk down to the shelf. The number you type ' +
+      'goes in as a count against that space, not against the ship.</div>' +
+    // How much of the ship has been walked. That is the question asked before
+    // picking a space, so it is answered above the tiles rather than below them.
+    '<div class="card"><div class="row">' +
+      '<div class="grow"><div class="ttl">' + swept + ' of ' + holding.length +
+        ' spaces counted</div>' +
+      '<div class="sub">Spaces holding stock. One with nothing in it is not overdue a ' +
+        'count — it is empty.</div></div>' +
+      '<div style="text-align:right"><div class="qty">' +
+        (holding.length ? Math.round(100 * swept / holding.length) : 0) + '%</div></div>' +
+    '</div></div>' +
+    '<div class="deck-grid">' +
+    '<button class="deck-tile" onclick="slocGo(&quot;' + SLOC_UNPLACED + '&quot;)">' +
+      '<div class="deck-name">Unlocalized Stock</div>' +
+      '<div class="deck-count">' + slocUnplacedCount().toLocaleString() + '</div>' +
+      '<div class="deck-sub">items the export never placed</div></button>' +
+    decks.map(function (d) {
+      return '<button class="deck-tile" onclick="slocGo(&quot;' + pcEsc(d.location_id) + '&quot;)">' +
+        '<div class="deck-name">' + pcEsc(d.path) + '</div>' +
+        '<div class="deck-count">' + (d.items_deep || 0).toLocaleString() + '</div>' +
+        '<div class="deck-sub">items in ' + (d.sublocations || 0) + ' spaces</div></button>';
+    }).join('') + '</div>' +
+    '<div class="sloc-head">Longest since a count</div>' +
+    '<div class="reg-count">Spaces holding stock, least recently swept first.</div>' +
+    due.map(function (d) { return slocSpaceRow(d.loc, d.v); }).join('');
 }
 
 function slocUnplacedCount() {
@@ -2101,9 +2273,11 @@ function slocUnplacedCount() {
 }
 
 function slocSpaceRow(l, v) {
+  var days = v ? slocDays(v.closed_at) : null;
   var when = !v
     ? '<span class="tag warn">never counted</span>'
-    : '<span class="tag good">counted ' + pcDate(v.closed_at) + '</span>' +
+    : '<span class="tag ' + (days !== null && days > 365 ? 'warn' : 'good') + '">counted ' +
+        pcDate(v.closed_at) + '</span>' +
       (v.variance_count ? ' <span class="tag bad">' + v.variance_count + ' off</span>' : '');
 
   return '<div class="card click" onclick="slocGo(&quot;' + pcEsc(l.location_id) + '&quot;)">' +
@@ -2153,7 +2327,47 @@ function slocViewSpace() {
     : '';
 
   document.getElementById('body').innerHTML =
-    crumb + kidTiles + slocAuditBar(session, rows) + slocSheetHtml(rows, session);
+    crumb + kidTiles + slocAuditBar(session, rows) +
+    '<div id="sloc-sheet">' + slocSheetBlock(rows, session) + '</div>';
+
+  // Where the walk moved on to after the last count was filed. The next line
+  // down is where the eye already is.
+  if (s.focusNext) {
+    var box = document.getElementById('sloc-in-' + s.focusNext);
+    s.focusNext = null;
+    if (box && box.focus) { box.focus(); if (box.select) box.select(); }
+  }
+}
+
+// The filter, the cap, and then the rows.
+//
+// A space can hold hundreds — Fwd Shop holds 583 and Unlocalized Stock 2,864 —
+// so a long sheet gets a filter box and the render stops at SLOC_SHEET_CAP.
+// Truncating silently would be worse than either: a sheet that says it is the
+// whole space and is not is a sheet somebody signs for stock they never saw.
+// The audit bar above still counts against the WHOLE sheet, because coverage is
+// a claim about the space, not about what is currently on screen.
+function slocSheetBlock(rows, session) {
+  var s = slocState();
+  var q = s.sheetQ.trim().toLowerCase();
+  var shown = q ? rows.filter(function (r) {
+      return (r.item_id + ' ' + r.name + ' ' + (r.part_number || ''))
+        .toLowerCase().indexOf(q) !== -1;
+    }) : rows;
+  var capped = shown.length > SLOC_SHEET_CAP;
+
+  return (rows.length > 25 || q
+      ? '<div class="toolbar"><input class="field" id="sloc-sq" ' +
+          'placeholder="Filter these ' + rows.length.toLocaleString() + ' items…" ' +
+          'value="' + pcEsc(s.sheetQ) + '" oninput="slocSheetSearch(this.value)">' +
+        (q ? '<span class="sub nowrap">' + shown.length + ' of ' + rows.length + '</span>' : '') +
+        '</div>'
+      : '') +
+    slocSheetHtml(shown.slice(0, SLOC_SHEET_CAP), session) +
+    (capped
+      ? '<div class="reg-count" style="margin-top:12px">Showing the first ' + SLOC_SHEET_CAP +
+        ' of ' + shown.length.toLocaleString() + ' — filter above to reach the rest.</div>'
+      : '');
 }
 
 function slocAuditBar(session, rows) {
@@ -2207,9 +2421,12 @@ function slocAuditBar(session, rows) {
 function slocSheetHtml(rows, session) {
   var s = slocState();
   if (!rows.length) {
-    return '<div class="empty"><b>Nothing stowed here</b>' +
-      'No item names this space as its home and the book holds no stock in it. If there is ' +
-      'something on the shelf, find it in the register and move it here.</div>';
+    return s.sheetQ.trim()
+      ? '<div class="empty"><b>Nothing on this sheet matches</b>' +
+        'Clear the filter to see the whole space again.</div>'
+      : '<div class="empty"><b>Nothing stowed here</b>' +
+        'No item names this space as its home and the book holds no stock in it. If there is ' +
+        'something on the shelf, find it in the register and move it here.</div>';
   }
 
   var countedIds = {};
@@ -2222,6 +2439,7 @@ function slocSheetHtml(rows, session) {
     // close, so an id left over from the last shelf must not read as
     // 'confirmed' on this one.
     var ticked = !!session && !!s.ticks[r.item_id];
+    var busy = !!s.busy[r.item_id];
 
     var book = r.stock_unknown
       ? '<span class="muted" title="The export carries no stock figure for this item">—</span>'
@@ -2260,6 +2478,7 @@ function slocSheetHtml(rows, session) {
         ? '<span class="k">Counted</span>' +
           '<input class="field" id="sloc-in-' + pcEsc(r.item_id) + '" type="number" step="any" ' +
             'min="0" inputmode="decimal" value="' + (typed === undefined ? '' : pcEsc(typed)) + '" ' +
+            (busy ? 'disabled ' : '') +
             // A word, not the book figure: that number is in the column immediately
           // left of it, and repeating it inside an empty box makes the box look
           // filled in.
@@ -2299,28 +2518,48 @@ function slocDetailHtml(r) {
   var max = procurementReduce.effective(it, 'max_qty');
   var dash = '—';
 
+  // The state of the thing, before its particulars. An item that is blocked in
+  // TM Master or has no stock figure at all changes what a count of it means.
+  var tags = [];
+  if (it.critical) tags.push('<span class="tag bad">critical occurrences</span>');
+  if (it.blocked) tags.push('<span class="tag warn">blocked in TM Master</span>');
+  if (it.source === 'local') tags.push('<span class="tag accent">added in IDMS</span>');
+  if (it.stock_unknown) tags.push('<span class="tag warn">no stock figure in the export</span>');
+
   var kv = [];
   function row(k, v) { if (v !== null && v !== undefined && v !== '') kv.push([k, v]); }
   row('Maker', pcEsc(det.maker));
   row("Maker's type", pcEsc(det.makers_type));
   row('Part number', pcEsc(it.part_number));
   row('Item type', pcEsc(it.item_type));
+  row('Category', pcEsc(it.item_category));
   row('Supplier', pcEsc((it.suppliers && it.suppliers[0] && it.suppliers[0].supplier_id) || ''));
+  // TM Master's own vocabulary, as written: 138 distinct units, with Each, EA,
+  // PCE and pcs all meaning the same thing and none of them normalised.
+  row('Unit of measure', pcEsc(it.unit));
   row('Min / max', (min === null || min === undefined ? dash : pcFmtQty(min, it.unit)) + ' / ' +
                    (max === null || max === undefined ? dash : pcFmtQty(max, it.unit)));
   row('Last known price', (it.last_known_price !== null && it.last_known_price !== undefined)
-    ? pcFmtQty(it.last_known_price) + ' ' + pcEsc(it.currency || '') : '');
+    ? pcFmtQty(it.last_known_price) + ' ' + pcEsc(it.currency || '') +
+      (det.last_known_price_date
+        ? ' <span class="muted">' + pcDate(det.last_known_price_date) + '</span>' : '')
+    : '');
   row('Last counted', it.last_count_at ? pcDate(it.last_count_at) : dash);
   row('Last checked', it.last_verified_at ? pcDate(it.last_verified_at) : dash);
+
+  // The last half-dozen things that happened to it. When a count does not match
+  // the book, the reason is often the line above.
+  var moves = (it.movements || []).slice(-6).reverse();
 
   // Every space the book has any of it in. When a count does not match, the
   // answer is usually on this list.
   var here = slocState().at;
   var where = Object.keys(it.by_location || {}).filter(function (k) {
-    return Number(it.by_location[k]) !== 0 || k === here;
+    return procurementReduce._q(it.by_location[k]) !== 0 || k === here;
   }).sort(function (a, b) { return Math.abs(it.by_location[b]) - Math.abs(it.by_location[a]); });
 
   return '<div class="sloc-detail">' +
+    (tags.length ? '<div style="margin-bottom:6px">' + tags.join(' ') + '</div>' : '') +
     '<div class="sub" style="margin-bottom:8px">' + pcFmtQty(it.on_hand, it.unit) + ' ' +
       pcEsc(it.unit || '') + ' on hand across the ship' +
       (it.on_order > 0 ? ' · ' + pcFmtQty(it.on_order, it.unit) + ' on order' : '') + '</div>' +
@@ -2341,6 +2580,20 @@ function slocDetailHtml(r) {
           '</div>';
         }).join('')
       : '<div class="sub">Nowhere ' + dash + ' the book holds none of it anywhere.</div>') +
+    '<div class="sloc-head">Recent movements</div>' +
+    (moves.length
+      ? moves.map(function (m) {
+          return '<div class="sloc-mv">' +
+            '<span class="k">' + pcEsc(m.kind) + '</span>' +
+            '<span class="v">' + (m.kind === 'count'
+              ? pcFmtQty(m.counted_qty, it.unit) +
+                (m.variance ? ' (' + (m.variance > 0 ? '+' : '') +
+                  pcFmtQty(m.variance, it.unit) + ')' : ' — matched')
+              : (m.delta > 0 ? '+' : '') + pcFmtQty(m.delta, it.unit)) + '</span>' +
+            '<span class="w">' + pcDate(m.timestamp) + ' · ' + pcEsc(m.actor || '') + '</span>' +
+          '</div>';
+        }).join('')
+      : '<div class="sub">None recorded here yet.</div>') +
     '<div style="margin-top:10px"><button class="icon-btn" onclick="pcOpenItem(&quot;' +
       pcEsc(r.item_id) + '&quot;)">Open the full item card</button></div>' +
   '</div>';
@@ -2363,13 +2616,19 @@ function slocPick(itemId) {
 
 function slocGo(locationId) {
   var s = slocState();
-  s.at = locationId || null;
-  s.entered = {};
-  s.sel = null;
-  // Scope resets on every move: 'including sublocations' is a claim about the
-  // space you are standing in, and carrying it into the next one silently
-  // widens a sheet somebody is about to sign.
-  s.scope = 'here';
+  var next = locationId || null;
+  // Only on an actual move. A crumb tapped on the space you are already in
+  // would otherwise throw away a half-typed count and the sheet filter.
+  if (next !== s.at) {
+    s.entered = {};
+    s.sheetQ = '';
+    s.sel = null;
+    // Scope resets on every move: 'including sublocations' is a claim about the
+    // space you are standing in, and carrying it into the next one silently
+    // widens a sheet somebody is about to sign.
+    s.scope = 'here';
+  }
+  s.at = next;
   pcRenderAll();
   window.scrollTo(0, 0);
 }
@@ -2389,11 +2648,35 @@ function slocScope() {
   pcRenderAll();
 }
 
+// A redraw that rebuilds the field takes the caret with it, so a filter cannot
+// be typed without losing focus mid-word. Both boxes redraw only their own list
+// and then put the caret back at the end of what was typed.
+function slocRefocus(id) {
+  var box = document.getElementById(id);
+  if (box && box.focus) {
+    box.focus();
+    if (box.setSelectionRange) box.setSelectionRange(box.value.length, box.value.length);
+  }
+}
+
 var _slocQTimer = null;
 function slocSearch(v) {
   slocState().q = v;
   clearTimeout(_slocQTimer);
-  _slocQTimer = setTimeout(pcRenderAll, 160);
+  _slocQTimer = setTimeout(function () { slocRenderRootList(); slocRefocus('sloc-q'); }, 160);
+}
+
+var _slocSQTimer = null;
+function slocSheetSearch(v) {
+  slocState().sheetQ = v;
+  clearTimeout(_slocSQTimer);
+  _slocSQTimer = setTimeout(function () {
+    var s = slocState();
+    var el = document.getElementById('sloc-sheet');
+    if (!el) { pcRenderAll(); return; }
+    el.innerHTML = slocSheetBlock(slocSheet(s.at, s.scope), slocSession());
+    slocRefocus('sloc-sq');
+  }, 160);
 }
 
 // Held, not filed. Every keystroke would be a count, and a re-render would
@@ -2414,8 +2697,9 @@ async function slocCount(itemId) {
   var qty = Number(raw);
   if (!isFinite(qty) || qty < 0) { pcToast('That is not a quantity.'); return; }
 
-  var row = null;
-  slocSheet(s.at, s.scope).forEach(function (r) { if (r.item_id === itemId) row = r; });
+  var rows = slocSheet(s.at, s.scope);
+  var row = null, at = -1;
+  rows.forEach(function (r, i) { if (r.item_id === itemId) { row = r; at = i; } });
   if (!row) return;
 
   // A count corrects one space, not a sheet. Where the row's book figure is a
@@ -2441,6 +2725,9 @@ async function slocCount(itemId) {
     // confirmed rather than corrected.
     delete s.ticks[itemId];
     if (session) slocSaveTicks(session.session_id, s.ticks);
+    // Move the walk on. The next line down is where the eye already is, and on
+    // a phone it saves a tap that is easy to make on the wrong row.
+    if (rows[at + 1]) s.focusNext = rows[at + 1].item_id;
     var varied = row.stock_unknown ? null : Math.round((qty - row.book_qty) * 1e6) / 1e6;
     pcToast(varied === null ? 'Counted — it had no figure before.'
           : varied === 0 ? 'Counted, and the book was right.'
@@ -2485,7 +2772,10 @@ function slocTickRest() {
 async function slocStart() {
   var s = slocState();
   var rows = slocSheet(s.at, s.scope);
-  if (!slocLoc(s.at) || !rows.length) return;
+  // Unlocalized Stock has no node in the stowage tree and is still a space
+  // somebody walks — 2,864 items, and the obvious place to work through when
+  // assigning homes. Requiring a tree node would have locked it out.
+  if ((!slocLoc(s.at) && s.at !== SLOC_UNPLACED) || !rows.length) return;
   var sessionId = pcUuid();
   try {
     await pcAppendEvent('count_session_opened', {
@@ -2579,7 +2869,9 @@ function pcViewLow() {
         (i.part_number ? '<div class="sub">' + pcEsc(i.part_number) + '</div>' : '') + '</td>' +
         '<td class="num" style="color:var(--warning)">' + pcFmtQty(i.on_hand, i.unit) + '</td>' +
         '<td class="num">' + pcFmtQty(i.on_order, i.unit) + '</td>' +
-        '<td class="num">' + pcFmtQty(i.min_qty, i.unit) + '</td>' +
+        '<td class="num">' + pcFmtQty(procurementReduce.effective(i, 'min_qty'), i.unit) +
+          (i.policy && i.policy.min_qty !== undefined && i.policy.min_qty !== null
+            ? '<span class="policy-chip">IDMS</span>' : '') + '</td>' +
         '<td class="num"><b>' + pcFmtQty(procurementReduce.suggestedOrderQty(i), i.unit) + '</b> ' +
           pcEsc(i.unit) + '</td>' +
         '<td class="num"><button class="icon-btn" onclick="PC.view=\'register\';PC.sel=\'' +
@@ -2703,6 +2995,97 @@ function pcPickerClear(kind, idx) {
   lines[idx].item_id = null;
   lines[idx].description = '';
   if (kind === 'req') pcRenderReqLines(); else pcRenderPoLines();
+}
+
+// ── Supplier picker (§42.16) ────────────────────────────────
+// The same shape as the item picker above, over the contact book instead of the
+// register. Same reason, too: 1,745 options in a dropdown is not a control.
+
+function pcSupPickerHtml() {
+  var c = PC._poSupplier && PC.contacts && PC.contacts.contacts[PC._poSupplier];
+  return '<div class="picker">' +
+    '<input class="field" id="pf-sup" autocomplete="off" placeholder="Search the contact book" ' +
+      'value="' + pcEsc(c ? c.name : '') + '" ' +
+      'oninput="pcSupType(this.value)" onfocus="pcSupType(this.value)">' +
+    '<div class="ph-sub" id="pf-sup-sub" style="font-size:11px;color:var(--text-muted);' +
+      'margin-top:3px' + (c ? '' : ';display:none') + '">' +
+      (c ? pcEsc(c.contact_id) + ' <button class="link-btn" onclick="pcSupClear()">clear</button>' : '') +
+    '</div>' +
+    '<div class="picker-results" id="pf-sup-hits" style="display:none"></div>' +
+    '</div>';
+}
+
+var _supTimer = null;
+function pcSupType(value) {
+  // Typing over a chosen supplier unpicks it, the way the item picker does. An
+  // order that names nobody is legal; one that names the wrong person is not.
+  PC._poSupplier = null;
+  var sub = document.getElementById('pf-sup-sub');
+  if (sub) { sub.style.display = 'none'; sub.innerHTML = ''; }
+  clearTimeout(_supTimer);
+  _supTimer = setTimeout(function () { pcSupRender(value); }, 130);
+}
+
+function pcSupRender(value) {
+  var box = document.getElementById('pf-sup-hits');
+  if (!box) return;
+  var q = String(value || '').trim().toLowerCase();
+  if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+
+  if (!PC.contacts) {
+    box.innerHTML = '<div class="picker-none">Fetching the contact book…</div>';
+    return;
+  }
+  // Retired contacts are not offered. The card is kept because old orders point
+  // at it; that is not a reason to send it a new one.
+  var hits = ctcAll().filter(function (c) {
+    return !c.archived && String(c.name || '').toLowerCase().indexOf(q) !== -1;
+  }).sort(function (a, b) {
+    return (b.order_count || 0) - (a.order_count || 0) ||
+      String(a.name).localeCompare(String(b.name));
+  }).slice(0, 20);
+
+  if (!hits.length) {
+    box.innerHTML = '<div class="picker-none">Nobody in the book by that name. ' +
+      'Add them in Contacts, or leave the supplier off and fill it in later.</div>';
+    return;
+  }
+  box.innerHTML = hits.map(function (c) {
+    return '<div class="picker-hit" onclick="pcSupChoose(&quot;' + pcEsc(c.contact_id) + '&quot;)">' +
+      pcEsc(c.name) +
+      '<div class="ph-sub">' + pcEsc(c.contact_id) +
+        (c.country ? ' · ' + pcEsc(c.country) : '') +
+        ' · ' + (c.order_count ? c.order_count.toLocaleString() + ' order' +
+                  (c.order_count === 1 ? '' : 's') : 'never used') +
+        (c.blocked ? ' · blocked in TM Master' : '') + '</div></div>';
+  }).join('');
+}
+
+function pcSupChoose(contactId) {
+  var c = PC.contacts && PC.contacts.contacts[contactId];
+  if (!c) return;
+  PC._poSupplier = contactId;
+  var box = document.getElementById('pf-sup-hits');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+  var input = document.getElementById('pf-sup');
+  if (input) input.value = c.name;
+  var sub = document.getElementById('pf-sup-sub');
+  if (sub) {
+    sub.style.display = '';
+    sub.innerHTML = pcEsc(c.contact_id) +
+      ' <button class="link-btn" onclick="pcSupClear()">clear</button>';
+  }
+}
+
+function pcSupClear() {
+  PC._poSupplier = null;
+  var input = document.getElementById('pf-sup');
+  if (input) input.value = '';
+  var sub = document.getElementById('pf-sup-sub');
+  if (sub) { sub.style.display = 'none'; sub.innerHTML = ''; }
+  var box = document.getElementById('pf-sup-hits');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
 }
 
 // ── View: Requisitions ──────────────────────────────────────
@@ -2942,6 +3325,9 @@ var PO_TAG = { draft: '', sent: 'accent', partial: 'warn', received: 'good',
                cancelled: '', closed: '' };
 
 function pcViewOrders() {
+  // A raw CON-#### is not a supplier. Fetched once, in the background, and the
+  // screen redraws when it lands.
+  pcWantContacts();
   if (PC.sel && PC.state.purchase_orders[PC.sel]) return pcViewPo(PC.state.purchase_orders[PC.sel]);
 
   var pos = Object.keys(PC.state.purchase_orders).map(function (k) { return PC.state.purchase_orders[k]; })
@@ -3027,16 +3413,15 @@ function pcPoFromReq(reqId) {
 function pcPoForm(prefillLines) {
   PC._poLines = prefillLines || [{ line_id: pcUuid(), item_id: null, description: '',
                                    qty_ordered: 1, unit: 'ea', unit_price: null }];
-  var supOpts = '<option value="">— none —</option>' + PC.cfg.suppliers.map(function (s) {
-    return '<option value="' + pcEsc(s.supplier_id) + '">' + pcEsc(s.name) + '</option>';
-  }).join('');
+  PC._poSupplier = null;
+  pcWantContacts();
 
   pcOverlay('<div class="sheet wide"><h3>New purchase order</h3>' +
     '<div class="sheet-sub">The order number is whatever is written on the paperwork — it is for finding ' +
       'the order later, not for identifying it.</div>' +
     '<div class="fieldrow">' +
       '<div><label class="lbl">Order number</label><input class="field" id="pf-num" placeholder="PO-1041"></div>' +
-      '<div><label class="lbl">Supplier</label><select class="field" id="pf-sup">' + supOpts + '</select></div>' +
+      '<div><label class="lbl">Supplier</label>' + pcSupPickerHtml() + '</div>' +
       '<div><label class="lbl">Expected</label><input class="field" id="pf-exp" type="date"></div>' +
     '</div>' +
     '<label class="lbl">Lines</label><div class="lines" id="pf-lines"></div>' +
@@ -3085,7 +3470,7 @@ async function pcPoSave() {
   var payload = {
     po_id: pcUuid(),
     po_number: pcVal('pf-num') || null,
-    supplier_id: pcVal('pf-sup') || null,
+    supplier_id: PC._poSupplier || null,
     currency: PC.cfg.settings.default_currency || null,
     expected_date: pcVal('pf-exp') || null,
     notes: pcVal('pf-notes') || '',
@@ -3132,6 +3517,7 @@ async function pcPoClose(poId) {
 // §42.9. Built for somebody standing at a pallet with a phone in one hand.
 
 function pcViewCheckin() {
+  pcWantContacts();
   var open = Object.keys(PC.state.purchase_orders)
     .map(function (k) { return PC.state.purchase_orders[k]; })
     .filter(function (p) { return p.status === 'sent' || p.status === 'partial'; })
@@ -3375,6 +3761,715 @@ async function pcCheckinNoPoSave() {
     document.getElementById('np-err').textContent = pcErrText(e);
     btn.disabled = false; btn.textContent = 'Receive';
   }
+}
+
+// ── View: Contacts (§42.16) ─────────────────────────────────
+// The book of everyone the vessel buys from: 1,745 of them, seeded from TM
+// Master's contact export plus the 82 supplier names that appear on orders and
+// in no export. Unlike the item catalogue beside it this one is **writable**.
+//
+// This is the same screen as the Console's proc-contacts.js and the pair are
+// meant to stay recognisably one screen. The rules live in the reducer, not
+// here: `utils/contacts-reduce.js` is byte-identical with the Console's copy,
+// the way procurement-reduce.js is, and it is the only place that decides what
+// an edit does to a baseline.
+//
+// How an edit survives a re-seed: the TM export is a **baseline**, not the
+// truth. Add / edit / retire are contact_created / contact_updated /
+// contact_archived events on the ordinary procurement stream, replayed over
+// whatever baseline is current, **field by field, last write wins**. So a phone
+// number corrected on the boat survives the next contact export, and the fields
+// nobody touched still come from TM. Nothing here writes the baseline file.
+//
+// What a card leads with is **when these people were last used, and for what**.
+// A phone number without that is a phone number; with it, it is a decision
+// about whether to call.
+//
+// Two differences from the Console, both deliberate:
+//
+//   * **The order history comes off the baseline, not the order register.**
+//     `contacts.json` already carries order_count, order_spend, first_order and
+//     last_order per contact, and a `recent` tail of up to 25 orders — folded
+//     in by the same seed that resolved the supplier join. The Console recomputes
+//     them from `order-register.json` because it has that file open anyway for
+//     its Order history screen. The phone does not, and 2.7 MB over a satellite
+//     link to re-derive figures already in hand is not a trade worth making.
+//     The join is still made exactly once, in the seed; nothing here re-resolves
+//     a supplier from its name.
+//   * **Numbers dial and addresses open.** tel: and mailto:, because this is the
+//     surface somebody is holding when they need to call a supplier.
+
+var CONTACT_CAP = 300;      // rows drawn at once; 1,745 will not go on a phone
+
+// Every field the phone may write, in the order the form lays them out. The
+// reducer holds the same list and ignores anything outside it, so a field added
+// here and not there is dropped rather than trusted — keep the two together.
+var CTC_FIELDS = [
+  { k: 'name',            label: 'Name', required: true },
+  { k: 'country',         label: 'Country' },
+  { k: 'email',           label: 'E-mail' },
+  { k: 'phone',           label: 'Phone' },
+  { k: 'fax',             label: 'Fax' },
+  { k: 'web',             label: 'Web' },
+  { k: 'currency',        label: 'Currency' },
+  { k: 'payment_terms',   label: 'Payment terms' },
+  { k: 'delivery_terms',  label: 'Delivery terms' },
+  { k: 'ecommerce_id',    label: 'e-Commerce ID' },
+  { k: 'qa_status',       label: 'QA status' },
+  { k: 'qa_grade',        label: 'QA grade' },
+  { k: 'qa_year',         label: 'QA year' },
+  { k: 'risk',            label: 'Supplier risk' },
+  { k: 'criticality',     label: 'Supplier criticality' },
+  { k: 'trade_agreement_date',    label: 'Trade agreement from', type: 'date' },
+  { k: 'trade_agreement_expires', label: 'Trade agreement expires', type: 'date' },
+  { k: 'tags',            label: 'Tags' },
+  { k: 'remarks',         label: 'Remarks', type: 'textarea' }
+];
+
+var CTC_FLAGS = [
+  { k: 'validated',       label: 'Validated' },
+  { k: 'trade_agreement', label: 'Has trade agreement' },
+  { k: 'ncr',             label: 'NCR raised' },
+  { k: 'blocked',         label: 'Blocked' }
+];
+
+var CTC_VIEWS = [
+  { id: '',            label: 'Everyone' },
+  { id: 'stub',        label: 'Orders only' },
+  { id: 'added',       label: 'Added aboard' },
+  { id: 'noorders',    label: 'Never used' },
+  { id: 'unreachable', label: 'No way to reach' },
+  { id: 'blocked',     label: 'Blocked' },
+  { id: 'archived',    label: 'Retired' }
+];
+
+var CTC_SORTS = [
+  { id: 'name',    label: 'Name' },
+  { id: 'recent',  label: 'Last used' },
+  { id: 'dormant', label: 'Longest dormant' },
+  { id: 'orders',  label: 'Most orders' },
+  { id: 'spend',   label: 'Most spent' }
+];
+
+// TM's own statuses, grouped by what somebody actually wants to know: has it
+// been asked for, is it coming, is it here, is it over. Same map as the
+// Console's PRC_STATUS_TONE.
+var CTC_STATUS_TONE = {
+  'Draft': '', 'Price requested': '', 'Supplier selected': '',
+  'On Order': 'accent', 'Received by agent': 'accent', 'Partly received by agent': 'accent',
+  'Partly received': 'accent', 'Received at Warehouse': 'accent',
+  'Received and read at office': 'accent',
+  'Completely received': 'good', 'Finished': 'good',
+  'Cancelled': 'bad'
+};
+
+function ctcState() {
+  if (!PC.ctc) {
+    PC.ctc = {
+      sel: null,        // open contact_id
+      q: '',            // search
+      flag: '',         // which slice of the book
+      sort: 'name',
+      editing: null,    // the draft being edited or added, or null
+      isNew: false
+    };
+  }
+  return PC.ctc;
+}
+
+// "3 weeks ago", "2 years ago" — the unit a person uses when deciding whether a
+// supplier is still current. The exact date sits beside it.
+function pcAgo(iso) {
+  if (!iso) return null;
+  var then = Date.parse(iso + (String(iso).length === 10 ? 'T00:00:00Z' : ''));
+  if (!isFinite(then)) return null;
+  var days = Math.floor((Date.now() - then) / 86400000);
+  if (days < 0) return 'dated ahead';
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 31) return days + ' days ago';
+  var months = Math.round(days / 30.44);
+  if (months < 24) return months + ' month' + (months === 1 ? '' : 's') + ' ago';
+  return Math.round(days / 365.25) + ' years ago';
+}
+
+function pcMoney(n, cur) {
+  if (n === null || n === undefined || n === '') return '—';
+  var v = Number(n);
+  if (!isFinite(v)) return '—';
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+         (cur ? ' ' + cur : '');
+}
+
+// Whole dollars for a running total. A nine-year spend figure carrying cents
+// reads as more precise than a register assembled from seven currencies is.
+function pcMoneyRough(n) {
+  var v = Number(n);
+  if (!isFinite(v)) return '—';
+  return '$' + Math.round(v).toLocaleString('en-US');
+}
+
+function pcStatusTag(status) {
+  if (!status) return '';
+  return '<span class="tag ' + (CTC_STATUS_TONE[status] || '') + '">' + pcEsc(status) + '</span>';
+}
+
+// TM keeps several addresses in one E-mail field: 143 of the 936 contacts that
+// have an e-mail at all hold more than one, and the separator is a semicolon.
+// One mailto: around the lot addresses all of them at once, which is rarely
+// what somebody tapping a card wants — so one link each, one per line.
+//
+// **The comma is not a separator here.** 54 contacts are written as
+// "De Guzman, Joselito <jdeguzman@petrostar.com>", and splitting on the comma
+// turns the name into a link of its own to nowhere. And 14 fragments are not
+// addresses at all — somebody typed "www.ballardlockandkey.com" into the e-mail
+// field. A mailto: with no address behind it opens an empty compose window and
+// looks like the app losing the address, so anything without an @ is printed
+// rather than linked.
+function ctcEmailLinks(raw) {
+  var list = String(raw || '').split(';').map(function (s) { return s.trim(); })
+    .filter(Boolean);
+  if (!list.length) return '—';
+  return list.map(function (part) {
+    var m = part.match(/<([^>]+)>/);
+    var addr = m ? m[1].trim() : part;
+    if (addr.indexOf('@') === -1) return pcEsc(part);
+    return '<a class="ctc-link" href="mailto:' + pcEsc(addr) + '">' + pcEsc(part) + '</a>';
+  }).join('<br>');
+}
+
+// The phone's own half of this: a number on a supplier's card should dial.
+//
+// **What is not split on is the point.** 93 of the 1,008 numbers are written
+// "207/594-4500" — one number, TM's way of setting off the area code. Treating
+// the slash as a separator dials 594-4500, which is a wrong number rather than
+// no number, and a wrong number reached from a card is worse than a card that
+// does not dial. Same for the comma. Only a semicolon separates two numbers,
+// and only 4 contacts use one.
+//
+// What is left is judged by digit count: under 7 it is a fragment
+// ("-6491", six of them, an extension somebody typed into the field), over 15
+// it is longer than any real number ("+1 206-708-8364 Ext. 76364") and where it
+// ends is a guess. Both are printed, not linked. 1,005 of 1,012 dial.
+function ctcPhoneLinks(raw) {
+  var list = String(raw || '').split(';').map(function (s) { return s.trim(); })
+    .filter(Boolean);
+  if (!list.length) return '—';
+  return list.map(function (p) {
+    var digits = p.replace(/[^0-9]/g, '');
+    if (digits.length < 7 || digits.length > 15) return pcEsc(p);
+    return '<a class="ctc-link" href="tel:' + (/^\+/.test(p) ? '+' : '') + digits + '">' +
+      pcEsc(p) + '</a>';
+  }).join('<br>');
+}
+
+function ctcWebLink(raw) {
+  var s = String(raw || '').trim();
+  if (!s) return '—';
+  var href = /^https?:\/\//i.test(s) ? s : 'https://' + s;
+  return '<a class="ctc-link" href="' + pcEsc(href) + '" target="_blank" rel="noopener">' +
+    pcEsc(s) + '</a>';
+}
+
+// §42.16 — the contact book is the vessel's, not an officer's, so anyone aboard
+// may correct a phone number. Retiring hides something other people rely on,
+// and that follows the module's approver rule.
+function ctcCanRetire() { return pcCanApprove(); }
+
+function ctcAll() {
+  var st = PC.contacts;
+  if (!st) return [];
+  return st.order.map(function (id) { return st.contacts[id]; }).filter(Boolean);
+}
+
+function ctcGet(id) {
+  return (PC.contacts && PC.contacts.contacts[id]) || null;
+}
+
+// The same slices the Console offers, with the same meanings — its versions are
+// SQL and these are a filter, but a book that answers differently by device is
+// two books.
+function ctcMatches(c, flag) {
+  if (flag === 'archived') return !!c.archived;
+  if (c.archived) return false;
+  if (flag === 'blocked') return !!c.blocked;
+  if (flag === 'noorders') return !c.order_count;
+  if (flag === 'stub') return c.source === 'orders';
+  if (flag === 'added') return c.source === 'idms';
+  // "No way to reach" is e-mail and phone, not fax and web: those are not how
+  // anybody reaches a supplier from a boat.
+  if (flag === 'unreachable') return !(c.email || '') && !(c.phone || '');
+  return true;
+}
+
+function ctcSearchHit(c, terms) {
+  for (var i = 0; i < terms.length; i++) {
+    var t = terms[i];
+    var hay = ((c.name || '') + ' ' + (c.email || '') + ' ' + (c.phone || '') + ' ' +
+               (c.country || '') + ' ' + (c.remarks || '') + ' ' + c.contact_id).toLowerCase();
+    if (hay.indexOf(t) === -1) return false;
+  }
+  return true;
+}
+
+function ctcSorted(rows, sort) {
+  var byName = function (a, b) {
+    return String(a.name || '').toLowerCase().localeCompare(String(b.name || '').toLowerCase());
+  };
+  var out = rows.slice();
+  if (sort === 'recent') {
+    out.sort(function (a, b) {
+      var ka = a.last_order || '0000', kb = b.last_order || '0000';
+      return ka === kb ? byName(a, b) : (ka < kb ? 1 : -1);
+    });
+  } else if (sort === 'dormant') {
+    // A contact with no history at all sorts behind the dormant ones: dormant
+    // is a supplier that went quiet, not one that was never used.
+    out.sort(function (a, b) {
+      var na = a.order_count ? 0 : 1, nb = b.order_count ? 0 : 1;
+      if (na !== nb) return na - nb;
+      var ka = a.last_order || '9999', kb = b.last_order || '9999';
+      return ka === kb ? byName(a, b) : (ka < kb ? -1 : 1);
+    });
+  } else if (sort === 'orders') {
+    out.sort(function (a, b) {
+      return (b.order_count || 0) - (a.order_count || 0) || byName(a, b);
+    });
+  } else if (sort === 'spend') {
+    out.sort(function (a, b) {
+      return (b.order_spend || 0) - (a.order_spend || 0) || byName(a, b);
+    });
+  } else {
+    out.sort(byName);
+  }
+  return out;
+}
+
+function ctcRows() {
+  var s = ctcState();
+  var terms = s.q.trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
+  var hits = ctcAll().filter(function (c) {
+    return ctcMatches(c, s.flag) && (!terms.length || ctcSearchHit(c, terms));
+  });
+  return { total: hits.length, rows: ctcSorted(hits, s.sort).slice(0, CONTACT_CAP) };
+}
+
+// ── The screen ──────────────────────────────────────────────
+
+function pcViewContacts() {
+  var s = ctcState();
+
+  if (!PC.contacts) {
+    pcHead('Contacts', PC.contactStatus === 'failed'
+      ? 'No contact book on OneDrive' : 'Loading the contact book…', '');
+    document.getElementById('body').innerHTML = PC.contactStatus === 'failed'
+      ? '<div class="empty"><b>No contact book yet</b>' +
+        'The book is seeded from TM Master&#39;s contact export by the Console&#39;s ' +
+        '<code>tools/vault-export/import-procurement-seed.js</code>. Anything added here is an ' +
+        'event and would survive that seed when it runs.</div>'
+      : '<div class="empty"><b>Fetching 1,745 contacts…</b>It is a megabyte, and it is kept ' +
+        'on the phone afterwards.</div>';
+    // Fetch once, then come back. pcWantContacts re-renders when it lands.
+    pcWantContacts();
+    return;
+  }
+
+  if (s.editing) return ctcRenderForm();
+  if (s.sel) return ctcRenderCard();
+  return ctcRenderList();
+}
+
+function ctcRenderList() {
+  var s = ctcState();
+  var view = CTC_VIEWS.filter(function (v) { return v.id === s.flag; })[0];
+  var counts = (PC.contactsDoc && PC.contactsDoc.counts) || {};
+
+  pcHead(view && view.id ? view.label : 'Contacts',
+    ctcAll().length.toLocaleString() + ' in the book · ' +
+      (counts.with_orders || 0).toLocaleString() + ' have been used' +
+      (PC.contactStatus === 'stale' ? ' · offline copy' : ''),
+    '<button class="icon-btn" onclick="ctcStartNew()">+ New contact</button>');
+
+  document.getElementById('body').innerHTML =
+    '<div class="toolbar">' +
+      '<input class="field" id="ctc-q" placeholder="Name, e-mail, phone, country, remarks…" ' +
+        'value="' + pcEsc(s.q) + '" oninput="ctcSearch(this.value)">' +
+      '<select class="field" onchange="ctcState().flag=this.value;pcRenderAll()">' +
+        CTC_VIEWS.map(function (v) {
+          return '<option value="' + v.id + '"' + (s.flag === v.id ? ' selected' : '') + '>' +
+            pcEsc(v.label) + '</option>';
+        }).join('') + '</select>' +
+      '<select class="field" onchange="ctcState().sort=this.value;pcRenderAll()">' +
+        CTC_SORTS.map(function (v) {
+          return '<option value="' + v.id + '"' + (s.sort === v.id ? ' selected' : '') + '>' +
+            'By ' + pcEsc(v.label.toLowerCase()) + '</option>';
+        }).join('') + '</select>' +
+    '</div><div id="ctc-list"></div>';
+
+  ctcRenderRows();
+}
+
+// Only the list below the search box, so the caret stays in the field.
+function ctcRenderRows() {
+  var el = document.getElementById('ctc-list');
+  if (!el) return;
+  var res = ctcRows();
+
+  el.innerHTML = res.rows.length
+    ? '<div class="reg-count">' + res.total.toLocaleString() + ' contact' +
+        (res.total === 1 ? '' : 's') +
+        (res.total > res.rows.length ? ' · showing the first ' + res.rows.length : '') +
+        '</div>' + res.rows.map(ctcRow).join('')
+    : '<div class="empty"><b>Nobody here</b>No contact matches that.</div>';
+}
+
+function ctcRow(c) {
+  var ago = pcAgo(c.last_order);
+  var last = ctcLastOrder(c);
+  var tags = [
+    c.blocked ? '<span class="tag bad">blocked</span>' : '',
+    c.archived ? '<span class="tag bad">retired</span>' : '',
+    c.source === 'orders' ? '<span class="tag warn">orders only</span>' : '',
+    c.source === 'idms' ? '<span class="tag accent">added aboard</span>' : '',
+    c.validated ? '<span class="tag good">validated</span>' : ''
+  ].filter(Boolean).join(' ');
+
+  // The line that makes this a card rather than a row in a phone book.
+  var lastLine = c.order_count
+    ? (last
+        ? 'Last used ' + pcEsc(ago || pcDate(c.last_order)) + ' — ' + pcEsc(last.order_no) +
+          (last.name ? ' · ' + pcEsc(last.name) : '')
+        : c.order_count + ' order' + (c.order_count === 1 ? '' : 's') + ', none dated')
+    : 'No order in the register names them';
+
+  var reach = [c.phone, c.email, c.country].filter(Boolean).map(pcEsc).join(' · ');
+
+  return '<div class="card click" onclick="ctcOpen(&quot;' + pcEsc(c.contact_id) + '&quot;)">' +
+    '<div class="row"><div class="grow">' +
+      '<div class="ttl">' + pcEsc(c.name) + '</div>' +
+      '<div class="sub">' + lastLine + '</div>' +
+      '<div class="sub">' + (reach || '<i>no contact details</i>') + '</div>' +
+      (tags ? '<div class="sub">' + tags + '</div>' : '') +
+    '</div><div style="text-align:right">' +
+      '<div class="qty">' + (c.order_count || 0).toLocaleString() + '</div>' +
+      '<div class="sub nowrap">order' + ((c.order_count || 0) === 1 ? '' : 's') + '</div>' +
+      (c.order_spend ? '<div class="sub nowrap">' + pcMoneyRough(c.order_spend) + '</div>' : '') +
+    '</div></div></div>';
+}
+
+// The newest order the baseline folded onto this contact. `recent` arrives
+// newest-first from the seed, but an order TM never dated sorts wherever it
+// likes, so the first *dated* one wins and an undated one is only a fallback —
+// better a card that says what without when than one that says nothing.
+function ctcLastOrder(c) {
+  var recent = (c && c.recent) || [];
+  for (var i = 0; i < recent.length; i++) if (recent[i].date) return recent[i];
+  return recent[0] || null;
+}
+
+var _ctcTimer = null;
+function ctcSearch(v) {
+  ctcState().q = v;
+  clearTimeout(_ctcTimer);
+  _ctcTimer = setTimeout(function () {
+    ctcRenderRows();
+    var box = document.getElementById('ctc-q');
+    if (box && box.focus) {
+      box.focus();
+      if (box.setSelectionRange) box.setSelectionRange(box.value.length, box.value.length);
+    }
+  }, 160);
+}
+
+function ctcOpen(contactId) {
+  var s = ctcState();
+  s.sel = contactId;
+  s.editing = null;
+  pcRenderAll();
+  window.scrollTo(0, 0);
+}
+
+function ctcBack() {
+  var s = ctcState();
+  s.sel = null;
+  s.editing = null;
+  s.isNew = false;
+  pcRenderAll();
+}
+
+// ── One card ────────────────────────────────────────────────
+
+function ctcRenderCard() {
+  var s = ctcState();
+  var c = ctcGet(s.sel);
+  if (!c) {
+    // A deep link, or an id renumbered by a re-seed. Say so rather than
+    // bouncing silently back to the list.
+    pcHead('Contacts', '', '<button class="icon-btn" onclick="ctcBack()">← The book</button>');
+    document.getElementById('body').innerHTML =
+      '<div class="empty"><b>No such contact</b>Nothing in the book answers to ' +
+      pcEsc(s.sel) + '. It may have been renumbered by a re-seed.</div>';
+    return;
+  }
+
+  var ago = pcAgo(c.last_order);
+  var last = ctcLastOrder(c);
+  var dash = '—';
+  var esc = function (v) { return pcEsc(v || dash); };
+  var kv = function (k, v) {
+    return '<div><span class="k">' + k + '</span><span class="v">' + v + '</span></div>';
+  };
+
+  pcHead(c.name,
+    [c.contact_id, c.country, (c.order_count || 0) + ' orders'].filter(Boolean).join(' · '),
+    '<button class="icon-btn" onclick="ctcBack()">← The book</button>' +
+    '<button class="icon-btn" onclick="ctcStartEdit()">Edit</button>' +
+    (c.archived
+      ? '<button class="icon-btn" onclick="ctcRestore()">Bring back</button>'
+      : (ctcCanRetire() ? '<button class="icon-btn" onclick="ctcRetire()">Retire</button>' : '')));
+
+  var banner = c.archived
+    ? '<div class="card" style="border-left:2px solid var(--danger)">' +
+      '<div class="ttl">Retired</div><div class="sub">' +
+      (c.archive_reason ? pcEsc(c.archive_reason) : 'No reason recorded.') +
+      ' The card is kept because ' + (c.order_count || 0) + ' order' +
+      ((c.order_count || 0) === 1 ? '' : 's') + ' in the register still point here.</div></div>'
+    : c.source === 'orders'
+      ? '<div class="card" style="border-left:2px solid var(--warning)">' +
+        '<div class="ttl">Seen on orders only</div><div class="sub">This name is on TM Master ' +
+        'orders but not in the contact export, so there is no address, no terms and no QA record ' +
+        'behind it. It is usually a per-vessel or per-port billing variant of a contact that does ' +
+        'exist. Fill it in, or retire it if it is a duplicate.</div></div>'
+      : '';
+
+  // The headline the whole feature exists for.
+  var lastCard = '<div class="card"><div class="ttl">Last referenced</div>' +
+    (c.order_count && last
+      ? '<div class="sub">' + (ago ? pcEsc(ago) : '') +
+          (c.last_order ? ' · ' + pcEsc(pcDate(c.last_order)) : '') + '</div>' +
+        '<div class="ctc-orderno">' + pcEsc(last.order_no) + '</div>' +
+        '<div class="sub">' + esc(last.name) + '</div>'
+      : '<div class="sub">No order in the register names this contact.</div>') +
+    '<div class="ctc-kv" style="margin-top:10px">' +
+      kv('Orders', String(c.order_count || 0)) +
+      kv('Spend', c.order_spend ? pcMoneyRough(c.order_spend) : dash) +
+      kv('First', esc(c.first_order ? pcDate(c.first_order) : '')) +
+      kv('Last', esc(c.last_order ? pcDate(c.last_order) : '')) +
+    '</div></div>';
+
+  var reach = '<div class="card"><div class="ttl">Reach</div>' +
+    '<div class="ctc-kv" style="margin-top:8px">' +
+      kv('E-mail', ctcEmailLinks(c.email)) +
+      kv('Phone', ctcPhoneLinks(c.phone)) +
+      kv('Fax', esc(c.fax)) +
+      kv('Web', ctcWebLink(c.web)) +
+      kv('Country', esc(c.country)) +
+    '</div></div>';
+
+  var flagTags = CTC_FLAGS.filter(function (f) { return c[f.k]; }).map(function (f) {
+    return '<span class="tag ' + (f.k === 'blocked' || f.k === 'ncr' ? 'bad' : 'good') + '">' +
+      f.label + '</span>';
+  }).join(' ');
+
+  var terms = '<div class="card"><div class="ttl">Terms &amp; status</div>' +
+    (flagTags ? '<div class="sub">' + flagTags + '</div>' : '') +
+    '<div class="ctc-kv" style="margin-top:8px">' +
+      kv('Currency', esc(c.currency)) +
+      kv('Payment terms', esc(c.payment_terms)) +
+      kv('Delivery terms', esc(c.delivery_terms)) +
+      kv('Trade agreement', c.trade_agreement
+        ? esc([c.trade_agreement_date, c.trade_agreement_expires].filter(Boolean).join(' → '))
+        : 'no') +
+      kv('e-Commerce ID', esc(c.ecommerce_id)) +
+      kv('QA status', esc(c.qa_status)) +
+      kv('QA grade', esc(c.qa_grade)) +
+      kv('Risk', esc(c.risk)) +
+      kv('Criticality', esc(c.criticality)) +
+    '</div>' +
+    (c.remarks ? '<div class="sub" style="margin-top:10px"><b>Remarks</b><br>' +
+      pcEsc(c.remarks) + '</div>' : '') +
+    '</div>';
+
+  var recent = (c.recent || []);
+  var history = '<div class="card" style="padding:0">' +
+    '<div style="padding:14px 14px 0"><div class="ttl">Order history</div></div>' +
+    (recent.length
+      ? recent.map(function (o) {
+          return '<div class="ci-line"><div class="ci-name">' +
+            '<b>' + pcEsc(o.order_no) + '</b> ' + pcStatusTag(o.status) +
+            '<div class="sub">' + esc(o.name) + '</div>' +
+            '<div class="sub">' + pcEsc(o.date ? pcDate(o.date) : 'undated') +
+              (o.department ? ' · ' + pcEsc(o.department) : '') + '</div>' +
+            '</div><div class="ci-nums"><div class="ci-num">' +
+            '<span class="k">Total</span><span class="v">' +
+            pcMoney(o.total, o.currency) + '</span></div></div></div>';
+        }).join('') +
+        ((c.order_count || 0) > recent.length
+          ? '<div class="sub" style="padding:12px 14px">Showing the ' + recent.length +
+            ' most recent of ' + (c.order_count || 0).toLocaleString() + '. The whole register ' +
+            'is nine years of orders and lives in the Console.</div>'
+          : '')
+      : '<div class="sub" style="padding:8px 14px 14px">Nothing in the order register names ' +
+        'this contact.</div>') +
+    '</div>';
+
+  var provenance = '<div class="reg-count" style="margin-top:14px">' +
+    (c.source === 'tm' ? 'Seeded from the TM Master contact export'
+      : c.source === 'orders' ? 'Created from a supplier name on the order register'
+      : 'Added in IDMS') +
+    (c.created_by ? ' by ' + pcEsc(c.created_by) : '') +
+    (c.updated_at ? ' · last edited ' + pcEsc(pcDate(c.updated_at)) +
+      (c.updated_by ? ' by ' + pcEsc(c.updated_by) : '') : '') +
+    '. Edits made here are events layered over the export, so a fresh TM contact list ' +
+    'will not undo them.</div>';
+
+  document.getElementById('body').innerHTML =
+    banner + lastCard + reach + terms + history + provenance;
+}
+
+// ── Add and edit ────────────────────────────────────────────
+
+function ctcStartNew() {
+  var s = ctcState();
+  s.isNew = true;
+  s.sel = null;
+  s.editing = { contact_id: contactsReduce.newContactId() };
+  CTC_FIELDS.forEach(function (f) { s.editing[f.k] = ''; });
+  CTC_FLAGS.forEach(function (f) { s.editing[f.k] = 0; });
+  pcRenderAll();
+  window.scrollTo(0, 0);
+}
+
+function ctcStartEdit() {
+  var s = ctcState();
+  var c = ctcGet(s.sel);
+  if (!c) return;
+  s.isNew = false;
+  s.editing = { contact_id: c.contact_id };
+  CTC_FIELDS.forEach(function (f) { s.editing[f.k] = c[f.k] == null ? '' : String(c[f.k]); });
+  CTC_FLAGS.forEach(function (f) { s.editing[f.k] = c[f.k] ? 1 : 0; });
+  pcRenderAll();
+  window.scrollTo(0, 0);
+}
+
+function ctcCancel() {
+  var s = ctcState();
+  s.editing = null;
+  s.isNew = false;
+  pcRenderAll();
+}
+
+// The form is a screen rather than a modal sheet: nineteen fields and four
+// checkboxes inside an overlay on a 375px screen is a scroll trap with the
+// Save button somewhere below the fold.
+function ctcRenderForm() {
+  var s = ctcState();
+  var d = s.editing;
+  var open = ctcGet(s.sel);
+
+  pcHead(s.isNew ? 'New contact' : 'Editing ' + ((open && open.name) || ''),
+    s.isNew ? 'Added aboard — it keeps its own id when TM next exports'
+            : 'Changes are recorded as an event, field by field',
+    '<button class="icon-btn" onclick="ctcCancel()">Cancel</button>' +
+    '<button class="btn sm" onclick="ctcSave()">Save</button>');
+
+  var field = function (f) {
+    var v = pcEsc(d[f.k] == null ? '' : d[f.k]);
+    var input = f.type === 'textarea'
+      ? '<textarea class="field" id="ctc-f-' + f.k + '" rows="4" ' +
+        'style="resize:vertical;font-family:inherit">' + v + '</textarea>'
+      : '<input class="field" id="ctc-f-' + f.k + '" type="' + (f.type || 'text') + '" ' +
+        'value="' + v + '">';
+    return '<label class="lbl" for="ctc-f-' + f.k + '">' + pcEsc(f.label) +
+      (f.required ? ' *' : '') + '</label>' + input;
+  };
+
+  var flags = CTC_FLAGS.map(function (f) {
+    return '<label class="ctc-flag"><input type="checkbox" id="ctc-f-' + f.k + '"' +
+      (d[f.k] ? ' checked' : '') + '> ' + pcEsc(f.label) + '</label>';
+  }).join('');
+
+  document.getElementById('body').innerHTML =
+    '<div class="card">' + CTC_FIELDS.map(field).join('') +
+      '<div class="ctc-flags">' + flags + '</div>' +
+      '<div class="err" id="ctc-err"></div>' +
+      '<div class="sheet-actions">' +
+        '<button class="btn ghost" onclick="ctcCancel()">Cancel</button>' +
+        '<button class="btn" id="ctc-save" onclick="ctcSave()">' +
+          (s.isNew ? 'Create' : 'Save') + '</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="reg-count">Order history, spend and "last referenced" are read off the ' +
+      'register TM Master owns and cannot be edited here.</div>';
+
+  var n = document.getElementById('ctc-f-name');
+  if (n && s.isNew) n.focus();
+}
+
+async function ctcSave() {
+  var s = ctcState();
+  var d = s.editing;
+  if (!d) return;
+  var err = document.getElementById('ctc-err');
+  var name = pcVal('ctc-f-name');
+  if (!name) { if (err) err.textContent = 'A contact needs a name.'; return; }
+
+  // An edit carries every editable field, not a diff. The reducer applies what
+  // the event holds, so sending the whole form is what makes clearing a field
+  // possible at all.
+  var payload = { contact_id: d.contact_id };
+  CTC_FIELDS.forEach(function (f) { payload[f.k] = pcVal('ctc-f-' + f.k) || null; });
+  CTC_FLAGS.forEach(function (f) {
+    var el = document.getElementById('ctc-f-' + f.k);
+    payload[f.k] = (el && el.checked) ? 1 : 0;
+  });
+  payload.name = name;
+
+  var btn = document.getElementById('ctc-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    await pcAppendEvent(s.isNew ? 'contact_created' : 'contact_updated', payload);
+    pcToast(s.isNew ? 'Contact added.' : 'Contact updated.');
+    s.sel = d.contact_id;
+    s.editing = null;
+    s.isNew = false;
+  } catch (e) {
+    if (err) err.textContent = pcErrText(e);
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    return;
+  }
+  pcRenderAll();
+}
+
+async function ctcRetire() {
+  var s = ctcState();
+  var c = ctcGet(s.sel);
+  if (!c) return;
+  if (!ctcCanRetire()) { pcToast('Retiring a contact is an approver action.'); return; }
+  var why = prompt('Why is ' + c.name + ' being retired?\n\nThe card is kept — ' +
+    (c.order_count || 0) + ' order' + ((c.order_count || 0) === 1 ? '' : 's') +
+    ' still point at it — and hidden from the list.');
+  if (why === null) return;
+  try {
+    await pcAppendEvent('contact_archived', { contact_id: c.contact_id, reason: why || null });
+    pcToast('Contact retired.');
+  } catch (e) {
+    pcToast('Could not retire: ' + pcErrText(e));
+  }
+  pcRenderAll();
+}
+
+async function ctcRestore() {
+  var s = ctcState();
+  var c = ctcGet(s.sel);
+  if (!c) return;
+  try {
+    await pcAppendEvent('contact_restored', { contact_id: c.contact_id });
+    pcToast('Contact brought back.');
+  } catch (e) {
+    pcToast('Could not bring it back: ' + pcErrText(e));
+  }
+  pcRenderAll();
 }
 
 // ── View: Exceptions ────────────────────────────────────────
