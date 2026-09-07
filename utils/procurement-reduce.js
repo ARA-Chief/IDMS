@@ -47,6 +47,36 @@
     return (v === null || v === undefined || v === '') ? UNASSIGNED_LOCATION : String(v);
   }
 
+  // ── Count sessions (§42.7a) ────────────────────────────────────────────────
+  // A session is one space walked end to end on one date. The counts filed
+  // under it are ordinary `count` movements carrying a `session_id` — the
+  // arithmetic is untouched, and a spot correction is the same movement with
+  // no session on it. What a session adds is the thing a movement cannot say:
+  // which items were looked at and found *right*. Those move nothing, so they
+  // leave no movement, and without the session they are indistinguishable from
+  // the items nobody ever reached.
+  function newCountSession(sessionId) {
+    return {
+      session_id: sessionId,
+      location_id: null,
+      scope: 'here',          // 'here' = this space only, 'deep' = it and everything under it
+      status: 'open',         // open | closed | abandoned
+      note: null,
+      opened_at: null,
+      opened_by: null,
+      closed_at: null,
+      closed_by: null,
+      abandoned_reason: null,
+      // What the sheet held when it was opened. Taken from the opening event
+      // rather than recomputed: coverage is a claim about the sweep as it was
+      // walked, and a later transfer into the space must not retrospectively
+      // turn a complete count into a partial one.
+      expected: 0,
+      counts: [],             // movement rows filed under this session
+      confirmed: []           // item_ids seen and found correct
+    };
+  }
+
   // ── Item shell ─────────────────────────────────────────────────────────────
 
   // ── The catalogue (§42.14) ─────────────────────────────────────────────────
@@ -183,6 +213,11 @@
       movements: [],          // derived, in replay order
       last_movement_at: null,
       last_count_at: null,
+      // Last time anybody laid eyes on it: a count, or a session that reached
+      // it and found the book right. `last_count_at` only moves when a count
+      // movement was filed, so on its own it cannot tell a shelf that has been
+      // audited clean from one nobody has opened in a year.
+      last_verified_at: null,
 
       // §42.14. IDMS keeps its own reorder policy over the mirror, because
       // 13,885 of the 14,487 items in TM Master carry no minimum at all and a
@@ -253,6 +288,7 @@
       delta: 0,
       po_id: p.po_id || null,
       po_line_id: p.po_line_id || null,
+      session_id: p.session_id || null,
       task_id: p.task_id || null,
       equipment_code: p.equipment_code || null,
       unit_cost: (p.unit_cost === 0 || p.unit_cost) ? Number(p.unit_cost) : null,
@@ -305,6 +341,7 @@
       row.variance = q(counted - book);
       row.delta = row.variance;
       item.last_count_at = ev.timestamp || item.last_count_at;
+      item.last_verified_at = ev.timestamp || item.last_verified_at;
 
     } else {
       return null;              // unknown kind — recorded nowhere, changes nothing
@@ -407,7 +444,7 @@
       return ka < kb ? -1 : ka > kb ? 1 : 0;
     });
 
-    var items = {}, reqs = {}, pos = {};
+    var items = {}, reqs = {}, pos = {}, sessions = {};
     var baselineAt = (catalogue && catalogue.baseline_at) || null;
 
     // ── Seed from the catalogue ──────────────────────────────────────────────
@@ -500,6 +537,20 @@
         po.created_at = po.created_at || ev.timestamp || null;
         po.created_by = po.created_by || ev.actor || null;
 
+      } else if (ev.event_type === 'count_session_opened') {
+        if (!p.session_id) continue;
+        // In the creation pass with the other three, and for the same reason:
+        // the phone that opens a sheet and the phone that files a count into it
+        // may be different phones with different clocks, and a count sorted
+        // ahead of the session it belongs to must not lose its session.
+        var cs = sessions[p.session_id] || (sessions[p.session_id] = newCountSession(p.session_id));
+        cs.location_id = locOf(p.location_id);
+        cs.scope = (p.scope === 'deep') ? 'deep' : 'here';
+        cs.note = p.note || cs.note;
+        cs.expected = Number(p.expected_items) || 0;
+        cs.opened_at = cs.opened_at || ev.timestamp || null;
+        cs.opened_by = cs.opened_by || ev.actor || null;
+
       } else {
         mutations.push(ev);
       }
@@ -589,6 +640,8 @@
             item_id: mi.item_id, kind: pay.kind, qty: mag(pay.qty),
             location_id: locOf(pay.location_id), to_location_id: pay.to_location_id || null,
             delta: 0, superseded: true,
+            counted_qty: (pay.kind === 'count') ? mag(pay.counted_qty) : null,
+            session_id: pay.session_id || null,
             po_id: pay.po_id || null, po_line_id: pay.po_line_id || null,
             reason: pay.reason || null, note: pay.note || null,
             actor: e.actor || null, timestamp: e.timestamp || null
@@ -597,6 +650,37 @@
         }
         var row = applyMovement(mi, e);
         if (row) mi.movements.push(row);
+
+      } else if (t === 'count_session_closed') {
+        var csc = sessions[pay.session_id];
+        if (!csc || csc.status !== 'open') continue;
+        csc.status = 'closed';
+        csc.closed_at = e.timestamp || null;
+        csc.closed_by = e.actor || null;
+        if (pay.note) csc.note = pay.note;
+        if (pay.expected_items !== undefined && pay.expected_items !== null) {
+          csc.expected = Number(pay.expected_items) || 0;
+        }
+        // Every item the sweep reached and found right. They file no movement,
+        // because nothing moved — this list is the only evidence they were
+        // looked at, and it is the whole difference between "counted, correct"
+        // and "never reached".
+        (Array.isArray(pay.confirmed) ? pay.confirmed : []).forEach(function (iid) {
+          if (csc.confirmed.indexOf(iid) === -1) csc.confirmed.push(iid);
+          var ci = items[iid];
+          if (ci) ci.last_verified_at = e.timestamp || ci.last_verified_at;
+        });
+
+      } else if (t === 'count_session_abandoned') {
+        var csa = sessions[pay.session_id];
+        if (!csa || csa.status !== 'open') continue;
+        // The counts already filed under it stand. They corrected real shelves,
+        // and a shelf does not become uncounted because the walk was cut short.
+        // What is abandoned is only the claim that the space was swept.
+        csa.status = 'abandoned';
+        csa.closed_at = e.timestamp || null;
+        csa.closed_by = e.actor || null;
+        csa.abandoned_reason = pay.reason || null;
 
       } else if (t === 'requisition_updated') {
         var ru = reqs[pay.req_id];
@@ -812,10 +896,152 @@
       });
     });
 
-    return { items: items, requisitions: reqs, purchase_orders: pos };
+    // ── Count sessions: fold the movements back onto the sweep ────────────────
+    // The counts are already applied; this only gathers them, so a session can
+    // be read as one sheet. Nothing here changes a quantity.
+    Object.keys(items).forEach(function (id) {
+      items[id].movements.forEach(function (mv) {
+        if (!mv.session_id) return;
+        var s = sessions[mv.session_id];
+        if (s) s.counts.push(mv);
+      });
+    });
+
+    Object.keys(sessions).forEach(function (sid) {
+      var s = sessions[sid];
+      s.counts.sort(function (a, b) {
+        var ka = String(a.timestamp || ''), kb = String(b.timestamp || '');
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+      });
+      // A count that found the book right is not a variance. A sweep of forty
+      // items with three wrong is a good sweep, and it should not read as three
+      // items' worth of work.
+      s.variances = s.counts.filter(function (m) { return q(m.variance) !== 0; });
+      s.variance_count = s.variances.length;
+      s.items_counted = s.counts.length;
+      s.items_confirmed = s.confirmed.length;
+      // An item both counted and confirmed is one item, not two — the operator
+      // ticked it and then thought better of it.
+      var seen = {};
+      s.counts.forEach(function (m) { seen[m.item_id] = true; });
+      s.confirmed.forEach(function (iid) { seen[iid] = true; });
+      s.items_seen = Object.keys(seen).length;
+      s.net_delta = s.counts.reduce(function (t, m) { return q(t + q(m.delta)); }, 0);
+      s.coverage = s.expected > 0 ? Math.min(1, s.items_seen / s.expected) : null;
+    });
+
+    return { items: items, requisitions: reqs, purchase_orders: pos,
+             count_sessions: sessions };
   }
 
   // ── Views over the derived state ───────────────────────────────────────────
+
+  // Every location at or under `locationId`, itself first. The tree is 664
+  // nodes four deep, so this walks rather than indexes.
+  function locationsUnder(catalogue, locationId) {
+    var out = [locationId];
+    var locs = (catalogue && catalogue.locations) || null;
+    if (!locs) return out;
+    var frontier = [locationId];
+    while (frontier.length) {
+      var next = [];
+      Object.keys(locs).forEach(function (k) {
+        if (frontier.indexOf(locs[k].parent_id) === -1) return;
+        if (out.indexOf(k) !== -1) return;      // a cycle in the export must not hang the screen
+        out.push(k);
+        next.push(k);
+      });
+      frontier = next;
+    }
+    return out;
+  }
+
+  // The count sheet for one space: what a person standing in front of it should
+  // be asked about. Two things belong on it and they are not the same thing —
+  // stock the book says is *here now*, and items whose *home* is here even
+  // though the book says none are left. The second is the more useful half of
+  // an audit: a bin the book has emptied is exactly where a miscount hides.
+  //
+  // Defined here rather than in either screen because the Console and the PWA
+  // must ask the same question of the same shelf, and a sheet that differs by
+  // device is a sheet nobody can sign.
+  function locationSheet(state, catalogue, locationId, opts) {
+    opts = opts || {};
+    var ids = (opts.scope === 'deep')
+      ? locationsUnder(catalogue, locationId)
+      : [locationId];
+    var wanted = {};
+    ids.forEach(function (id) { wanted[id] = true; });
+
+    var rows = [];
+    var items = (state && state.items) || {};
+    Object.keys(items).forEach(function (id) {
+      var it = items[id];
+      if (it.archived && !opts.include_archived) return;
+
+      var here = 0, placed = 0, at = null;
+      Object.keys(it.by_location || {}).forEach(function (loc) {
+        if (!wanted[loc]) return;
+        here = q(here + q(it.by_location[loc]));
+        placed++;
+        at = loc;
+      });
+      var homeLoc = locOf(it.default_location_id);
+      var home = wanted[homeLoc] === true;
+      if (!placed && !home) return;
+
+      rows.push({
+        item_id: it.item_id,
+        name: it.name || it.item_id,
+        unit: it.unit || 'ea',
+        part_number: it.part_number || null,
+        // The book figure for THIS space, not the item's total. Counting a bin
+        // against a shipwide total is how a count sheet destroys good stock.
+        book_qty: here,
+        on_hand: it.on_hand,
+        // 2,181 items carry no stock figure at all. Unknown is not zero, and a
+        // sheet that prints 0 invites somebody to agree with it.
+        stock_unknown: !!it.stock_unknown && !placed,
+        is_home: home,
+        home_location_id: home ? homeLoc : null,
+        // Which space inside the sheet the book figure actually came from, when
+        // there is exactly one. A deep sheet summing three bins has no single
+        // answer, and a count filed against the wrong bin is worse than none —
+        // so this is null there, and the screen offers no box.
+        count_location_id: (placed === 1) ? at : (placed === 0 && home ? homeLoc : null),
+        elsewhere: q(q(it.on_hand) - here),
+        min_qty: effective(it, 'min_qty'),
+        critical: !!it.critical,
+        last_count_at: it.last_count_at || null,
+        last_verified_at: it.last_verified_at || null
+      });
+    });
+
+    rows.sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name));
+    });
+    return rows;
+  }
+
+  // When each space was last swept, and how it went. Keyed by location, latest
+  // closed session wins — an abandoned one is not a sweep and does not count.
+  function lastVerified(state) {
+    var out = {};
+    var sessions = (state && state.count_sessions) || {};
+    Object.keys(sessions).forEach(function (sid) {
+      var s = sessions[sid];
+      if (s.status !== 'closed' || !s.location_id) return;
+      var prev = out[s.location_id];
+      if (prev && String(prev.closed_at || '') >= String(s.closed_at || '')) return;
+      out[s.location_id] = {
+        session_id: s.session_id, closed_at: s.closed_at, closed_by: s.closed_by,
+        scope: s.scope, items_seen: s.items_seen, expected: s.expected,
+        variance_count: s.variance_count, net_delta: s.net_delta, coverage: s.coverage
+      };
+    });
+    return out;
+  }
+
 
   // §42.10. What is already on order counts — the failure this whole module
   // exists to prevent is ordering a part a second time because nobody could
@@ -957,6 +1183,9 @@
     suggestedOrderQty: suggestedOrderQty,
     exceptions: exceptions,
     UNASSIGNED_LOCATION: UNASSIGNED_LOCATION,
+    locationSheet: locationSheet,
+    locationsUnder: locationsUnder,
+    lastVerified: lastVerified,
     _q: q
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
