@@ -457,7 +457,8 @@ var REGISTER_CAP = 300;    // rows rendered at once; 14,487 will not go on a pag
 
 var DEFAULT_CFG = {
   schema_version: 1, locations: [], categories: [], units: [], suppliers: [],
-  settings: { approver_roles: ['Chief Engineer', 'Admin'], default_currency: 'USD',
+  settings: { approver_roles: ['Chief Engineer', 'Admin'],
+              access_departments: ['Engine Room'], default_currency: 'USD',
               receiving_locations: [], exception_stale_days: 14 }
 };
 
@@ -598,17 +599,37 @@ function pcIdmsLogin() {
   pcEnterApp();
 }
 
-// §42.11. Admin tier, an approver role, or the department on the crew record —
-// the last being the path that takes over once the records carry Procurement.
+// §42.11. Admin tier, an approver role, a department the vessel has opened the
+// module to, or Procurement itself on the crew record — the last being the path
+// that takes over once the records carry the department.
+//
+// `settings.access_departments` is the list the whole engine room arrives
+// through: stores are held by the department, not by the rank, so gating a
+// shelf on an approver role kept the people who actually stow the parts out.
+// Approval is deliberately *not* widened with it — see pcCanApprove().
+//
+// An emptied list means an empty list, not the default: clearing the field in
+// Settings is the only way to close the module back to roles alone. A *missing*
+// key is what falls back, so a config written before this key existed — which
+// is every config now on OneDrive — still admits the engine room.
+function pcAccessDepartments(cfg) {
+  var d = cfg && cfg.settings && cfg.settings.access_departments;
+  return Array.isArray(d) ? d : DEFAULT_CFG.settings.access_departments;
+}
+
 function pcHasAccess(user, cfg) {
   if (!user) return false;
   if ((user.permission_tier || '') === 'admin') return true;
-  if ((user.departments || []).indexOf('Procurement') !== -1) return true;
+  var mine = user.departments || [];
+  if (mine.indexOf('Procurement') !== -1) return true;
+  if (pcAccessDepartments(cfg).some(function (d) { return mine.indexOf(d) !== -1; })) return true;
   var roles = ((cfg && cfg.settings && cfg.settings.approver_roles) ||
                DEFAULT_CFG.settings.approver_roles);
   return roles.indexOf(user.role) !== -1;
 }
 
+// Access is not approval. Everyone the department gate lets in can record a
+// shelf and raise a requisition; committing spend stays with approver_roles.
 function pcCanApprove() {
   if (!PC.user) return false;
   if (PC.user.username === 'browser') return false;   // §41.4d reserved actor
@@ -622,10 +643,12 @@ async function pcEnterApp() {
   await pcLoadConfig();
 
   if (!pcHasAccess(PC.user, PC.cfg)) {
+    var depts = pcAccessDepartments(PC.cfg);
     document.getElementById('noaccess-msg').textContent =
       (PC.user.name || PC.user.username) + ' is signed in as ' + (PC.user.role || 'crew') +
       '. Procurement is open to admins, to ' +
       ((PC.cfg.settings.approver_roles || []).join(' and ') || 'approvers') +
+      (depts.length ? ', to anyone in ' + depts.join(' or ') : '') +
       ', and to anyone carrying Procurement on their crew record.';
     pcShow('screen-noaccess');
     return;
@@ -4521,6 +4544,15 @@ function pcViewSettings() {
         pcEsc(s.default_currency || '') + '"' + (editable ? '' : ' disabled') + '></div>' +
     '</div>' +
     '<div class="fieldrow" style="max-width:640px">' +
+      '<div><label class="lbl">Departments with access (comma separated)</label>' +
+        '<input class="field" id="st-depts" value="' +
+        pcEsc(pcAccessDepartments(PC.cfg).join(', ')) +
+        '"' + (editable ? '' : ' disabled') + '>' +
+        '<div class="sub muted">Opens the whole module — the register, movements, counts ' +
+          'and raising a requisition — to everyone in these departments. It does not ' +
+          'grant approval.</div></div>' +
+    '</div>' +
+    '<div class="fieldrow" style="max-width:640px">' +
       '<div><label class="lbl">Default receiving location</label>' +
         '<select class="field" id="st-recv"' + (editable ? '' : ' disabled') + '>' +
         // Show what is actually in force, not a blank that the browser fills
@@ -4559,6 +4591,17 @@ async function pcSettingsSave() {
     receiving_locations: pcVal('st-recv') ? [pcVal('st-recv')] : [],
     exception_stale_days: Number(pcNum('st-stale')) || 14
   };
+
+  // An empty department list is a real answer here (§42.11), which means an
+  // absent *field* must not be able to impersonate one — pcVal returns '' for
+  // both, and writing that would quietly shut the engine room out on a save
+  // from a screen that never showed the control. Only a field actually on the
+  // page writes the key; otherwise the merge below leaves it as it stands.
+  var deptEl = document.getElementById('st-depts');
+  if (deptEl) {
+    next.access_departments = deptEl.value.split(',')
+      .map(function (x) { return x.trim(); }).filter(Boolean);
+  }
 
   var path = ONEDRIVE_BASE + '/config/procurementconfig.json';
   var base = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +

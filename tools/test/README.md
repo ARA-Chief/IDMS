@@ -22,9 +22,11 @@ neither.
 
 | Suite | Guards |
 |---|---|
+| `access.test.js` | Who gets into the module (§42.11). The gate is written twice — `userIsProcurement()` in `index.html` offers the tile, `pcHasAccess()` in `procurement.html` is authoritative — so this suite pulls both out of their pages and asserts they answer identically for every crew record, as well as asserting the rule itself: the engine room is in, access is not approval, a missing `access_departments` falls back to the default and an emptied one means closed. |
 | `reduce.test.js` | The arithmetic in `utils/procurement-reduce.js`, synthetically: out-of-order replay, partial and over receipt, transfers, count variance, negative stock, partial approval, decimal hygiene, and the rule that a negative `qty` is a magnitude rather than an inverted movement. |
 | `freetext.test.js` | One regression. A free-text order line that is received becomes a real item, and the order line must link to it **even though the order is already sent** — without that, stock was right and `on_order` silently missed. |
 | `catalogue.test.js` | The TM Master baseline (§42.14) against the **real** 14,487-item catalogue: hydration, dictionary decoding, the stowage tree, `baseline_at` suppressing already-absorbed movements, unknown stock never reading as a shortage, and the IDMS policy overlay winning over the mirror and clearing back to it. |
+| `plan.test.js` | §43's derivation in `utils/plan-derive.js`, synthetically: the three demand rings and their order, the one-level asset join, level-vocabulary defects, provisional sign-offs, the two currencies kept apart on a refresh row, unassessable targets kept out of Now/Next, and the vessel view's uncovered / single-holder / no-assessor findings. |
 | `console-derive.test.js` | The cross-repo contract. Every derived row is checked against the column lists **parsed out of the Console's `main.js`** — a column the INSERT names and the row does not carry is how that lane breaks at runtime. Also asserts the reducer mirror is byte-identical, and the CSP rules below. |
 
 ## Two rules worth knowing about

@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.40 — F/V Araho**
+**Version 2.41 — F/V Araho**
+
+v2.41 *(2026-09-07)* — **Development Plan specified (§43, new); §35 KSA Profiles superseded.** A *derived* training plan per crew member — computed at read time from what their work demands and what the journal says they hold, never stored — answering: which competency cards does your work demand, at what level, what do you hold, and what closes the gap. Demand comes from three rings, strongest first: tasks holding the member, the department's due work inside a window, and the department's whole card set; each ring joins task equipment codes to SOP and TASK cards by the same asset rule the Console already uses for competency currency (equal, or one level under), then follows `requires_ksa`. Two currencies are kept apart and never folded into one ladder: **practice currency** (did the work inside the chief's recency window — the existing pips, time-based) and **revision currency** (has read the current revision of a card — version-based, never time-based). The plan renders on three surfaces from one derivation — the member's own card (Console User Profile and a new PWA **Me** section: Profile, KSA card, Training), the chief's member sheet, and a new Console **KSA Plan** panel that holds the per-department configuration and the vessel view (competencies demanded by due work that nobody holds; held by exactly one person). The derivation lives in `utils/plan-derive.js`, **byte-identical with the Console's copy** like the reducers, enforced by `tools/test/console-derive.test.js`. Two new Console-published mirrors under `data/personnel/`: `ksa-demand.json` (every SOP and TASK card's asset, department and `requires_ksa`, with vocabulary defects listed rather than silently normalised) and `currency/{crew_id}.json` (per-member competency currency, so the phone can show it without SQLite). `ksa-config.json` gains a department-keyed `plan` block. Guardrails carried over from the Console's personnel-development decisions and restated as contract: no percentage complete, no ranking across members, nothing feeds pay or discipline; the chief's grid gains one safety flag only. The read-marker stream that arms revision currency (`data/personnel/exposure/{YYYY}/`) is specified here and **not built in this slice** — it needs the Navipedia export to give the phone a card to open. §35 is superseded in place: its supervisor score and per-skill counters contradict the exposure-not-proficiency decision and are dropped.
 
 v2.40 *(2026-09-07)* — **§42.16 new: the contact book, and the supplier field that never worked.** The Console seeded 1,745 contacts from TM Master's contact export on 2026-09-06 and this spec never recorded it, so the phone had no book — and that was not only a missing screen. `procurementconfig.json`'s supplier list has never had a single entry in it, which meant `pcSupplierName()` returned the id it was given: every order and PO on the phone printed its supplier as a raw `CON-####`, and the New order form's supplier `<select>` offered exactly one option, "— none —", so **no order raised on the phone could name who it was going to.** Both are fixed by the book: names resolve from it, and the form's dropdown is now a search over it, because 1,745 options in a `<select>` is the same mistake as 14,487. The rules live in `utils/contacts-reduce.js`, **byte-identical with the Console's copy** the way `procurement-reduce.js` is, and enforced as such by `tools/test/console-derive.test.js`. The one rule worth stating twice: **the TM export is a baseline, not the truth** — add / edit / retire are `contact_created` / `contact_updated` / `contact_archived` / `contact_restored` events replayed over whatever baseline is current, **field by field, last write wins**, so a phone number corrected aboard survives the next export while the fields nobody touched still come from TM. Order history, spend and "last referenced" are TM's and no event may write them. Retiring never deletes: the order register still points at the card. The phone reads its order history off the baseline's own folded figures and its 25-order `recent` tail rather than fetching `order-register.json`, which is 2.7 MB to re-derive numbers already in hand — the supplier join is still made exactly once, in the seed, and nothing re-resolves a supplier from its name. New PWA screen **Contacts** (`procurement.html?view=contacts`) with its own hub tile, PWA 1.18. Two things measured against the real book and got wrong the first time, both now in `tools/test/contacts.test.js`: a comma is **not** a separator in the e-mail field (54 contacts are written `Surname, Given <addr>`, and splitting on it linked the surname to nothing) and a slash is **not** a separator in the phone field (93 numbers are written `207/594-4500`, and splitting on it dials 594-4500 — a wrong number rather than no number). 14 e-mail fields hold no address at all and 7 phone fields cannot be dialled; those are printed, not linked. Console-side Order history and Minimums remain Console-only, deliberately.
 
@@ -1091,6 +1093,14 @@ Documents/IDMS/
 │   │   │   └── {YYYY}/             ← {iso}-{event_id}.json — Notes Hub append-only event stream (§41)
 │   │   └── aggregates/
 │   │       └── {YYYY}/             ← notes-aggregate-{YYYY}.json (Console-derived cold-start cache, ETag-republished)
+│   ├── personnel/
+│   │   ├── ksa-registry.json       ← every signable card the Vault holds, Console-published mirror (§43.3)
+│   │   ├── ksa-demand.json         ← every SOP/TASK card's asset, department and requires_ksa — the demand table (§43.3)
+│   │   ├── ksa-config.json         ← tracked-KSA list + per-department `plan` block (§43.4)
+│   │   ├── currency/               ← {crew_id}.json — per-member competency currency snapshot, Console-published (§43.3)
+│   │   ├── exposure/
+│   │   │   └── {YYYY}/             ← {iso}-{event_id}.json — card read markers, append-only (§43.7; specified, not built)
+│   │   └── records/                ← {stamp}-{type}-{id8}.json — append-only supervisory journal (IDMS-Console docs/personnel-development.md)
 │   └── procurement/
 │       ├── events/
 │       │   └── {YYYY}/             ← {iso}-{event_id}.json — Procurement append-only event stream (§42)
@@ -6006,23 +6016,15 @@ The `data/messages/` folder is never created. The polling delivery model and the
 
 ## §35 — KSA Profiles
 
-**Status:** Not built
-**Location:** Personnel → Crew Profiles (embedded tab)
+**Status:** SUPERSEDED by §43 Development Plan *(v2.41, 2026-09-07)* — never built; do not build.
 
-Skill categories defined in Config → Crew Setup.
+This section predated the Console's KSA / Development screen and the decisions recorded in `IDMS-Console/docs/personnel-development.md`, which it contradicts on three points:
 
-**KSA record per crew member per skill:**
+- **`supervisor_score` and per-skill `task_completions` are dropped.** Exposure is never proficiency; there is no per-person score anywhere in the system, by decision. Verified competence is the four-level sign-off ladder in the personnel journal, and nothing else.
+- **`skill_id` against `skilltagsconfig.json` is dropped as the competency key.** The Vault's card ids (`KSA-*`, `SKG-*`, `SKD-*`) are the vocabulary, mirrored to `data/personnel/ksa-registry.json`. Task `skill_tags` stay as descriptive labels and never drive the plan.
+- **Storage inside `crewconfig.json` is dropped.** Nothing personnel-development lands in the crew registry — explicit decision. The journal is `data/personnel/records/`.
 
-| Field              | Type     | Notes                                                       |
-|--------------------|----------|-------------------------------------------------------------|
-| `skill_id`         | string   | References a defined skill category                         |
-| `task_completions` | integer  | Count of tasks completed carrying this skill tag            |
-| `asset_history`    | string[] | Array of asset codes this crew member has worked on         |
-| `last_activity`    | string   | Date of most recent qualifying task closure                 |
-| `supervisor_score` | integer  | Optional manual override score (1–5), set by admin          |
-| `notes`            | string   | Free text from contract review                              |
-
-**Storage:** embedded within `crewconfig.json` as `ksa` array on each crew member object, or as separate `ksaprofiles.json` if file size becomes a concern.
+What this section wanted — a per-member view of competence and what to do next — is §43.
 
 ---
 
@@ -7740,7 +7742,7 @@ Four governing rules, stated once and enforced everywhere:
 
 The module is its own page for the same three reasons Notes is: `index.html` is already ~11k lines and every screen added to it is paid for by everyone on every load; a storekeeper wants the register open in a window all day while working the shelves; and a page of its own can be worked on without contending for the single file every other module also lives in.
 
-**Procurement is a real department, not a synthetic one.** Unlike Purser (role-gated hub, no config of its own), Procurement appears in the department picker on its own terms, carries `procurementconfig.json`, and owns an event stream. It is *gated* by role rather than by `departments[]` membership (§42.11) only because the crew records have no Procurement department to put anyone in yet.
+**Procurement is a real department, not a synthetic one.** Unlike Purser (role-gated hub, no config of its own), Procurement appears in the department picker on its own terms, carries `procurementconfig.json`, and owns an event stream. It was *gated* by role rather than by `departments[]` membership, for want of a Procurement department to put anyone in; since 2026-09-07 it is gated by department after all — `settings.access_departments`, shipping as the engine room (§42.11).
 
 ### 42.3 OneDrive files
 
@@ -7822,6 +7824,7 @@ This file is the boundary between this module and the physical-structure work. *
   ],
   "settings": {
     "approver_roles": ["Chief Engineer", "Admin"],
+    "access_departments": ["Engine Room"],
     "default_currency": "USD",
     "receiving_locations": ["eng-store"],
     "exception_stale_days": 14
@@ -8041,14 +8044,23 @@ Deliberately close to §41's mostly-global stance — the record of who did what
 
 | Action | Who |
 |---|---|
-| Read everything | Anyone with the Procurement department |
-| Create/edit items, all stock movements, counts | Anyone with the Procurement department |
+| Read everything | Anyone through the department gate below |
+| Create/edit items, all stock movements, counts | Anyone through the department gate below |
 | Raise and submit a requisition | Anyone |
 | **Approve or reject a requisition** | `settings.approver_roles`, plus `permission_tier: "admin"` |
 | Create, send, cancel or close a PO | Approvers |
 | Edit `settings` | Approvers |
 
-**Department gate.** Procurement is offered to `permission_tier: "admin"`, to roles listed in `settings.approver_roles`, and to any user carrying `"Procurement"` in `departments[]` — the last being the path that takes over once the crew records have the department. Same shape as `userIsPurser()`, generalised.
+**Department gate.** Procurement is offered to `permission_tier: "admin"`, to roles listed in `settings.approver_roles`, to any user carrying `"Procurement"` in `departments[]`, and to anyone in a department named by `settings.access_departments` — which ships as `["Engine Room"]`. Same shape as `userIsPurser()`, generalised twice.
+
+**Why the fourth door** (2026-09-07). The first three left the module gated on *rank*: an approver role, or a Procurement department the crew records do not have. But stores are held by a department, not by a rank. The people who stow the parts, walk the shelves and know that the spare is behind the lathe were the people locked out, and a first engineer had to be asked to look a part number up. `access_departments` gates on the department the work actually belongs to, which is what §42.11's first two rows meant by "anyone with the Procurement department" all along — the engine room *is* that department on this vessel.
+
+**Access is not approval, and the split is the whole design.** Widening the door does not touch `pcCanApprove()` / `prcCanApprove()`: approving spend, and sending, cancelling or closing a PO, stay with `approver_roles` plus admin. An oiler can now count a shelf, book in a delivery and ask for a part. Agreeing to buy it is still an officer's signature. That is the line the table above draws between recording a shelf and committing money, and it is the reason widening was safe to do at all.
+
+**Two properties of the list worth keeping.**
+
+* **A missing key falls back to the default; an emptied list does not.** Every `procurementconfig.json` now on OneDrive was written before this key existed, so a missing key must mean `["Engine Room"]` or the change would do nothing until somebody edited JSON on a boat. But an *empty* list means empty — clearing the field in Settings is the only way to close the module back to roles alone, and reading it as "you must have meant the default" would make the setting one-way. `approver_roles` deliberately behaves the other way (empty falls back), because a config naming no approver is broken, while a config naming no department is merely strict.
+* **The gate is written twice and must agree.** `userIsProcurement()` in `index.html` decides whether the department is offered; `pcHasAccess()` in `procurement.html` is authoritative on the page. Widen one and not the other and you get a tile that appears and then refuses, or a module nobody can find. `tools/test/access.test.js` pulls both functions out of their pages and asserts they answer identically for every crew record — it caught exactly that disagreement while this was being built.
 
 **`browser` is a reserved actor here too** (§41.4d). A shared window may record movements — that is exactly what a receiving station is — but it can never approve a requisition or send an order, because those need a name.
 
@@ -8336,3 +8348,190 @@ the parsing.
 
 All existing crew records continue to render exactly as before. The field is
 purely additive.
+
+## §43 — Development Plan
+
+**Status:** Specified 2026-09-07 (v2.41); built in the same slice except where a subsection says otherwise. Supersedes §35 KSA Profiles.
+**Files:** `utils/plan-derive.js` (canonical; mirrored byte-identical to `IDMS-Console/src/renderer/js/plan-derive.js`); PWA **Me** screens in `index.html`; Console `personneldev.js` (member sheet, KSA Plan panel, My development), `src/main/personnel-dev.js` (demand export).
+**Location:** PWA: user menu → My Profile / My KSA Card / My Training, in every department. Console: Personnel → User Profile → My development; Personnel → KSA / Development → member sheet → Development plan; toolbar → **KSA Plan**.
+
+### 43.1 What it is
+
+A **derived view**, computed at read time and never stored — the same discipline as the Rough Log daily line (§31) — answering, for one crew member: *which competency cards does your work demand, at what level, what do you hold, and what closes the gap.* The system of record for what a competency **is** stays the Vault (`60 Training`); for who **holds** it, the personnel journal (`data/personnel/records/`); for what work **demands** it, the SOP and TASK cards (`20 Maintenance`). The plan adds no fourth store. Its only write path is the existing journal: a chief turns a plan row into a `goal` record.
+
+Four governing rules, carried over from `IDMS-Console/docs/personnel-development.md` §1 and restated here as contract because a plan is the surface most likely to be misread as a score:
+
+1. **Exposure, never proficiency; a plan is never a score.** No percentage complete per person, no ranking across members, no aggregate that could be read as a league table. Counts appear per group on a member's own sheet and nowhere else. Nothing here may feed pay, discipline or crew selection.
+2. **Two currencies, never one ladder.** *Practice currency* is whether the person did the work inside the chief's recency window — the existing sign-off pips, time-based. *Revision currency* is whether the person has read the current revision of a card — version-based, never time-based. Each has its own trigger and its own clearing action (§43.7). A three-state fold of the two was considered and withdrawn: it loses the case of someone current by doing who has not seen last week's revision, which is exactly the case §43.7 exists for.
+3. **Demand is joined, not authored.** No card lists which people need it; no task lists which competencies it needs. Demand is derived from a task's equipment code to the cards covering that equipment to their `requires_ksa`. Authoring stays in the lanes the Vault's Corpus Conventions assign.
+4. **The member sees their own plan and only their own.** Computed from `shared` journal records only, so it matches what the member can see of their record. A card whose latest sign-off is chiefs-only reads as a gap on the member's plan while the chief's sheet shows it held. That is the existing §6 visibility decision inherited, not a defect.
+
+### 43.2 Surfaces — one derivation, three views
+
+| Surface | Who | Shows | Writes |
+|---|---|---|---|
+| PWA **Me → My Training** | the member | Now / Next / Refresh groups; each card's four-rung ladder with held rung filled and required rung marked; prerequisite arrows only where a card carries `requires_ksa` (degrades to a list) | nothing |
+| PWA **Me → My KSA Card** | the member | sign-offs as pips with practice currency where a currency snapshot exists; revision-behind list (§43.7) | nothing |
+| PWA **Me → My Profile** | the member | the existing profile screen, reached from every department rather than Engine Room only | profile self-edits (unchanged) |
+| Console **User Profile → My development** | the member | the same plan rows as the phone | nothing |
+| Console **KSA / Development → member sheet → Development plan** | chief / department head | the plan with evidence columns; **Set as goal** on a row prefills the existing New goal form | `goal` record (existing) |
+| Console **KSA Plan** panel | chief / department head | per-department configuration (§43.4) and the vessel view (§43.5g) | `ksa-config.json → plan` |
+| Console grid | chief | **one safety flag only**: assigned work demands a competency this person has no sign-off for | nothing |
+
+All three read paths call the same `derivePlan()`; the phone and the Console must never compute two different plans from the same inputs. The Console is the only client that can compute practice currency (it needs SQLite), so it publishes a per-member snapshot the phone reads (§43.3c). Without that snapshot the phone still renders everything except practice-stale reasons, and says so on the screen.
+
+### 43.3 OneDrive files
+
+```
+data/personnel/
+├── ksa-registry.json          ← Console-published mirror of every signable card (existing; extended, §43.3a)
+├── ksa-demand.json            ← Console-published mirror of every SOP/TASK card's demand (new, §43.3b)
+├── currency/{crew_id}.json    ← Console-published competency currency per member (new, §43.3c)
+├── ksa-config.json            ← tracked list (existing) + `plan` block (new, §43.4)
+├── exposure/{YYYY}/           ← read markers, append-only (§43.7; specified, not built)
+└── records/                   ← the journal (unchanged)
+```
+
+Every published mirror carries `schema_version`, `generated_at` and `source_root`, is best-effort (a failed publish leaves the publishing machine current), and is read by the phone with a `localStorage` cache keyed on the file's eTag. Mirrors are **regenerated whole** on every Console KSA-screen open where the Vault share is reachable — the same freshness pattern as the registry today.
+
+**a. `ksa-registry.json` — extended.** Each card gains: `has_expectations` (false while the note body is a `[STUB]`), `requires_ksa` (prerequisite card ids, link text unwrapped, levels dropped), `recency_default_months` (an integer parsed from the card's `recency:` frontmatter, else `null` — every card today reads `[VERIFY]`, so this is a door, not data), `department` (from `tags`, see §43.8), `tags`.
+
+**b. `ksa-demand.json` — new.**
+```json
+{ "schema_version": 1, "generated_at": "…", "source_root": "…",
+  "cards": [{
+    "id": "SOP-0021-main-engine-start", "kind": "SOP", "sop_kind": "operation",
+    "title": "Main engine — start from the local engine panel",
+    "asset_code": "601.001", "asset_label": "601.001 Main Engine",
+    "department": "engine-room", "tags": ["engine-room"], "titles": "…",
+    "status": "draft", "revised": "2026-08-27",
+    "requires": [{ "id": "SKD-0029-main-engine-starting", "level": 3 }],
+    "requires_knowledge": [], "chains": [],
+    "defects": [] }],
+  "defects": [{ "card": "SOP-0071-…", "field": "requires_ksa", "entry": "[[SKD-0046-…]]: assisted",
+                "kind": "level-vocabulary", "applied": "supervised" }] }
+```
+Only SOP and TASK cards are demand cards. JOB cards are not (23 of 23 carry no `requires_ksa`; their decomposition tables are free text in 156 of 415 rows) — a job's demand is reached through the SOPs on the same asset. Levels are the canonical four (`aware`=1, `supervised`=2, `independent`=3, `assessor`=4). Anything else is normalised **and listed** under `defects`: `assisted` → `supervised`; a knowledge note (`KNG-*`, `KND-*`) at any level moves to `requires_knowledge` with no level (knowledge is unsignable by design); an unparseable entry is dropped with a defect. The defects list is the Vault's fix queue, printed by `tools/vault-export/check-plan-inputs.js`, and the exporter never edits a card.
+
+**c. `currency/{crew_id}.json` — new.** `{ schema_version, generated_at, crew_id, byCompetency: { "<card id>": { last, via, n } } }` — exactly the Console's `getCompetencyExposure` result for that member, published when the KSA screen or the member's own card computes it. `via` is `tool` | `equipment` | `discipline`, strongest first, as on the Console (§4a of the Console doc). Consumers treat a missing file as *unknown*, never as *stale*.
+
+### 43.4 Configuration — `ksa-config.json → plan`
+
+Department-keyed so a department head configures their own department. Absent keys take the defaults; the file is written whole by the Console under the existing `pdSaveKsaConfig` (low-frequency admin file, ETag-free by prior decision).
+
+```json
+"plan": {
+  "Engine Room": {
+    "rings":               { "assigned": true, "due": true, "baseline": true },
+    "due_window_days":     45,
+    "assessor_policy":     "chief",
+    "assessor_ranks":      ["Chief Engineer", "Assistant Engineer"],
+    "provisional_methods": ["workbook-import"],
+    "provisional_counts":  true,
+    "recency_default_months": 24,
+    "baseline_scope":      { "tags": ["engine-room"], "card_ids": [] }
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `rings` | Which demand rings are on. Turning one off removes its rows, never its data. |
+| `due_window_days` | How far ahead the **due** ring looks, on `due_date` or `tm_due`. |
+| `assessor_policy` | `chief` — every member whose role is in `assessor_ranks` can sign any card; `independent_rank` — a member holding level ≥ 3 on the card **and** a role in `assessor_ranks`; `record` — only a level-4 sign-off on that card. Today no one holds level 4 on any card, so `record` returns nobody everywhere; `chief` is the default and the empty top rung is still reported by the vessel view (§43.5g). |
+| `provisional_methods` | Sign-off `method` values that count as provisional (the 634 workbook imports). |
+| `provisional_counts` | `true`: provisional sign-offs hold their level, flagged. `false`: they are shown but count as missing for the gap. |
+| `recency_default_months` | Window for a card with no tracked entry and no `recency_default_months` of its own. `null` disables practice staleness for untracked cards. |
+| `baseline_scope` | Which demand cards are this department's syllabus: any card carrying one of `tags`, plus `card_ids` by hand. |
+
+### 43.5 Derivation — `utils/plan-derive.js`
+
+Pure: no DOM, no fetch, no globals. Inputs are plain objects; the caller decides visibility filtering, vessel confinement (`taskSameVessel`, §41.6a rule) and identity keying (**crew_id**, never username — §41.4a rule; `username` is carried only to match `assigned_to`).
+
+```
+derivePlan({ member: {crew_id, username, name, role, department},
+             tasks, demand, registry, signoffs, currency, config, now })
+  → { now: [row], next: [row], refresh: [row], unassessable: [row],
+      summary: { now, next, refresh, unassessable }, defects: [...] }
+```
+
+**a. Demand rings.** A task is *open* unless its status is `completed` or `cancelled`. Holder match: `assigned_to` equals the member's username, or `assignees` contains the member's crew_id or username. Due = `due_date`, else `tm_due` parsed as a date, else none.
+
+| Ring | Rows come from | Ordering key |
+|---|---|---|
+| `assigned` | open tasks holding the member → cards covering any of their `equipment_ids` → `requires` | task due, earliest first |
+| `due` | open tasks of the member's department, due inside `due_window_days`, not holding the member → same join | due, earliest first |
+| `baseline` | every demand card in `baseline_scope` → `requires` | number of demanding cards, most first |
+
+**b. The asset join.** A task equipment code matches a card whose `asset_code` is **equal to it or one level above it** (`601.001.027.001` demands the cards on `601.001.027` and does not demand the cards on `601.001`). This is the rule the Console already uses to credit competency currency from job history; the two must not drift, so the plan uses the same one and states it. A card with no numeric `asset_code` is vessel-global and is reached only through the baseline ring.
+
+**c. Required and held.** `required_level` per card = the maximum level any demanding card asks. `held_level` = the member's latest sign-off level for the card (canonical id; short ids resolve as on the Console), or 0. A provisional sign-off is flagged `provisional`; with `provisional_counts: false` its held level is treated as 0 for the gap while still displayed.
+
+**d. States.**
+
+| State | When |
+|---|---|
+| `held` | held ≥ required, and neither refresh condition (e) applies |
+| `partial` | 0 < held < required |
+| `missing` | no sign-off |
+| `unassessable` | the target is not a signable card in the registry, or `has_expectations` is false — named as a target, useless as an assessment; listed separately, never in Now/Next |
+
+**e. Refresh.** A held card lands in `refresh` rather than `held` when either applies, and the row says which: **practice-stale** — `currency[id].last` is absent or older than `now − months`, where months = tracked `recency_months` → card `recency_default_months` → config default; a `discipline`-only `via` never satisfies currency (weak evidence, same as the Console's dim date); **revision-behind** — the sign-off date precedes the card's `revised` date (the Console's existing ⚠ rule), or the member's read marker predates the card's revision (§43.7).
+
+**f. Grouping and order.** `now` = required by an `assigned` or `due` ring row and state ≠ held. `next` = baseline-only rows with state ≠ held. `refresh` = state held-but-refresh. Within a group: ring rank (assigned, due, baseline), then earliest due, then demand count descending, then **prerequisite depth** (a card that other required cards list in their `requires_ksa` sorts before them — the syllabus order; nearly empty today and left as the door it is), then label. Each row carries `demanded_by[]` — every demanding card with the ring, the task and its due where a task produced it — so a member can see *why*.
+
+**g. Vessel view** — `deriveVesselView({ members, tasks, demand, registry, config, now })`, the officer's trip question, computed over the department's active members:
+
+- `uncovered` — cards demanded by open tasks due inside the window that **nobody** holds at the required level.
+- `single_holder` — cards demanded inside the window held at the required level by **exactly one** person (the JSA §6 manning-risk finding, per trip instead of per job).
+- `no_assessor` — demanded cards for which `assessorsFor()` returns nobody under the configured policy.
+
+The vessel view names cards, not people-with-scores; a member appears only as *the* holder of a single-holder card.
+
+**h. Assessors.** `assessorsFor(cardId, members, signoffsByMember, config)` per the policy in §43.4; shown on every plan row as *who can sign this off*, empty rendered as "no assessor recorded" rather than blank.
+
+### 43.6 Presentation rules
+
+- The phone's Training page is three stacked groups with one line per card: label, lane chip, the four-rung ladder (held filled, required marked, provisional hollow-dotted), the shortest reason ("demanded by SOP-0021 · task due 12 Sep"). Tapping a card opens the card where a Navipedia export exists, else the demand list.
+- Refresh rows name their reason: *practice* or *revision*, never a merged "stale".
+- The chief's member sheet adds columns the phone omits: demanded-by, evidence (`tool` / `equipment` / `discipline` / `read`), method, assessors, and the **Set as goal** action, which opens `pdOpenNewGoalModal` prefilled with title, description and one milestone per gap rung.
+- Every screen carries the caption *exposure, not proficiency* or its plan equivalent: *what your work asks for, not how good you are*.
+
+### 43.7 Revision currency and read markers — specified, **not built in this slice**
+
+Revision currency is version-based only. A card that has not changed since the member read it is current however long ago that was.
+
+```
+data/personnel/exposure/{YYYY}/{iso}-{event_id}.json
+{ schema_version: 1, event_id, event_type: "card_read", timestamp, actor,
+  payload: { crew_id, card_id, card_revised, page_id? } }
+```
+
+- **Written by** the client that rendered the card, **only when** `(card_id, card_revised)` differs from the member's last marker for that card — volume is bounded by crew × cards × revisions. Attaches to lane cards only (SOP, TASK, KSA, SKG, SKD, KNG), never to Navipedia maps; reading a map that embeds a card records the card.
+- **Trigger:** the card's `revised` moves past the marker. **Clears:** opening the card writes a new marker. Nothing else touches it — not time, not dismissing a popup, not doing the job.
+- **Surfaces:** on job issue, a popup listing the cards in the task's demand chain that are behind, with the card's Change Log lines dated after the marker; on Me → My KSA Card as a standing list; on the chief's grid as a count per member. The Change Log parse needs each card's dated bullets exported into the demand and registry mirrors as `changes: [{date, text}]` — the Vault's lines are uniform (`- YYYY-MM-DD — text`).
+- **Never clears practice staleness.** A member cannot re-read their way to currency.
+- **Prerequisite:** the Navipedia export (schema section to follow) gives the phone a card to open. Until then no marker is written and the KSA Card page shows the Console's existing sign-off-before-revision flag only.
+
+### 43.8 Vault health rules the demand export enforces
+
+Reported, never fixed, by `node tools/vault-export/check-plan-inputs.js` (IDMS-Console), exit non-zero on any finding so it can gate a mirror publish:
+
+1. `requires_ksa` targets are signable cards and levels are one of the four rungs (§43.3b defects).
+2. A demanded card that is still a stub — Training's authoring queue, sorted by how many cards demand it.
+3. A SOP or TASK card with no department tag (`engine-room`, `deck`, `factory`, `accommodation`) cannot enter any baseline ring.
+4. The latest Change Log date must equal `revised:`; a card edited without either moving is invisible to revision currency.
+5. A `requires_ksa` target that resolves to nothing (dangling) — the Corpus Conventions queue, restated.
+
+### 43.9 Gate
+
+Reading one's own plan needs no role. The KSA Plan panel and the member-sheet plan are visible to `canSeePersonnelDev()` (Chief Engineer / admin) **or** a department head named in `notesconfig.json → department_heads` for the department being viewed — the SOP corpus already holds a dozen factory cards, so the plan is not engine-only and the Chief Engineer role gate alone would lock Factory out of its own syllabus.
+
+### 43.10 Not built in this slice
+
+- Read markers and the job-issue popup (§43.7).
+- `changes[]` in the mirrors (needed only by §43.7).
+- Prerequisite depth ordering is implemented but inert until Training authors `requires_ksa` on skill cards (3 legacy KSA and 2 SKG carry one today).
+- The JOB-card demand path: `build-task-register.js` deriving `requires_ksa` for a job from its linked SOP/TASK cards is the intended route; 13 of 23 jobs link no SOP.
+
+---
