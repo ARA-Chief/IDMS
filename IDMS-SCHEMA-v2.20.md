@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.38 — F/V Araho**
+**Version 2.39 — F/V Araho**
+
+v2.39 *(2026-09-07)* — **§42.7a: the Console side is built, and the phone half is brought level with it.** The Console's Stock Location screen (`IDMS-Console/docs/stock-location.md`) landed the day after §42.7a and moved ahead of the phone in five places, four of which mattered. **A sheet is now filtered and capped on both surfaces**: Unlocalized Stock is 2,864 rows and Fwd Shop 583, and a phone asked to lay out 2,864 rows each carrying a number input stops responding before it draws anything — so a sheet over 25 rows gets a filter box, the render stops at 400, and the sheet **says** what it is not showing, a silent truncation being a sheet somebody signs for stock they never saw. **Unlocalized Stock is a space that can be audited**: it has no node in the stowage tree, and the phone's guard was written as "is this a real location", which locked the 2,864 addressless items out of the one action the screen exists for. **The item detail carries what the Console's third pane carries** — the state of the thing (critical, blocked in TM, added in IDMS, no stock figure in the export), category, unit of measure, the date on the last known price, and the last six movements, which is usually where the answer is when a count does not match. **Filing a count moves the focus to the next line**, and both search boxes redraw only their own list and put the caret back, so a filter can be typed without losing focus mid-word. Two differences stay and are now written down as deliberate rather than left to look like drift: the Console keeps a **tree pane** open beside the sheet where the phone drills down (a persistent tree on a 375px screen is a tree pane and no sheet), and **Print sheet** is Console-only (a phone is where you type a count, not where you print one). Also: Stock Location gets its **own tile** on the Procurement hub, beside Inventory rather than buried in the page's own sidebar, matching the Console's promotion of it to a nav entry — and the `?view=` gate that tile depends on was a second hand-written copy of the view list which had gone stale the moment Stock Location was added, so the tile would have opened the register; it reads `VIEWS` now. Separately, a **§42.14 policy-overlay bug** found while comparing the two Low stock views: the PWA's table printed the raw catalogue `min_qty`, so an item put on the list by an IDMS overlay showed a minimum of 0 beside a Suggest column working from the overlay's real figure — 13,885 items have no TM minimum, so an overlay is the only minimum most of the register will ever have, and this is the column that says why the row is there. It reads `effective()` now and marks an overlaid minimum `IDMS`, as the Console's row already did. **The rule, stated once:** a screen showing a policy-overlaid field reads it through `effective()`, never off the item. New suite `tools/test/views.test.js` renders the page's own `pcViewLow` and reads the number out of it, because this class of mistake raises no error and breaks no arithmetic test. PWA 1.17.
 
 v2.38 *(2026-09-06)* — **§42.7a new: the count session, and the shared location sheet.** A `count` movement is a spot correction and always was; what the register could not say is that a *space* was swept. An item counted and found right moves nothing, so it files no movement, so it leaves no trace — a shelf walked end to end last Tuesday and a shelf nobody has opened in a year both read as "no count", and that is the one figure an audit turns on. Three events carry the sweep as its own thing: `count_session_opened` names a space and a scope (`here` for the bin, `deep` for it and everything under it) and records what the sheet held when it was opened; `count_session_closed` carries `confirmed[]`, the items seen and found right, which is the only evidence they were looked at; `count_session_abandoned` gives up the claim that the space was swept while leaving the counts already filed standing. **The arithmetic is untouched** — counts under a session are ordinary `count` movements carrying a `session_id`, a spot correction is the same movement with none, and deleting every session event changes no quantity. `expected` is read off the opening event rather than recomputed, so a transfer into the space an hour later cannot retrospectively turn a complete count into a partial one. Items gain `last_verified_at`, which moves for a count **or** a confirmation; `last_count_at` is unchanged, so nothing already reading it changes meaning. `locationSheet()` lives in the reducer rather than in either screen, because a sheet that differs by device is a sheet nobody can sign: it puts both the stock the book places in the space *and* the items whose home is there though the book says none are left — an emptied bin being exactly where a miscount hides — carries the book figure for **that space** rather than the shipwide total, prints unknown stock as unknown rather than as 0, and offers no count box on a deep row summing several bins, there being no single bin for the count to land in. New PWA screen **Stock Location** (`procurement.html?view=location`), PWA 1.16, whose space list is ordered by each space's last closed session. §42.10's cycle-counting paragraph is corrected while it is open: it claimed since v2.32 that the register sorts by `last_count_at` ascending, which it never has — the register is search-first, and least-recently-swept-first is the space list's ordering, not the register's. Console side not built.
 
@@ -7894,8 +7896,9 @@ One event type, one place where the arithmetic lives:
 
 ### 42.7a Count sessions
 
-**Status:** Settled and built in the PWA, 2026-09-06. Console side not built.
-**PWA:** `procurement.html` — the Stock Location screen (`?view=location`).
+**Status:** Settled and built on both surfaces. PWA 2026-09-06, Console 2026-09-06, brought level 2026-09-07.
+**PWA:** `procurement.html` — the Stock Location screen (`?view=location`), with its own tile on the Procurement hub in `index.html`.
+**Console:** `IDMS-Console/src/renderer/js/stocklocation.js`, nav key `stocklocation`; `IDMS-Console/docs/stock-location.md` is the long form.
 **Reducer:** `utils/procurement-reduce.js` — `locationSheet`, `locationsUnder`, `lastVerified`.
 
 A `count` movement is a **spot correction**: stand in front of a bin, type what is there, and the arithmetic follows. That is what §42.7 has always supported and it is unchanged.
@@ -7941,6 +7944,35 @@ Two kinds of row belong on it, and they are not the same thing: stock the book s
 | Unknown stock prints as unknown, not as `0` | 2,181 items carry no stock figure (§42.14). A sheet that prints 0 invites somebody to agree with it. |
 | A row summing several bins offers **no** `count_location_id` | On a `deep` sheet there is no single bin for the count to land in, and a count filed against the wrong one is worse than none. The screen offers no box on that row. |
 | A row with no stock but a home here counts against the home | So the empty bin is still asked about. |
+
+#### What the two surfaces owe each other
+
+The sheet is the same function on both, and the questions are the same three —
+*where am I, what is here, what is this thing*. What may differ is only how the
+three are stacked.
+
+| | Console | PWA |
+|---|---|---|
+| Where am I | a tree pane held open beside the sheet | drill-down: deck, space, shelf |
+| What is here | the sheet, top right | the sheet, below the crumb |
+| What is this | a third pane, bottom right | opens under its own row |
+| Print a sheet to walk with | yes | no — a phone is where you type a count |
+
+Everything else is shared and is expected to stay shared. Two rules hold on both:
+
+- **A long sheet is filtered and capped, and says so.** Over 25 rows it gets a
+  filter box; the render stops at 400 rows and prints what it is not showing.
+  Unlocalized Stock is 2,864 rows and Fwd Shop 583 — laying every one of them
+  out, each with a number input, is a phone that stops responding. Truncating
+  *silently* would be worse than either: a sheet claiming to be the whole space
+  and not being it is a sheet somebody signs for stock they never saw. The audit
+  bar still counts against the **whole** sheet, because coverage is a claim
+  about the space and not about what is currently on screen.
+- **Unlocalized Stock is a space like any other.** It has no node in the stowage
+  tree and is still 2,864 items and the obvious place to work through when
+  assigning homes, so it is a sheet, it is countable, and it can be audited. A
+  guard written as *is this a real location* locks it out; the guard is
+  *is this a real location **or** the reserved unplaced id*.
 
 ### 42.8 Requisitions
 

@@ -8,6 +8,33 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.17 — 2026-09-07
+
+- **Stock Location has its own tile now.** It is on the Procurement screen
+  beside Inventory, rather than only inside the page. It answers a different
+  question from Inventory — not *what have we got* but *what is in this locker,
+  and is that number true* — and it is the one you use standing up.
+- **The big spaces open.** Unlocalized Stock is 2,864 items and Fwd Shop 583.
+  Those sheets used to be laid out in full and the phone would sit there. Now a
+  long sheet gets a **filter box** at the top, shows the first 400 lines, and
+  tells you how many it is not showing — type a name or a part number to reach
+  the rest.
+- **You can audit Unlocalized Stock.** The stock the export never gave an
+  address to is a space like any other: walk it, count it, close it. It is also
+  the obvious list to work through when giving things a home.
+- **Tap a line and you get the whole item.** What it is, who makes it, its
+  category and unit, what it last cost and when, everywhere else the book has
+  it, and **the last few things that happened to it** — which is usually where
+  the answer is when your count does not match the book.
+- **Type a count, press Enter, and you are on the next line.** No reaching for
+  the next box.
+- Both search boxes keep the cursor while you type. They used to lose it
+  mid-word.
+- **Low stock shows the minimum that actually put the item on the list.** If the
+  minimum was set here rather than in TM Master, the column used to read 0 while
+  the Suggest column beside it worked from the real figure. It now shows the
+  number in force and marks it **IDMS** when it is ours.
+
 ## 1.16 — 2026-09-06
 
 - **Stock Location: walk a space and count it properly.** Open the Procurement
