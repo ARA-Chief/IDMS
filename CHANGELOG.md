@@ -8,6 +8,19 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.22 — 2026-09-07
+
+- **Move a part from the shelf you are standing at.** Tap an item on a Stock
+  Location sheet and the pane now has **Move stock from ‹this space›**. It opens
+  the move already pointing at the space you are in, so a part stowed on the
+  wrong shelf gets put right where you found it, instead of being remembered
+  until you are back at a desk.
+- It works from **Unlocalized Stock** too, which is how an item with no
+  address finally gets one.
+- **Procurement is open to the wheelhouse as well as the engine room.** Master,
+  mates and pursers now get the stores register, the sheets and requisitions.
+  Approving an order is unchanged — still the chief engineers and admins.
+
 ## 1.21 — 2026-09-07
 
 - **Procurement is open to the whole engine room.** If Engine Room is one of

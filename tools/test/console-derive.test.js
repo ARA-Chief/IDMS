@@ -35,6 +35,11 @@ const inlineRe = new RegExp('\\son(?:click|input|change|focus|submit|keydown)\\s
 const inline = screenSrc.match(inlineRe) || [];
 check('no inline event handlers in the screen', inline.length === 0,
       inline.length ? inline.length + ' found — the CSP makes every one of them dead' : '');
+// Stock Location is a second screen file and carries its own buttons, so the
+// same rule has to be checked on it rather than assumed from its neighbour.
+const slocSrc = fs.readFileSync(CON + '/src/renderer/js/stocklocation.js', 'utf8');
+check('no inline event handlers on the Stock Location screen either',
+      (slocSrc.match(inlineRe) || []).length === 0);
 const appCsp = fs.readFileSync(CON + '/src/renderer/index.html', 'utf8')
   .includes("script-src 'self'");
 check('the app still forbids inline script (so the rule above still matters)', appCsp);
@@ -306,4 +311,72 @@ check('is_low is an integer column the index can use', typeof row.is_low === 'nu
 check('proposals_json is never null (the filter tests != [])',
       items.every(i => typeof i.proposals_json === 'string'));
 
+// -- Stock Location: the two screens are one screen --------------------------
+// "The two are meant to stay recognisably one screen" (IDMS-Console
+// docs/stock-location.md). Chrome may differ and does, deliberately: the
+// Console keeps a tree pane where the phone drills down, and Print sheet is
+// Console-only because a phone is where you type a count, not where you print
+// one. What may *not* differ is the set of actions that write an event. An
+// action on one surface and not the other is a job that can only be done
+// standing in one place -- which is how Move came to be missing from the
+// Console until 2026-09-07, and from the phone until the same day.
+console.log('\nstock location - action parity');
+{
+  const page = fs.readFileSync(IDMS + '/procurement.html', 'utf8');
+  const from = page.indexOf('// \u2500\u2500 View: Stock Location');
+  const to = page.indexOf('// \u2500\u2500 View: Requisitions', from);
+  const pwaBlock = from !== -1 ? page.slice(from, to === -1 ? page.length : to) : '';
+  check('the PWA Stock Location block is where it was left', pwaBlock.length > 0);
+
+  // Every action that files an event. Navigation and pane chrome are left out
+  // on purpose -- those are the documented differences.
+  const WRITERS = ['Count', 'Tick', 'TickRest', 'Start', 'Finish', 'Abandon', 'Move'];
+  const has = (src, name) =>
+    new RegExp('(?:async )?function sloc' + name + '\\s*\\(').test(src);
+
+  WRITERS.forEach(name => {
+    const onPhone = has(pwaBlock, name);
+    const onConsole = has(slocSrc, name);
+    check('sloc' + name + ' exists on both surfaces', onPhone && onConsole,
+      onPhone === onConsole ? 'on neither' :
+        (onPhone ? 'only on the PWA - the Console cannot do it'
+                 : 'only on the Console - the phone cannot do it'));
+  });
+
+  // Existing is not the same as reachable. Each surface wires its buttons its
+  // own way -- the phone by onclick, the Console by data-act through the
+  // delegated dispatch -- so each is checked in its own idiom.
+  check('the phone offers Move on the sheet', /onclick="slocMove\(/.test(pwaBlock));
+  check('the Console offers Move on the sheet', /data-act="sloc-move"/.test(slocSrc));
+  check('and the Console dispatches it', /case 'sloc-move':/.test(screenSrc));
+
+  // Print is the documented exception and stays one. If it ever appears on the
+  // phone, this line is what should make somebody think about it first.
+  check('Print is still Console-only, as documented',
+    /data-act="sloc-print"/.test(slocSrc) && !/function slocPrint\s*\(/.test(pwaBlock));
+}
+
+// -- Printing a cabinet, or one shelf of it ----------------------------------
+// The sheet's scope is chosen in the print dialog rather than inherited from
+// whatever the screen happens to be showing. The renderer therefore has to be
+// told which was chosen: it decides the Space column and the line the sheet is
+// signed under, and reading the screen's toggle for that would print a sheet
+// whose header disagrees with its contents.
+console.log('\nstock location - print scope');
+{
+  // The radio ids are interpolated into one shared template, so they appear in
+  // the source quoted rather than as literal attributes.
+  check('the print dialog offers both scopes',
+    slocSrc.indexOf("'sloc-pr-here'") !== -1 && slocSrc.indexOf("'sloc-pr-deep'") !== -1);
+  check('it counts each scope before printing either',
+    /slocSheet\(s\.at, 'here'\)/.test(slocSrc) && /slocSheet\(s\.at, 'deep'\)/.test(slocSrc));
+  check('the choice travels to the renderer',
+    /scope: nested \? scope : s\.scope/.test(slocSrc));
+  check('which prefers what it was passed over what is on screen',
+    /opts\.scope \? opts\.scope === 'deep' : s\.scope === 'deep'/.test(slocSrc));
+  check('and the paper still says which it is',
+    /Including sublocations/.test(slocSrc) && /This space only/.test(slocSrc));
+}
+
 process.exit(T.done() ? 0 : 1);
+

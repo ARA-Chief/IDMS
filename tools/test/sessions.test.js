@@ -250,6 +250,16 @@ if (start !== -1 && end > start) {
   check('marks the space being walked', detail.indexOf('sloc-where here') !== -1, true);
   check('offers the full card', detail.indexOf('pcOpenItem') !== -1, true);
 
+  // Counting corrects the number on a shelf; moving corrects which shelf. Both
+  // are found out the same way — standing in front of it — so the second must
+  // not send somebody back to Inventory to search the item out again. The
+  // button names the space being walked, because a transfer whose origin the
+  // person did not choose is the one they will get wrong.
+  check('the pane offers a move out of this space',
+    detail.indexOf('slocMove(&quot;ITM-00001&quot;)') !== -1, true);
+  check('and names the bin rather than saying "here"',
+    detail.indexOf('Move stock from SH 5') !== -1, true);
+
   // Split stock is the case the detail is most needed for: no count box on the
   // row at all, so the answer to "well, where is it then" has to be here.
   const splitState = R.reduce([
@@ -289,6 +299,23 @@ if (start !== -1 && end > start) {
   check('an item with no stowage lands there', api.slocUnplacedCount(), 1);
   check('and the space it lands in is named, not left blank',
     api.slocLabel({ location_id: api.SLOC_UNPLACED, path: '' }), 'Unlocalized Stock');
+
+  // Moving stock *out* of Unlocalized Stock is how an item gets a home at all,
+  // so the button has to work from a space with no node in the stowage tree —
+  // and name it, rather than showing the crew the raw id it is keyed by.
+  sandbox.PC.loc.at = api.SLOC_UNPLACED;
+  const looseRow = R.locationSheet(sandbox.PC.state, cat, api.SLOC_UNPLACED, { scope: 'here' })
+    .find(r => r.item_id === 'ITM-09999');
+  check('the unplaced sheet has the loose item on it', !!looseRow, true);
+  if (looseRow) {
+    const looseDetail = api.slocDetailHtml(looseRow);
+    check('a move out of Unlocalized Stock is offered',
+      looseDetail.indexOf('slocMove(&quot;ITM-09999&quot;)') !== -1, true);
+    check('and the space is named, not shown as its id',
+      looseDetail.indexOf('Move stock from Unlocalized Stock') !== -1, true);
+    check('the raw id never reaches the crew as text',
+      looseDetail.replace(/<[^>]*>/g, ' ').indexOf(api.SLOC_UNPLACED), -1);
+  }
 
   // It is 2,864 items and the obvious place to work through when assigning
   // homes, so it has to be walkable like any other space. It has no node in

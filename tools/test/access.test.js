@@ -32,10 +32,17 @@ function slice(file, from, to) {
 // procurement.html — takes user and cfg as arguments, so it needs no globals
 // beyond DEFAULT_CFG and the PC singleton that pcCanApprove reads.
 const PC = { user: null, cfg: null };
-const DEFAULT_CFG = {
-  settings: { approver_roles: ['Chief Engineer', 'Admin'],
-              access_departments: ['Engine Room'] }
-};
+
+// The page's own DEFAULT_CFG, lifted from the file rather than restated here.
+// No procurementconfig.json has ever been written to OneDrive, so this literal
+// is not a fallback — it is what is actually in force on every phone, and a
+// stub in its place would let it drift without a test noticing.
+const pageSrc = fs.readFileSync(path.join(REPO, 'procurement.html'), 'utf8');
+const dStart = pageSrc.indexOf('var DEFAULT_CFG = {');
+const dEnd = pageSrc.indexOf('};', dStart);
+check('the shipped DEFAULT_CFG is where it was left', dStart !== -1 && dEnd > dStart, true);
+const DEFAULT_CFG = new Function(
+  pageSrc.slice(dStart, dEnd + 2) + ' return DEFAULT_CFG;')();
 const page = new Function('DEFAULT_CFG', 'PC',
   slice('procurement.html', '// §42.11. Admin tier', 'async function pcEnterApp') +
   '\nreturn { pcHasAccess: pcHasAccess, pcCanApprove: pcCanApprove,' +
@@ -68,8 +75,18 @@ function admits(label, user, cfg, want) {
   }
 }
 
+const SHIPPED = DEFAULT_CFG.settings.access_departments;
+
+T.head('the shipped default');
+check('opens the stores to the engine room and the wheelhouse',
+  SHIPPED, ['Engine Room', 'Wheelhouse']);
+// PROC_DEFAULT_DEPTS in index.html is a second copy of this list. It decides
+// whether the tile is offered; the page's copy decides whether it opens.
+store.fw_proccfg = '';
+check('and the hub ships the very same list', hub.procAccessDepartments(), SHIPPED);
+
 const cfgLive = { settings: { approver_roles: ['Chief Engineer', 'Admin'],
-                              access_departments: ['Engine Room'] } };
+                              access_departments: SHIPPED } };
 
 // ── The change: the engine room is in ──────────────────────────────────────
 
@@ -84,6 +101,30 @@ admits('a standard-tier engineer is admitted by the department', engineer, cfgLi
 
 PC.user = engineer; PC.cfg = cfgLive;
 check('but cannot approve spend', page.pcCanApprove(), false);
+
+// The wheelhouse is Master, Mate and Purser. Admitting the department admits
+// all three, and the purser is the one that had to be decided rather than
+// assumed: pursers were excluded from Procurement everywhere until 2026-09-07,
+// and the Console said in as many words that opening it to them would be its
+// own decision. It was taken — a purser keeping the accounts has more call on
+// what was bought than most of the people who could already see it.
+T.head('and so does anyone in the wheelhouse');
+
+admits('the master is admitted',
+  { username: 'm1', role: 'Master', permission_tier: 'standard',
+    departments: ['Wheelhouse'] }, cfgLive, true);
+admits('a mate is admitted',
+  { username: 'm2', role: 'Mate', permission_tier: 'standard',
+    departments: ['Wheelhouse'] }, cfgLive, true);
+
+const purser = { username: 'p1', role: 'Purser', permission_tier: 'standard',
+                 departments: ['Wheelhouse'] };
+admits('and so is a purser, deliberately', purser, cfgLive, true);
+
+// The reason that was safe. Reading the register and committing money to it
+// are different gates, and only the first one moved.
+PC.user = purser; PC.cfg = cfgLive;
+check('who still cannot approve spend', page.pcCanApprove(), false);
 
 // ── And nobody else moved ──────────────────────────────────────────────────
 
@@ -140,9 +181,12 @@ admits('the engine room is admitted against a config that never heard of it',
   { username: 'e', role: 'Oiler', permission_tier: 'standard',
     departments: ['Engine Room'] }, cfgOld, true);
 check('and the page names the default when asked',
-  page.pcAccessDepartments(cfgOld), ['Engine Room']);
+  page.pcAccessDepartments(cfgOld), SHIPPED);
 store.fw_proccfg = JSON.stringify(cfgOld);
-check('as does the hub', hub.procAccessDepartments(), ['Engine Room']);
+check('as does the hub', hub.procAccessDepartments(), SHIPPED);
+admits('the wheelhouse comes in the same way',
+  { username: 'p1', role: 'Purser', permission_tier: 'standard',
+    departments: ['Wheelhouse'] }, cfgOld, true);
 
 // An emptied list, though, means what it says. Clearing the field in Settings
 // is the only way to close the module back to roles alone, so reading it as
