@@ -320,6 +320,48 @@
     return step.strikes.length ? step.strikes[step.strikes.length - 1].struck : false;
   }
 
+  // ── What a note hands over when it is promoted (§41.6) ─────────────────────
+  // The two things the §41.6 table does not name and that a task has nowhere to
+  // put: the people carrying the note, and its checklist. Both are pure, so the
+  // shape of the hand-over can be tested without a form to open it in.
+
+  // The note's assignees as the keys a task writes into `assigned_to`.
+  //
+  // A note keys people by crew_id (§41.4a); a task keys them by login, or by
+  // display name for the crew who have none. The roster is the only place the
+  // two meet, so `roster` is the caller's list of {crew_id, username, name} —
+  // already display-resolved, because how a name is spelled is the caller's
+  // business and not this file's. Somebody the roster no longer carries falls
+  // back to the `username` the assignment event carried, and is dropped
+  // altogether if it carried none: a raw crew_id in `assigned_to` would name
+  // nobody on any task screen.
+  function promoteHolders(note, roster) {
+    var by = {};
+    (roster || []).forEach(function (c) { if (c && c.crew_id) by[c.crew_id] = c; });
+    var out = [];
+    ((note && note.assignees) || []).forEach(function (a) {
+      var c = by[a.crew_id];
+      var key = c ? (c.username || c.name || null) : (a.username || null);
+      if (key && out.indexOf(key) === -1) out.push(key);
+    });
+    return out;
+  }
+
+  // The checklist as text, ticks and all. A task has no step list, so the
+  // description is the only place this survives the changeover — and writing it
+  // unticked would claim a job nobody had started.
+  function promoteChecklist(note) {
+    var steps = (note && note.steps) || [];
+    if (!steps.length) return '';
+    var done = 0;
+    var lines = steps.map(function (s) {
+      var struck = stepStruck(s);
+      if (struck) done++;
+      return (struck ? '[x] ' : '[ ] ') + s.text + (s.equipment_code ? ' (' + s.equipment_code + ')' : '');
+    });
+    return 'Checklist from the note — ' + done + ' of ' + steps.length + ' done:\n' + lines.join('\n');
+  }
+
   // Attachment retention (§41.14). Files outlive the note by a grace period so
   // a failed sync is recoverable, then become eligible for purge. Archiving is
   // the escape hatch: an archived note keeps its files indefinitely.
@@ -366,6 +408,8 @@
     commentProse: commentProse,
     TASK_META_FIELDS: TASK_META_FIELDS,
     stepStruck: stepStruck,
+    promoteHolders: promoteHolders,
+    promoteChecklist: promoteChecklist,
     isAssignedTo: isAssignedTo,
     attachmentExpiry: attachmentExpiry,
     hasAttachments: hasAttachments,

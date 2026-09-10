@@ -8,6 +8,17 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.23 — 2026-09-09
+
+- **Promote to Task now opens the report instead of telling you where it is.**
+  In the **IDMS Notes** window on a console, pressing it brings the Console up
+  with that note's service report already filled in — its title, its body, the
+  comments, the photos, whoever is carrying it, and the checklist with the
+  steps you have already ticked. Nothing happens to the note until you save.
+- On a phone or in a browser there is no Console to open, so it still says
+  where the form is — and it now names the right place, **Records › Notes**.
+  The section had been renamed and the message had not.
+
 ## 1.22 — 2026-09-07
 
 - **Move a part from the shelf you are standing at.** Tap an item on a Stock
