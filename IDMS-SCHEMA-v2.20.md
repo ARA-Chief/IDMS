@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.43 — F/V Araho**
+**Version 2.44 — F/V Araho**
+
+v2.44 *(2026-09-10)* — **§41.4e: `To Order` joins the reserved folders, on every department, and is read by three screens that are not Notes.** The vessel's shopping list has been an ordinary Engine Room notes folder since PWA v1.10 — a folder anybody could rename, filed among two dozen others, and invisible from every screen where somebody is actually in a position to buy something. It becomes the third reserved folder: **📦 To Order**, drawn from the source rather than from `notesconfig.json`, sitting between Department notes and the `Shipyard` row in both clients, and **on every department** for the reason `Alerts` is — each department buys its own things and the engineers' list is not the factory's, so each pad shows only its own and each reader sees the pad for the department they are signed in under. Three screens now read that one pad, and none of them holds a copy: the Console's **Maintenance → Assign** board grows a third tray beside Tasks and Notes, wearing the same crate, and it is the odd one out among the three — a note dropped on Tasks or Notes is *released*, a note dropped on **To Order** is *filed*, and whoever is carrying it goes on carrying it. **Procurement → Requisitions** carries the same list in its sidebar under *Ours*, read-only and openable or shut with an ×, remembered per machine. Because the pad is one folder rather than a flag on a note, filing it in any of those places files it in all of them — which is the whole reason it is a folder. Coming off the list is `folder: null` and nothing else: nothing is deleted and nobody is unassigned. §42.1's account of what Procurement replaced is amended in place — the pad is the reminder that something has to be bought, the requisition loop is what happens next, and they are not competing for the same job. `tools/test/notes-tree.test.js` now checks all four copies of the string agree — both Notes sidebars, `AT_ORDER_FOLDER` and `PRC_ORDER_FOLDER` — since a rename in one file and not the others is the exact silent break that suite exists for.
 
 v2.43 *(2026-09-10)* — **§41.4e new: the reserved folders, and the Alerts pad on every department.** The Console's Alerts feature shipped writing into a Notes folder called `Alerts` that no Notes screen had a row for, so what its rules raised landed somewhere neither client showed unless somebody had happened to create a folder of that name by hand. `Alerts` is now a reserved folder with its own row under Department notes — **on every department**, because rules are written per department and the Dashboard carries a tile per department — sitting beside the `Shipyard` row the Console already had and which the phone did not. Both are reserved on the same terms and for the same reason: they are named by string from other screens, so neither can be added, renamed, removed or dragged from either client, and `＋ Add folder` / `＋ Add group` refuse the names with the reason. **A note landing in `Alerts` alerts everyone in that department** — that is what the folder means, and it is the one folder where filing something *is* addressing it to people; there is no assignee and no read gate, `audience` routes attention rather than visibility, and acknowledgement stays per user so one hand dismissing does not silence the watch coming on. The PWA gains both rows and the department-wide alert; the pad is tested ahead of `group_alert` so an alarm names the rule that fired rather than the account the Console wrote under. The Dashboard's *Open Alerts in Notes →* now lands on that department's pad. `note_created` records the additive `alert` block the lane writes (§41.5 table). Also closed: `utils/notes-reduce.js` had drifted from the Console's copy — the alerts slice added the `alert` field to one and not the other — so the phone was dropping the block the note carried; the mirror is restored and `tools/test/console-derive.test.js` now checks it byte-for-byte, as it already did for the procurement, contacts and plan mirrors.
 
@@ -7483,16 +7485,29 @@ A document cannot be downscaled the way a photo can, so files over Graph's 4 MB 
 
 Within any view: **starred first**, then newest first. Among starred notes a manual order is honoured when set (`sort_index`, dragged), and starred notes without one fall back to newest-first behind those that have one. Unstarred notes are always chronological — dragging one onto another is a no-op, and the UI does not pretend otherwise.
 
-### 41.4e Reserved folders — Shipyard and Alerts
+### 41.4e Reserved folders — To Order, Shipyard and Alerts
 
-Two folder names are owned by something other than the person filing notes. Both sit as their **own rows directly under Department notes**, above the folder band, and neither can be added, renamed, removed or dragged from either client — other screens name them by string, and a folder renamed from under one of those is a folder that keeps filling and that nobody can find again. A `＋ Add folder` or `＋ Add group` naming one is refused with the reason.
+Three folder names are owned by something other than the person filing notes. Each sits as its **own row directly under Department notes**, above the folder band, and none can be added, renamed, removed or dragged from either client — other screens name them by string, and a folder renamed from under one of those is a folder that keeps filling and that nobody can find again. A `＋ Add folder` or `＋ Add group` naming one is refused with the reason.
 
-| Folder | Departments | Owned by |
-|---|---|---|
-| `Shipyard` | Engine Room only — a yard is engineering work | the Console's Shipyard → Docking Jobs and Flowchart screens, which drag from it |
-| `Alerts` | **every department** | the Console's alerts lane (`IDMS-Console/docs/alerts.md`) |
+| Folder | Row | Departments | Owned by |
+|---|---|---|---|
+| `To Order` | 📦 To Order | **every department** | nobody writes into it but the crew — it is read by the Console's Assign board and by Requisitions |
+| `Shipyard` | ⚓ Shipyard notes | Engine Room only — a yard is engineering work | the Console's Shipyard → Docking Jobs and Flowchart screens, which drag from it |
+| `Alerts` | 🔔 Alerts | **every department** | the Console's alerts lane (`IDMS-Console/docs/alerts.md`) |
 
 They are ordinary department-scoped notes in every other respect: `scope = {level: "department", department: …}` with `folder` set to the reserved name, filed by the same `note_created`, and a note dragged onto the row lands there like any other. Nothing about them is a second store.
+
+**`To Order` — the pad, and the three screens that read it.** The standing reminder of what has to be bought. It is a folder rather than a flag on a note precisely so that there is **one list seen from several places**, never several lists to keep level: filing a note onto the pad from any of them files it for all of them, and taking it off is `folder: null` — nothing is deleted, and nobody is unassigned.
+
+| Where | What it does |
+|---|---|
+| Notes, both clients | The 📦 row, between Department notes and `Shipyard`. Filed into, read, commented on like any pad. |
+| Console → Maintenance → Assign | A third tray beside the Tasks and Notes trays, wearing the same crate. **The odd one out of the three:** a note dropped on Tasks or Notes is *released* — taken off a plate; a note dropped on **To Order** is *filed*, and whoever is carrying it goes on carrying it. A note can be on somebody's card and on the list at once, and shows in both, because "who is carrying this" and "what still has to be bought" are two questions about one note. The tray's × takes the note off the **list**, not off a person. |
+| Console → Procurement → Requisitions | The same list in the sidebar under *Ours*, **read-only** — standing in front of Requisitions must not be able to change what somebody wrote down. Openable and shut with an ×, remembered per machine; a line opens that note where it lives. |
+
+**Why `To Order` is per department, and whose list a reader sees.** The same reason `Alerts` is: the engineers' shopping list is not the factory's, and one pooled pad would give neither department a list it could act on. Each screen therefore shows one department's pad — the Assign board follows its department selector, which opens on the signed-in user's own department; the Requisitions tray shows the department the signed-in user belongs to, falling back to every pad rather than to none where the session carries no department, since a purser with none set should still see what the vessel is waiting on.
+
+A note dragged onto the pad from a person's card becomes department-scoped, exactly as dropping it on a department row in Notes does: the pad belongs to the department, and a private note filed on it would be a list nobody else could read.
 
 **Why `Alerts` is per department.** Alert rules are written per department and the Console's Dashboard carries an Alerts tile per department tab; a single shared pad would mix Factory's rounds with the Engine Room's and give neither department a list it could act on. The tile's *Open Alerts in Notes →* opens the Notes screen already standing on that department's pad.
 
@@ -7755,7 +7770,9 @@ When more than one clock applies, the **earliest** due date wins. Un-completing 
 
 ### 42.1 Overview
 
-Stores and ordering for the vessel, as one closed loop: what we hold, what we need, what we ordered, what arrived. It replaces the "To Order" list that has been living in Microsoft To-Do (and, since v1.10, as an Engine Room notes folder — see §41), which records an intention to buy something and nothing else: not whether it was ordered, not whether it arrived, not whether we already had one on the shelf behind it.
+Stores and ordering for the vessel, as one closed loop: what we hold, what we need, what we ordered, what arrived. It replaces the "To Order" list that has been living in Microsoft To-Do, which records an intention to buy something and nothing else: not whether it was ordered, not whether it arrived, not whether we already had one on the shelf behind it.
+
+*Amended v2.44.* What it does **not** replace is the moment somebody in the engine room writes down that a thing is needed. That is the `To Order` pad (§41.4e) — a reserved Notes folder per department, shown in the sidebar here under *Ours* — and it stays a note until somebody turns it into a requisition. The two are not competing for the same job: the pad is the reminder, the loop below is what happens after somebody acts on it.
 
 Four governing rules, stated once and enforced everywhere:
 

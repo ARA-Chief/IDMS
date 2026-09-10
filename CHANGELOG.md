@@ -8,6 +8,18 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.25 — 2026-09-10
+
+- **📦 To Order is a row of its own now, on every department.** The shopping
+  list used to be an ordinary folder somebody had made, filed among the rest.
+  It now sits under your department's notes, above Shipyard, and cannot be
+  renamed or deleted out from under the screens that read it. Write a note,
+  drag it onto 📦 To Order, and it is on the list.
+- **What you put there is in front of whoever buys it.** The same list shows
+  on the Console's Assign board as a tray, and in the sidebar of Procurement →
+  Requisitions. It is one list, not three copies — put something on it here and
+  it is there, take it off there and it is gone from here.
+
 ## 1.24 — 2026-09-10
 
 - **Alerts and Shipyard notes are on the phone now.** Notes only ever drew the

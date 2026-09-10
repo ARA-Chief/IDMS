@@ -376,11 +376,16 @@ var NT_SHARED_LABEL = 'Browser addition';
 var NT_SHARED_KEY   = 'nt_shared_window';
 
 // ── Reserved folders ────────────────────────────────────────
-// Two folder names are owned by something other than the person filing notes,
-// and both have their own row above the folder band rather than a line in it —
-// the Console's Notes screen has the same two rows in the same order, and the
+// Three folder names are owned by something other than the person filing notes,
+// and each has its own row above the folder band rather than a line in it —
+// the Console's Notes screen has the same three rows in the same order, and the
 // two screens are meant to stay recognisably the same screen.
 //
+//   To Order — the standing reminder of what has to be bought. EVERY department
+//              has one and reads only its own: the engineers' shopping list is
+//              not the factory's. The Console shows the same pad as a tray on
+//              Maintenance → Assign and beside Procurement → Requisitions, so a
+//              note filed here is in front of whoever raises the order.
 //   Shipyard — the pool the Console's Shipyard → Flowchart and Docking Jobs
 //              screens drag from. Engine Room only: a yard is engineering work.
 //   Alerts   — where the Console's alerts lane files what its rules raise
@@ -388,15 +393,16 @@ var NT_SHARED_KEY   = 'nt_shared_window';
 //              the rules are written per department and the Console's Dashboard
 //              carries an Alerts tile per department tab.
 //
-// Reserved means neither can be renamed or removed from this page: other
+// Reserved means none of them can be renamed or removed from this page: other
 // screens name them by string, and a folder renamed from under them is a
 // folder that keeps filling and that nobody can find again.
 var NT_YARD_DEPT    = 'engine';
 var NT_YARD_FOLDER  = 'Shipyard';
 var NT_ALERT_FOLDER = 'Alerts';
+var NT_ORDER_FOLDER = 'To Order';
 
 function ntIsReservedFolder(deptKey, name) {
-  if (name === NT_ALERT_FOLDER) return true;
+  if (name === NT_ALERT_FOLDER || name === NT_ORDER_FOLDER) return true;
   return deptKey === NT_YARD_DEPT && name === NT_YARD_FOLDER;
 }
 
@@ -1385,10 +1391,13 @@ function ntRenderTree() {
                   '📋 ' + ntEsc(ntDeptLabel(NT.dept)) + ' notes', null, true);
 
   // The reserved rows sit here rather than down among the folders, because
-  // they are not filing. Shipyard is the pool the Console's yard screens drag
-  // from; Alerts is the one pad on this page that fills itself, and so the one
-  // row a person opens to read rather than to file into. A row you have to
-  // scroll past the folder band to reach is a row nobody uses.
+  // they are not filing. To Order is the department's standing shopping list,
+  // read back as a tray on the Console's Assign board and beside Requisitions;
+  // Shipyard is the pool the Console's yard screens drag from; Alerts is the
+  // one pad on this page that fills itself, and so the one row a person opens
+  // to read rather than to file into. A row you have to scroll past the folder
+  // band to reach is a row nobody uses.
+  h += ntTreeItem({ kind: 'department', owner: null, folder: NT_ORDER_FOLDER }, '📦 To Order');
   if (NT.dept === NT_YARD_DEPT) {
     h += ntTreeItem({ kind: 'department', owner: null, folder: NT_YARD_FOLDER }, '⚓ Shipyard notes');
   }
@@ -1827,6 +1836,8 @@ function ntRenderList() {
       locSub = 'shipyard · ' + ntDeptLabel(NT.dept) + ' — the pool the yard screens draw from';
     } else if (NT.view.folder === NT_ALERT_FOLDER) {
       locSub = 'alerts · ' + ntDeptLabel(NT.dept) + ' — everyone in the department is told';
+    } else if (NT.view.folder === NT_ORDER_FOLDER) {
+      locSub = 'to order · ' + ntDeptLabel(NT.dept) + ' — read back on the Console beside Requisitions';
     } else {
       locSub = NT.view.folder ? 'section · ' + ntDeptLabel(NT.dept) : 'visible to everyone';
     }
