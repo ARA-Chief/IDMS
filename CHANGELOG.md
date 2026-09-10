@@ -8,6 +8,19 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.26 — 2026-09-10
+
+- **Discontinued Stock, on the deck tiles beside Unlocalized Stock.** Anything
+  whose name carries **\*BLOCK\*** is gathered there and comes off every shelf's
+  count sheet — 66 items today. To discontinue something, put the word in its
+  name, here or in TM Master; to bring it back, take the word out. Nothing
+  moves and no stock changes: it is the same part on the same shelf, just not
+  asked about, and a count typed on the discontinued sheet still lands in the
+  bin it is really in.
+- The asterisks are what makes it a marker rather than a word: *TERM BLOCK
+  PLUG* and the two *BLOCK ASSEMBLY* engine parts are real and stay where they
+  belong.
+
 ## 1.24 — 2026-09-10
 
 - **Alerts and Shipyard notes are on the phone now.** Notes only ever drew the

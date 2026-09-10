@@ -1,5 +1,7 @@
 # IDMS Schema Specification
-**Version 2.43 — F/V Araho**
+**Version 2.45 — F/V Araho**
+
+v2.45 *(2026-09-10)* — **§42.7a: a second reserved space, driven by the item's name; and both Inventory screens take the register's grid.** TM Master has a `blocked` flag and exports it, but nobody aboard can reach it — setting one means an office login and a round trip — so in nine years the crew grew their own convention and wrap the item's **name** instead: `*BLOCK* Cylinder *BLOCK*`, `*BLOCKED* Cog Wheel Encoder *BLOCKED*`, `**BLOCKED**Trolley Position Encoder`. **66 items carry it today and the flag is a different claim entirely** — 689 items are flag-blocked and only 32 of those are named this way, so both are kept. `procurementReduce.isDiscontinued(name)` reads the convention and `locationSheet` routes on it: the reserved location **`discontinued`** is every match wherever it is stowed, and every other sheet is what is left. `isLow` skips them too, a reorder list full of parts for a machine that is off the ship being a reorder list nobody reads. **The asterisk is load-bearing, not decoration**: three real, still-ordered parts are named for a part called a block — `TERM BLOCK PLUG 8POS 10.16MM` and two `BLOCK ASSEMBLY..` engine parts — and a bare uppercase-BLOCK rule discontinues all three; requiring an asterisk against the word matches all 66 and none of the 3, and costs nothing, because it is already how the crew write it. **Nothing moves**: no event is filed, no quantity changes, the row still carries its own address (`stowed_at`) and a count off the discontinued sheet still lands in the real bin. Discontinuing is putting the word in the name — in either client or in TM Master; reinstating is taking it out. An audit cannot be opened on it, an audit being one space walked end to end. A space's own bar says how many of its lines are being held back and links to them, so a line that vanished off a shelf somebody has walked for years is explained rather than mysterious. Separately, on the Console: **Stock and Components are drawn as the Requisitions register's grid** rather than a card per line — one line a row, a sticky header, one highlighted row, the picked row explained underneath; a 583-item shelf goes about forty to a screen instead of eleven, and All locations lists all 653 spaces holding stock rather than the worst 25. **A sheet crossing more than one space now says where each one ends**, on screen and on paper: a shaded heading per space carrying its full path and line count, replacing the printed Space *column*, because a column answers "which bin is this line in" only by being read line against line — the reading a clipboard does worst — and never answered the question actually being asked, which is where the shelf you are standing at ends. Rows split across bins gather under **Split across more than one space**, last, needing a decision rather than a number; printed lines are numbered straight through so a missing sheet of paper cannot pass unnoticed. Console 0.8.17, PWA 1.26.
 
 v2.43 *(2026-09-10)* — **§41.4e new: the reserved folders, and the Alerts pad on every department.** The Console's Alerts feature shipped writing into a Notes folder called `Alerts` that no Notes screen had a row for, so what its rules raised landed somewhere neither client showed unless somebody had happened to create a folder of that name by hand. `Alerts` is now a reserved folder with its own row under Department notes — **on every department**, because rules are written per department and the Dashboard carries a tile per department — sitting beside the `Shipyard` row the Console already had and which the phone did not. Both are reserved on the same terms and for the same reason: they are named by string from other screens, so neither can be added, renamed, removed or dragged from either client, and `＋ Add folder` / `＋ Add group` refuse the names with the reason. **A note landing in `Alerts` alerts everyone in that department** — that is what the folder means, and it is the one folder where filing something *is* addressing it to people; there is no assignee and no read gate, `audience` routes attention rather than visibility, and acknowledgement stays per user so one hand dismissing does not silence the watch coming on. The PWA gains both rows and the department-wide alert; the pad is tested ahead of `group_alert` so an alarm names the rule that fired rather than the account the Console wrote under. The Dashboard's *Open Alerts in Notes →* now lands on that department's pad. `note_created` records the additive `alert` block the lane writes (§41.5 table). Also closed: `utils/notes-reduce.js` had drifted from the Console's copy — the alerts slice added the `alert` field to one and not the other — so the phone was dropping the block the note carried; the mirror is restored and `tools/test/console-derive.test.js` now checks it byte-for-byte, as it already did for the procurement, contacts and plan mirrors.
 
@@ -7939,7 +7941,7 @@ One event type, one place where the arithmetic lives:
 **Status:** Settled and built on both surfaces. PWA 2026-09-06, Console 2026-09-06, brought level 2026-09-07.
 **PWA:** `procurement.html` — the Stock Location screen (`?view=location`), with its own tile on the Procurement hub in `index.html`.
 **Console:** `IDMS-Console/src/renderer/js/stocklocation.js`, nav key `stocklocation`; `IDMS-Console/docs/stock-location.md` is the long form.
-**Reducer:** `utils/procurement-reduce.js` — `locationSheet`, `locationsUnder`, `lastVerified`.
+**Reducer:** `utils/procurement-reduce.js` — `locationSheet`, `locationsUnder`, `lastVerified`, `isDiscontinued`.
 
 A `count` movement is a **spot correction**: stand in front of a bin, type what is there, and the arithmetic follows. That is what §42.7 has always supported and it is unchanged.
 
@@ -7984,6 +7986,44 @@ Two kinds of row belong on it, and they are not the same thing: stock the book s
 | Unknown stock prints as unknown, not as `0` | 2,181 items carry no stock figure (§42.14). A sheet that prints 0 invites somebody to agree with it. |
 | A row summing several bins offers **no** `count_location_id` | On a `deep` sheet there is no single bin for the count to land in, and a count filed against the wrong one is worse than none. The screen offers no box on that row. |
 | A row with no stock but a home here counts against the home | So the empty bin is still asked about. |
+| A **discontinued** item is on no shelf sheet, only on its own | See below. A sheet a person can walk is worth more than a sheet that is complete. |
+
+#### The two reserved spaces
+
+Neither has a node in the stowage tree, and both are real sheets: countable,
+printable, and reachable from the tree pane on the Console and the deck tiles on
+the phone.
+
+**`unassigned` — Unlocalized Stock.** TM Master's own name for where the reducer
+parks addressless stock. **2,864 items.**
+
+**`discontinued` — Discontinued Stock.** Every item whose *name* carries the
+crew's `*BLOCK*` marker, wherever it is stowed. **66 items.**
+
+```
+isDiscontinued(name)  ≡  /\*\s*BLOCK(?:ED)?\b|\bBLOCK(?:ED)?\s*\*/.test(name)
+```
+
+Five rules govern it, and each is there for a reason a future reader will
+otherwise undo:
+
+| Rule | Why |
+|---|---|
+| The **name** is the switch, not TM's `blocked` flag | Nobody aboard can set the flag. 689 items carry it, only 32 of them named this way — they are two different claims by two different parties and both are kept. |
+| The word must touch an **asterisk** | `TERM BLOCK PLUG 8POS 10.16MM` and two `BLOCK ASSEMBLY..` engine parts are real and still ordered. The asterisk matches all 66 and none of the 3, and is already how the crew write it. |
+| A discontinued item is on the discontinued sheet and **no other** | Decluttering the shelf sheets is the point. 66 dead lines over ten decks is a handful per space, each one a name somebody reads past to find the part in their hand. |
+| **Nothing moves.** No event, no quantity change, `stowed_at` carries the row's real address and a count still files against it | This changes what is *asked*, not what is *held*. |
+| `isLow` skips them | A reorder list full of parts for a machine that is off the ship is a reorder list nobody reads. |
+
+A space's bar states how many of its lines are being held back and links to
+them: an item that silently vanished off a sheet somebody has walked for years
+is a bug report waiting to be filed, and one sentence is cheaper than the
+answer.
+
+**No audit on it.** A session is one space walked end to end; this sheet is
+drawn from the whole ship, so there is no space for the session to be about and
+no shelf anybody could walk to close it. Print it, count off it, correct off it
+— but sweep the shelf the item is on.
 
 #### What the two surfaces owe each other
 

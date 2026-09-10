@@ -47,6 +47,33 @@
     return (v === null || v === undefined || v === '') ? UNASSIGNED_LOCATION : String(v);
   }
 
+  // ── Discontinued: the name is the switch ───────────────────────────────────
+  //
+  // TM Master has a `blocked` flag and it is exported, but nobody aboard can
+  // reach it — setting it means an office login and a round trip, so in nine
+  // years the crew grew their own convention instead: they wrap the item's NAME
+  // in the word BLOCK. 66 items carry it today, as `*BLOCK* ... *BLOCK*`,
+  // `*BLOCKED* ...` or `**BLOCKED**...`. That is the switch this reads, because
+  // a switch a chief engineer can throw from the shelf he is standing at — here
+  // or in TM, whichever is open — is a switch that gets thrown.
+  //
+  // The asterisk is load-bearing and is not decoration. Three real parts are
+  // named for a part called a block — `TERM BLOCK PLUG 8POS 10.16MM` and two
+  // `BLOCK ASSEMBLY..` engine parts — and a bare uppercase-BLOCK rule
+  // discontinues all three. Requiring an asterisk against the word matches
+  // every one of the 66 and none of the 3, and costs the person doing the
+  // discontinuing nothing, because it is already how they write it.
+  //
+  // Not to be confused with `it.blocked`, which is TM's own flag: 689 items
+  // carry it and only 32 of those are named this way. They are two different
+  // claims by two different parties and both are kept.
+  var DISCONTINUED_LOCATION = 'discontinued';
+  var DISCONTINUED_RE = /\*\s*BLOCK(?:ED)?\b|\bBLOCK(?:ED)?\s*\*/;
+
+  function isDiscontinued(name) {
+    return DISCONTINUED_RE.test(String(name === null || name === undefined ? '' : name));
+  }
+
   // ── Count sessions (§42.7a) ────────────────────────────────────────────────
   // A session is one space walked end to end on one date. The counts filed
   // under it are ordinary `count` movements carrying a `session_id` — the
@@ -478,6 +505,7 @@
         it.controlled = c.controlled;
         it.review_minmax = c.review_minmax;
         it.critical = c.critical;
+        it.discontinued = isDiscontinued(c.name);
         it.on_order_tm = c.on_order_tm || 0;
         if (c.supplier) it.suppliers = [{ supplier_id: c.supplier, supplier_part_number: c.suppliers_ref || null }];
 
@@ -965,9 +993,20 @@
   // Defined here rather than in either screen because the Console and the PWA
   // must ask the same question of the same shelf, and a sheet that differs by
   // device is a sheet nobody can sign.
+  // Discontinued items are gathered out of the shelf they sit on and into the
+  // reserved 'discontinued' space, the same way stock with no address is
+  // gathered into 'unassigned'. Both are the same trade: a sheet a person can
+  // walk is worth more than a sheet that is complete. 66 dead lines spread
+  // across ten decks is a handful per space, every one of them a name somebody
+  // has to read past to find the part in their hand.
+  //
+  // The stock itself is untouched — the quantity is still on the item, still at
+  // its own location, and still in every total. This moves what is ASKED, not
+  // what is held; nothing here files a movement.
   function locationSheet(state, catalogue, locationId, opts) {
     opts = opts || {};
-    var ids = (opts.scope === 'deep')
+    var dead = locationId === DISCONTINUED_LOCATION;
+    var ids = (opts.scope === 'deep' && !dead)
       ? locationsUnder(catalogue, locationId)
       : [locationId];
     var wanted = {};
@@ -978,6 +1017,14 @@
     Object.keys(items).forEach(function (id) {
       var it = items[id];
       if (it.archived && !opts.include_archived) return;
+      // One list or the other, never both: the discontinued sheet is every one
+      // of them wherever it is stowed, and every other sheet is what is left.
+      var off = isDiscontinued(it.name);
+      if (dead) {
+        if (!off) return;
+      } else if (off) {
+        return;
+      }
 
       var here = 0, placed = 0, at = null;
       Object.keys(it.by_location || {}).forEach(function (loc) {
@@ -988,7 +1035,20 @@
       });
       var homeLoc = locOf(it.default_location_id);
       var home = wanted[homeLoc] === true;
-      if (!placed && !home) return;
+      if (!dead && !placed && !home) return;
+
+      // A discontinued item is asked about wherever it is, so its own stowage
+      // is what the row is counted against rather than the space being walked.
+      if (dead) {
+        here = 0; placed = 0; at = null;
+        Object.keys(it.by_location || {}).forEach(function (loc) {
+          here = q(here + q(it.by_location[loc]));
+          placed++;
+          at = loc;
+        });
+        home = true;
+        homeLoc = (placed === 1) ? at : locOf(it.default_location_id);
+      }
 
       rows.push({
         item_id: it.item_id,
@@ -1009,6 +1069,11 @@
         // answer, and a count filed against the wrong bin is worse than none —
         // so this is null there, and the screen offers no box.
         count_location_id: (placed === 1) ? at : (placed === 0 && home ? homeLoc : null),
+        // Set only on the discontinued sheet, where a row's real address is the
+        // one piece of context the space itself no longer supplies.
+        stowed_at: dead ? homeLoc : null,
+        discontinued: off,
+
         elsewhere: q(q(it.on_hand) - here),
         min_qty: effective(it, 'min_qty'),
         critical: !!it.critical,
@@ -1048,6 +1113,11 @@
   // see the first order was on its way.
   function isLow(item) {
     if (!item || item.archived) return false;
+    // Nothing that has been discontinued is short of anything. Leaving these in
+    // is how a reorder list fills up with parts for a machine that is off the
+    // ship — see isDiscontinued for what marks one.
+    if (isDiscontinued(item.name)) return false;
+
     // 2,181 items carry no stock figure in the export. Unknown is not zero, and
     // reporting them all as short would bury the ones that really are.
     if (item.stock_unknown) return false;
@@ -1183,6 +1253,8 @@
     suggestedOrderQty: suggestedOrderQty,
     exceptions: exceptions,
     UNASSIGNED_LOCATION: UNASSIGNED_LOCATION,
+    DISCONTINUED_LOCATION: DISCONTINUED_LOCATION,
+    isDiscontinued: isDiscontinued,
     locationSheet: locationSheet,
     locationsUnder: locationsUnder,
     lastVerified: lastVerified,

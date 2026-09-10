@@ -170,6 +170,64 @@ const bin = R.locationSheet(st, cat, 'LOC-0003', { scope: 'here' }).find(r => r.
 check('each bin on its own can be', bin.count_location_id, 'LOC-0003');
 check('reading only its own share', bin.book_qty, 10);
 
+// ── Discontinued: the name is the switch ────────────────────────────────────
+// Nobody aboard can reach TM Master's blocked flag, so the crew wrap the item's
+// NAME instead — 66 items in the live export carry *BLOCK*. That convention is
+// the switch, and these are the three parts it must not catch: two BLOCK
+// ASSEMBLY engine parts and a terminal block, all real, all still ordered.
+T.head('what counts as discontinued');
+[
+  ['*BLOCK* Cylinder *BLOCK*', true],
+  ['*BLOCKED* Cog Wheel Encoder *BLOCKED*', true],
+  ['**BLOCKED**Trolley Position Encoder', true],
+  ['*BLOCK* UHMW Return-Pusher Guide Rack *Block*', true],
+  ['TERM BLOCK PLUG 8POS 10.16MM', false],
+  ['BLOCK ASSEMBLY.. Bearing - Plain cap', false],
+  ['Terminal block, 8 pos', false],
+  ['Belt, Roughtop, Green, 20" Wide', false]
+].forEach(([name, want]) => check(
+  (want ? 'off:  ' : 'kept: ') + name, R.isDiscontinued(name), want));
+check('and nothing is not a name', R.isDiscontinued(null), false);
+
+T.head('a discontinued item leaves the shelf sheet and lands on its own');
+// The same tiny ship, with one line renamed. Nothing about the stock changes —
+// only which sheet asks about it.
+const deadCat = JSON.parse(JSON.stringify(cat));
+deadCat.items['ITM-00002'].name = '*BLOCK* Bolt *BLOCK*';
+let dst = R.reduce([], deadCat);
+
+check('the bin is asked about one line fewer',
+  R.locationSheet(dst, deadCat, 'LOC-0003', { scope: 'here' }).map(r => r.name),
+  ['Gasket', 'Seal']);
+check('and so is the deep sheet above it',
+  R.locationSheet(dst, deadCat, 'LOC-0002', { scope: 'deep' }).map(r => r.name),
+  ['Filter', 'Gasket', 'Seal']);
+
+const off = R.locationSheet(dst, deadCat, R.DISCONTINUED_LOCATION, {});
+check('the discontinued sheet has it', off.map(r => r.name), ['*BLOCK* Bolt *BLOCK*']);
+check('carrying the stock it always had', off[0].book_qty, 4);
+check('and the address it is still stowed at', off[0].stowed_at, 'LOC-0003');
+check('so a count off it files against the real bin', off[0].count_location_id, 'LOC-0003');
+check('the item itself is untouched', dst.items['ITM-00002'].on_hand, 4);
+
+// Renaming it back is the whole reinstatement procedure — here or in TM Master.
+const backCat = JSON.parse(JSON.stringify(cat));
+let bst = R.reduce([], backCat);
+check('taking the word out puts it back on its shelf',
+  R.locationSheet(bst, backCat, 'LOC-0003', { scope: 'here' }).map(r => r.name),
+  ['Bolt', 'Gasket', 'Seal']);
+check('and empties the discontinued sheet',
+  R.locationSheet(bst, backCat, R.DISCONTINUED_LOCATION, {}).length, 0);
+
+T.head('nothing discontinued is ever short of anything');
+const lowCat = JSON.parse(JSON.stringify(cat));
+lowCat.items['ITM-00002'].min_qty = 50;          // 4 on hand against a min of 50
+check('a live item under its minimum is low',
+  R.isLow(R.reduce([], lowCat).items['ITM-00002']), true);
+lowCat.items['ITM-00002'].name = '*BLOCK* Bolt *BLOCK*';
+check('the same item, discontinued, is not',
+  R.isLow(R.reduce([], lowCat).items['ITM-00002']), false);
+
 // ── The PWA renders the same sheet ──────────────────────────────────────────
 // procurement.html is one big inline script, so its Stock Location half is
 // pulled out by name and run against the same state. This catches the drift

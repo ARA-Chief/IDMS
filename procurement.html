@@ -2069,6 +2069,15 @@ var SLOC_TICKS_KEY = 'idms.sloc.ticks';
 // calls it Unlocalized Stock and so does this.
 var SLOC_UNPLACED = 'unassigned';
 
+// The other reserved space. Anything whose NAME carries *BLOCK* is gathered
+// here by the reducer and taken off every shelf sheet — procurementReduce
+// .isDiscontinued is the rule, and it is the same rule the Console reads,
+// because a sheet that differs by device is a sheet nobody can sign. The phone
+// gets its own tile onto it for the same reason Unlocalized Stock has one:
+// 66 items reachable from every screen except the one about stowage is not
+// reachable.
+var SLOC_DISCONTINUED = 'discontinued';
+
 // A big space is a real space: Fwd Shop holds 583 items and Unlocalized Stock
 // holds 2,864. The sheet is filtered and capped rather than silently truncated,
 // and the cap is well above any shelf a person actually walks — it is here so
@@ -2149,6 +2158,7 @@ function slocLabel(l) {
   // Unlocalized Stock has no node in the stowage tree, so it has no path to
   // take a last segment from — it is named here rather than rendering blank.
   if (l.location_id === SLOC_UNPLACED) return 'Unlocalized Stock';
+  if (l.location_id === SLOC_DISCONTINUED) return 'Discontinued Stock';
   var parts = String(l.path || '').split('\\');
   return parts[parts.length - 1] || l.path || l.location_id || '';
 }
@@ -2288,6 +2298,10 @@ function slocRenderRootList() {
       '<div class="deck-name">Unlocalized Stock</div>' +
       '<div class="deck-count">' + slocUnplacedCount().toLocaleString() + '</div>' +
       '<div class="deck-sub">items the export never placed</div></button>' +
+    '<button class="deck-tile" onclick="slocGo(&quot;' + SLOC_DISCONTINUED + '&quot;)">' +
+      '<div class="deck-name">Discontinued Stock</div>' +
+      '<div class="deck-count">' + slocDiscontinuedCount().toLocaleString() + '</div>' +
+      '<div class="deck-sub">names carrying *BLOCK*</div></button>' +
     decks.map(function (d) {
       return '<button class="deck-tile" onclick="slocGo(&quot;' + pcEsc(d.location_id) + '&quot;)">' +
         '<div class="deck-name">' + pcEsc(d.path) + '</div>' +
@@ -2303,8 +2317,19 @@ function slocUnplacedCount() {
   var n = 0;
   Object.keys(PC.state.items).forEach(function (id) {
     var it = PC.state.items[id];
-    if (it.archived) return;
+    if (it.archived || procurementReduce.isDiscontinued(it.name)) return;
     if (!it.default_location_id || it.default_location_id === SLOC_UNPLACED) n++;
+  });
+  return n;
+}
+
+// Counted the way the sheet is built, so the number on the tile and the number
+// of lines behind it are the same number.
+function slocDiscontinuedCount() {
+  var n = 0;
+  Object.keys(PC.state.items).forEach(function (id) {
+    var it = PC.state.items[id];
+    if (!it.archived && procurementReduce.isDiscontinued(it.name)) n++;
   });
   return n;
 }
@@ -2330,10 +2355,14 @@ function slocSpaceRow(l, v) {
 function slocViewSpace() {
   var s = slocState();
   var loc = slocLoc(s.at);
-  // Unlocalized Stock is a real sheet with no node in the stowage tree, so it
-  // gets a stand-in rather than bouncing back to the deck tiles.
+  // The two reserved sheets are real sheets with no node in the stowage tree,
+  // so they get a stand-in rather than bouncing back to the deck tiles.
   if (!loc && s.at === SLOC_UNPLACED) {
     loc = { location_id: SLOC_UNPLACED, path: 'Unlocalized Stock', parent_id: null };
+  }
+  if (!loc && s.at === SLOC_DISCONTINUED) {
+    loc = { location_id: SLOC_DISCONTINUED, parent_id: null,
+            path: 'Discontinued Stock — names carrying *BLOCK*, off every shelf sheet' };
   }
   if (!loc) { s.at = null; return slocViewRoot(); }
 
