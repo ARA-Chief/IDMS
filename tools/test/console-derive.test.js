@@ -69,6 +69,15 @@ check('byte-identical with the IDMS canonical copy',
 check('the contact reducer is byte-identical too',
   fs.readFileSync(IDMS + '/utils/contacts-reduce.js').equals(
     fs.readFileSync(CON + '/src/renderer/js/contacts-reduce.js')));
+// §41: the Notes Hub reducer, on the same terms. It decides what a stream of
+// events means — including the `alert` block the Console's Alerts lane writes
+// (IDMS-Console/docs/alerts.md) — and a phone reducing the same events
+// differently is a phone showing a different note. This one drifted once,
+// when the alerts slice added a field to the Console's copy and not to the
+// canonical one.
+check('the notes reducer is byte-identical too',
+  fs.readFileSync(IDMS + '/utils/notes-reduce.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/notes-reduce.js')));
 // §43: the phone and the Console must never compute two different plans from
 // the same inputs — one derivation, mirrored, checked here like the reducers.
 check('the plan derivation is byte-identical too',

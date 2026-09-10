@@ -8,6 +8,27 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.24 — 2026-09-10
+
+- **Alerts and Shipyard notes are on the phone now.** Notes only ever drew the
+  folders somebody had made, so the two pads IDMS fills by itself were missing:
+  **🔔 Alerts**, which every department has and which the Console's alert rules
+  write into, and **⚓ Shipyard notes**, the Engine Room pad the Console's
+  Docking Jobs and Flowchart screens drag from. The notes had been arriving all
+  along — there was simply no row to reach them by. Both now sit directly under
+  Department notes, where the Console keeps them.
+- **An alert reaches you without anyone assigning it.** Anything open in your
+  department's Alerts pad now raises the alert popup at sign-in and on the sync
+  tick, naming the rule that fired. Landing in that pad *is* the notification —
+  there is no assignee, everyone in the department is told, and dismissing one
+  only dismisses it for you, so the watch coming on still sees it.
+- Neither pad can be renamed, removed, or created a second time by hand. Other
+  screens reach both by name, and a folder renamed from under them is a folder
+  that keeps filling and that nobody can find again.
+- Fixed: the phone was dropping the rule, severity and reason a note carried
+  when the Console's alerts lane raised it — its copy of the notes reducer had
+  fallen behind the Console's.
+
 ## 1.23 — 2026-09-09
 
 - **Promote to Task now opens the report instead of telling you where it is.**
