@@ -2187,13 +2187,19 @@ function ntRenderDetail() {
   // — a person — so offering the button on them would be an invitation to a
   // form that cannot be completed.
   //
-  // The service report itself is written in the Console for now: the form
-  // lives there, and a third copy of task creation on this page is not
-  // something to add lightly. The button says so rather than sitting greyed
-  // out with no explanation.
+  // The service report itself is written in the Console: the form lives there,
+  // and a third copy of task creation on this page is not something to add
+  // lightly. So the button HANDS THE NOTE OVER rather than describing where to
+  // go — in the IDMS Notes window it raises the Console on this note's report
+  // form. In a browser or on a phone there is no Console to raise, and only
+  // there does it fall back to saying so.
   if (kind === 'assignable') {
-    h += '<button class="btn ghost" onclick="ntPromoteHint()" ' +
-         'title="Open this note in the Console to write the service report">Promote to Task…</button>';
+    var handoff = ntHasConsoleHost();
+    h += '<button class="btn ghost" onclick="ntPromote(\'' + ntAttr(n.note_id) + '\')" ' +
+         'title="' + (handoff
+           ? 'Write the service report in the Console — this note opens there'
+           : 'Open this note in the Console to write the service report') +
+         '">Promote to Task…</button>';
   }
   h += n.archived
     ? '<button class="btn ghost" onclick="ntUnarchive(\'' + ntAttr(n.note_id) + '\')">Unarchive</button>'
@@ -2730,10 +2736,30 @@ function ntToggleArchived() {
   ntRenderList();
 }
 
-// Promotion opens the service report form, which lives in the Console. Said
-// once, plainly, rather than leaving a dead button on the panel.
+// Promotion opens the service report form, which lives in the Console (§41.6).
+//
+// Inside the IDMS Notes window there is a host to hand the note to: it raises
+// the Console on this note, and the same confirmation appears there as if
+// Promote had been pressed on the Console's own Notes screen. One promote
+// flow, reached from either side.
+//
+// Everywhere else — a browser tab, a phone — there is no Console on the other
+// end of anything, so the page says where the form is. It is the same sentence
+// it always was, with the section name it is actually under today.
+function ntHasConsoleHost() {
+  try { return !!(window.idmsNotesHost && window.idmsNotesHost.present); } catch (e) { return false; }
+}
+
+function ntPromote(noteId) {
+  if (ntHasConsoleHost() && window.idmsNotesHost.promote(noteId)) {
+    ntToast('Opening the service report in IDMS Console — nothing changes here until you save it.');
+    return;
+  }
+  ntPromoteHint();
+}
+
 function ntPromoteHint() {
-  ntToast('Open this note in IDMS Console — Personnel › Notes — and use Promote to Task there. ' +
+  ntToast('Open this note in IDMS Console — Records › Notes — and use Promote to Task there. ' +
           'The service report form lives in the Console.');
 }
 
