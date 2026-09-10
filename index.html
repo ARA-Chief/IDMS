@@ -11329,7 +11329,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.23';
+var PWA_VERSION  = '1.24';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {
@@ -11444,8 +11444,10 @@ function pwaShowUpdates(entries, done) {
 //
 // Derived, never authored: computed from the notes event stream at login
 // (routeAfterLogin, both branches) and on the sync tick. Covers notes
-// assigned to me and department-head group alerts; task-assignment alerts
-// arrive with the task-integration slice. Dismissal appends alert_acked so
+// assigned to me, anything in my department's Alerts pad (§41.4e — the folder
+// the Console's alerts lane writes into), and department-head group alerts;
+// task-assignment alerts arrive with the task-integration slice. Dismissal
+// appends alert_acked so
 // it sticks across the user's devices. One summary popup listing N items,
 // never N popups — everything else stays a badge on the Notes tile.
 //
@@ -11454,6 +11456,22 @@ function pwaShowUpdates(entries, done) {
 // ════════════════════════════════════════
 
 var NTA = { events: [], loadedNames: {}, shownIds: {}, checking: false };
+
+// The Console's alerts lane files what its rules raise into this folder, one
+// per department (IDMS-Console/docs/alerts.md). Reserved and matched by name
+// in notes.html (NT_ALERT_FOLDER) and in the Console's own Notes screen
+// (NTC_ALERT_FOLDER); a note in it alerts the whole department.
+var NTA_ALERT_FOLDER = 'Alerts';
+
+// What to say about an alert-pad note. A note raised by a rule carries the
+// rule that raised it and how loudly it wants to be read; one filed by hand
+// carries neither, and says who filed it instead of inventing a rule.
+function ntaAlertWhy(n) {
+  var a = n.alert;
+  if (!a) return 'Alert for your department — filed by ' + n.author;
+  var sev = a.severity === 'alarm' ? 'Alarm' : a.severity === 'warn' ? 'Warning' : 'Alert';
+  return sev + ' — ' + (a.rule_name || a.rule_id || 'department alert');
+}
 
 function ntaCacheKey(year) { return 'nt_events_cache_' + year; }
 
@@ -11535,6 +11553,19 @@ function ntaComputeAlerts() {
     // username alone.
     if ((n.assignee_usernames || []).indexOf(me) >= 0 || n.assignee === me) {
       items.push({ note: n, why: 'Assigned to you by ' + (n.assigned_by || n.author) });
+    } else if (n.scope.level === 'department' && n.folder === NTA_ALERT_FOLDER &&
+               myDeptKeys[n.scope.department]) {
+      // The Alerts pad is the one folder where landing in it IS the
+      // notification: a rule that trips, or a person filing something there by
+      // hand, is addressed to the whole department rather than to a named
+      // assignee. Everyone in the department is told, and each acknowledges it
+      // for themselves — an ack is per user, so one person dismissing does not
+      // silence it for the watch coming on.
+      //
+      // Ahead of the group_alert test rather than after it: an alarm-severity
+      // rule sets group_alert too, and "Group alert from wostara" names the
+      // account the Console wrote under, not the rule that fired.
+      items.push({ note: n, why: ntaAlertWhy(n) });
     } else if (n.group_alert && n.scope.level === 'department' && myDeptKeys[n.scope.department]) {
       items.push({ note: n, why: 'Group alert from ' + n.author });
     }
@@ -11608,7 +11639,7 @@ function ntaShowPopup(items) {
   ov.innerHTML =
     '<div id="nta-card">' +
     '<h2>Notes need your attention</h2>' +
-    '<div class="nta-sub">' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' — assigned notes and group alerts</div>' +
+    '<div class="nta-sub">' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' — assigned notes, group alerts and the Alerts pad</div>' +
     shown.map(function (it) {
       return '<div class="nta-item"><div class="t">' + ntaEsc(it.note.title) + '</div>' +
              '<div class="w">' + ntaEsc(it.why) + '</div>' +

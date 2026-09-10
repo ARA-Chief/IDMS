@@ -375,6 +375,31 @@ var NT_SHARED_ACTOR = 'browser';
 var NT_SHARED_LABEL = 'Browser addition';
 var NT_SHARED_KEY   = 'nt_shared_window';
 
+// ── Reserved folders ────────────────────────────────────────
+// Two folder names are owned by something other than the person filing notes,
+// and both have their own row above the folder band rather than a line in it —
+// the Console's Notes screen has the same two rows in the same order, and the
+// two screens are meant to stay recognisably the same screen.
+//
+//   Shipyard — the pool the Console's Shipyard → Flowchart and Docking Jobs
+//              screens drag from. Engine Room only: a yard is engineering work.
+//   Alerts   — where the Console's alerts lane files what its rules raise
+//              (IDMS-Console/docs/alerts.md). EVERY department has one, because
+//              the rules are written per department and the Console's Dashboard
+//              carries an Alerts tile per department tab.
+//
+// Reserved means neither can be renamed or removed from this page: other
+// screens name them by string, and a folder renamed from under them is a
+// folder that keeps filling and that nobody can find again.
+var NT_YARD_DEPT    = 'engine';
+var NT_YARD_FOLDER  = 'Shipyard';
+var NT_ALERT_FOLDER = 'Alerts';
+
+function ntIsReservedFolder(deptKey, name) {
+  if (name === NT_ALERT_FOLDER) return true;
+  return deptKey === NT_YARD_DEPT && name === NT_YARD_FOLDER;
+}
+
 var MSAL_CONFIG = {
   auth: {
     clientId:    '5f7c6099-c379-4cfa-ab6a-92bf33b812aa',
@@ -807,6 +832,12 @@ async function ntAddSection(kind, groupName) {
     if (name) ntToast('A name cannot contain "/".');
     return;
   }
+  // Applies to a group as well as a folder: a group called Alerts would sit on
+  // the reserved path and swallow what the Console's lane writes there.
+  if (ntIsReservedFolder(NT.dept, name)) {
+    ntToast(name + ' is already a section here — it is one of the rows above the folder band.');
+    return;
+  }
   try {
     await ntMutateSections(function (list) {
       if (groupName) {
@@ -830,6 +861,12 @@ async function ntRenameSection(path) {
   var name = (prompt('Rename:', oldName) || '').trim();
   if (!name || name === oldName || name.indexOf('/') >= 0) {
     if (name && name.indexOf('/') >= 0) ntToast('A name cannot contain "/".');
+    return;
+  }
+  // Adding one is refused above; renaming onto one has to be refused too, or
+  // the reserved path is reachable by two steps instead of one.
+  if (ntIsReservedFolder(NT.dept, name)) {
+    ntToast(name + ' is already a section here — it is one of the rows above the folder band.');
     return;
   }
   try {
@@ -1347,10 +1384,24 @@ function ntRenderTree() {
   h += ntTreeItem({ kind: 'department', owner: null, folder: null },
                   '📋 ' + ntEsc(ntDeptLabel(NT.dept)) + ' notes', null, true);
 
+  // The reserved rows sit here rather than down among the folders, because
+  // they are not filing. Shipyard is the pool the Console's yard screens drag
+  // from; Alerts is the one pad on this page that fills itself, and so the one
+  // row a person opens to read rather than to file into. A row you have to
+  // scroll past the folder band to reach is a row nobody uses.
+  if (NT.dept === NT_YARD_DEPT) {
+    h += ntTreeItem({ kind: 'department', owner: null, folder: NT_YARD_FOLDER }, '⚓ Shipyard notes');
+  }
+  h += ntTreeItem({ kind: 'department', owner: null, folder: NT_ALERT_FOLDER }, '🔔 Alerts');
+
   // Groups and folders, per department. They live strictly between Department
   // notes and the Personnel heading — those are the hard stops, and every
-  // rearrangement happens inside that band.
-  h += '<div id="folder-band">' + ntSections(NT.dept).map(ntBandEntry).join('') + '</div>';
+  // rearrangement happens inside that band. The reserved names are filtered
+  // out: each has its own row above, and a second copy carrying a ✎ and a ✕
+  // would offer to rename or remove one of them.
+  h += '<div id="folder-band">' + ntSections(NT.dept).filter(function (e) {
+    return !ntIsReservedFolder(NT.dept, e.name);
+  }).map(ntBandEntry).join('') + '</div>';
   h += '<div class="band-adds">' +
        '<span class="tree-item add-folder" onclick="ntAddSection(\'folder\')">＋ Add folder</span>' +
        '<span class="tree-item add-folder" onclick="ntAddSection(\'group\')">＋ Add group</span>' +
@@ -1772,7 +1823,13 @@ function ntRenderList() {
     locSub = 'interdepartmental — visible to the whole vessel';
   } else if (NT.view.kind === 'department') {
     locTitle = NT.view.folder || (ntDeptLabel(NT.dept) + ' notes');
-    locSub = NT.view.folder ? 'section · ' + ntDeptLabel(NT.dept) : 'visible to everyone';
+    if (NT.dept === NT_YARD_DEPT && NT.view.folder === NT_YARD_FOLDER) {
+      locSub = 'shipyard · ' + ntDeptLabel(NT.dept) + ' — the pool the yard screens draw from';
+    } else if (NT.view.folder === NT_ALERT_FOLDER) {
+      locSub = 'alerts · ' + ntDeptLabel(NT.dept) + ' — everyone in the department is told';
+    } else {
+      locSub = NT.view.folder ? 'section · ' + ntDeptLabel(NT.dept) : 'visible to everyone';
+    }
   } else if (NT.view.kind === 'equipment') {
     var eqName = ntAssetName(NT.view.owner);
     locTitle = NT.view.owner + (eqName ? ' — ' + eqName : '');

@@ -84,6 +84,13 @@
             }),
             template_id: p.template_id || null, origin: p.origin || 'manual',
             group_alert: !!p.group_alert,
+            // §41.4e — a note raised by an Alerts rule carries the rule, the
+            // episode key and the evaluation trace that produced it. Additive
+            // and inert: `origin` is 'alert' on these, every other note holds
+            // null, and no reader has to know about it. Kept whole rather than
+            // flattened so the reason a rule fired travels with the note
+            // instead of being re-derived from a config that has since changed.
+            alert: p.alert || null,
             attachments: (p.attachments || []).slice(),
             author: ev.actor, created: ev.timestamp, updated: ev.timestamp,
             completed: false, completions: [],
