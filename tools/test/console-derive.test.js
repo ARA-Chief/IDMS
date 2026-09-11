@@ -226,15 +226,46 @@ for (const id in state.items) {
     actor: m.actor || null, timestamp: m.timestamp || null
   }));
 }
+// The TM Master order head a pre-draft carries (§42.18), mirrored from
+// sync-procurement.js. Eighteen fields in one JSON column, with the three the
+// register grid sorts on lifted out beside it.
+const REQ_HEAD_FIELDS = [
+  'subject', 'order_type', 'supplier_id', 'supplier_name', 'supplier_ref',
+  'purchaser_ref', 'ship_ref', 'purchaser_group', 'currency', 'delivery_port',
+  'delivery_date', 'delivery_terms', 'forward_by', 'shipment_date',
+  'estimated_delivery', 'asap', 'project', 'transport_ref', 'cost_code'
+];
+// An estimate and never a total: a line with no price contributes nothing
+// rather than zero.
+function estTotal(lines) {
+  let sum = 0, priced = 0;
+  (lines || []).forEach(l => {
+    if (l.unit_price === 0 || l.unit_price) { sum += Number(l.unit_price) * (Number(l.qty) || 0); priced++; }
+  });
+  return priced ? Math.round(sum * 100) / 100 : null;
+}
+const nameOf = id => (state.items[id] && state.items[id].name) || null;
+const withNames = lines => (lines || []).map(l =>
+  l.item_id ? Object.assign({}, l, { item_name: nameOf(l.item_id) }) : l);
+
 const requisitions = Object.keys(state.requisitions).map(id => {
   const r = state.requisitions[id];
+  const head = {};
+  REQ_HEAD_FIELDS.forEach(f => { head[f] = r[f] === undefined ? null : r[f]; });
   return { req_id: r.req_id, status: r.status, department: r.department || null,
     need_by: r.need_by || null, priority: r.priority || null,
     justification: r.justification || null, requested_by: r.requested_by || null,
     created_at: r.created_at || null, submitted_at: r.submitted_at || null,
     decided_at: r.decided_at || null, decided_by: r.decided_by || null,
     decision_comment: r.decision_comment || null,
-    line_count: (r.lines || []).length, lines_json: JSON.stringify(r.lines || []) };
+    line_count: (r.lines || []).length, lines_json: JSON.stringify(withNames(r.lines)),
+    head_json: JSON.stringify(head),
+    subject: r.subject || null,
+    supplier_id: r.supplier_id || null,
+    est_total: estTotal(r.lines),
+    placed_order_no: r.placed_order_no || null,
+    placed_at: r.placed_at || null,
+    placed_by: r.placed_by || null };
 });
 const pos = Object.keys(state.purchase_orders).map(id => {
   const p = state.purchase_orders[id];

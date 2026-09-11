@@ -250,7 +250,7 @@
       // 13,885 of the 14,487 items in TM Master carry no minimum at all and a
       // register that cannot be given one is a register nobody can act on.
       // These always win over the catalogue's values.
-      policy: {},             // min_qty / max_qty / reorder_qty / sfi_code / barcode / notes
+      policy: {},             // min_qty / max_qty / reorder_qty / sfi_code / barcode / notes / tank_id
       // Edits to fields TM Master owns are recorded and shown, never applied.
       proposals: [],
       // Movements at or before the catalogue's baseline are already reflected
@@ -273,7 +273,15 @@
   // are policy rather than fact: what we choose to hold, and how this item
   // joins the rest of IDMS. Never a name, a supplier or a part number — those
   // are TM Master's to state.
-  var POLICY_FIELDS = ['min_qty', 'max_qty', 'reorder_qty', 'sfi_code', 'barcode', 'notes'];
+  //
+  // `tank_id` is the one that is not about reordering. It names the tank on
+  // Tank Levels & Transfers that holds this item's contents, which is what
+  // makes a drum of lube oil a *fluid* rather than a part: picking it on a
+  // service report can then post a transfer against that tank. TM Master has
+  // no such field and never will — it does not know the vessel has tanks — so
+  // it is policy in exactly the sense the rest of this list is, "how this item
+  // joins the rest of IDMS".
+  var POLICY_FIELDS = ['min_qty', 'max_qty', 'reorder_qty', 'sfi_code', 'barcode', 'notes', 'tank_id'];
 
   // Sparse patch: an absent key means unchanged, an explicit null clears
   // (§42.4). `item_id` can never be patched.
@@ -391,6 +399,18 @@
       qty: mag(l && l.qty),
       unit: (l && l.unit) || null,
       notes: (l && l.notes) || '',
+      // The pre-draft half (§42.18). A requisition on its way to becoming a TM
+      // Master order carries what TM's Order line grid asks for, so the person
+      // keying it in is reading a filled form rather than reconstructing one.
+      // All optional: a line that is just "we need two of these" is still the
+      // normal case, and every field here stays null for it.
+      seq: (l && (l.seq === 0 || l.seq)) ? Number(l.seq) : null,
+      makers_part_no: (l && l.makers_part_no) || null,
+      suppliers_ref: (l && l.suppliers_ref) || null,
+      unit_price: (l && (l.unit_price === 0 || l.unit_price)) ? Number(l.unit_price) : null,
+      currency: (l && l.currency) || null,
+      component: (l && l.component) || null,
+      critical_category: (l && l.critical_category) || null,
       decision: null,          // null | 'approved' | 'rejected'
       qty_approved: null,
       ordered_qty: 0,          // filled in by the PO pass
@@ -402,19 +422,51 @@
   function newReq(reqId) {
     return {
       req_id: reqId,
-      status: 'draft',         // draft | submitted | approved | rejected | ordered | closed | cancelled
+      // `placed` is the terminal state a pre-draft is aimed at: somebody keyed
+      // it into TM Master and it now has an order number of its own. It sits
+      // after `approved` rather than replacing `ordered`, because those two are
+      // about the Console's own purchase orders and this one is about TM.
+      status: 'draft',         // draft | submitted | approved | rejected | ordered | closed | cancelled | placed
       department: null,
       need_by: null,
       priority: null,
       justification: '',
-      lines: [],
+      // ── The TM Master order head (§42.18) ──────────────────────────────────
+      // A pre-draft is a proposed TM order, so it carries TM's Order head: what
+      // the buyer will have to type. Every one of them is optional and a
+      // requisition that is only a list of parts leaves them all null — the
+      // fields are what makes a draft *ready*, not what makes it valid.
+      subject: null,           // TM's "Subject" — the order's one-line name
+      order_type: null,        // PurchaseOrder | ServiceOrder | ...
+      supplier_id: null,       // a CON-#### from the contact book
+      supplier_name: null,     // free text, for a supplier not in the book yet
+      supplier_ref: null,      // TM's Supplier ref / Purchaser ref / Ship ref
+      purchaser_ref: null,
+      ship_ref: null,
+      purchaser_group: null,
+      currency: null,
+      delivery_port: null,
+      delivery_date: null,
+      delivery_terms: null,
+      forward_by: null,
+      shipment_date: null,
+      estimated_delivery: null,
+      asap: false,
+      project: null,
+      transport_ref: null,
+      cost_code: null,
       decision_comment: null,
       cancel_reason: null,
       created_at: null,
       requested_by: null,
       submitted_at: null,
       decided_at: null,
-      decided_by: null
+      decided_by: null,
+      // Where it stops being a draft.
+      placed_order_no: null,
+      placed_at: null,
+      placed_by: null,
+      placed_note: null
     };
   }
 
@@ -457,7 +509,19 @@
   }
 
   var PO_HEADER_FIELDS = ['po_number', 'supplier_id', 'currency', 'expected_date', 'notes'];
-  var REQ_HEADER_FIELDS = ['department', 'need_by', 'priority', 'justification'];
+  // Every field a requisition_created or _updated may set. The TM order-head
+  // half is here rather than in a nested object so that `updated` keeps its one
+  // rule -- a field present in the payload is written, a field absent is left
+  // alone -- across all of them. An editor that shows a field must send it even
+  // when it was cleared, which is the same contract contact editing has (§4).
+  var REQ_HEADER_FIELDS = [
+    'department', 'need_by', 'priority', 'justification',
+    'subject', 'order_type', 'supplier_id', 'supplier_name', 'supplier_ref',
+    'purchaser_ref', 'ship_ref', 'purchaser_group', 'currency',
+    'delivery_port', 'delivery_date', 'delivery_terms', 'forward_by',
+    'shipment_date', 'estimated_delivery', 'asap', 'project', 'transport_ref',
+    'cost_code'
+  ];
 
   // ── Reduce ─────────────────────────────────────────────────────────────────
 
@@ -471,7 +535,7 @@
       return ka < kb ? -1 : ka > kb ? 1 : 0;
     });
 
-    var items = {}, reqs = {}, pos = {}, sessions = {};
+    var items = {}, reqs = {}, pos = {}, sessions = {}, comments = {};
     var baselineAt = (catalogue && catalogue.baseline_at) || null;
 
     // ── Seed from the catalogue ──────────────────────────────────────────────
@@ -552,6 +616,24 @@
         rq.lines = (p.lines || []).map(normaliseReqLine);
         rq.created_at = rq.created_at || ev.timestamp || null;
         rq.requested_by = rq.requested_by || ev.actor || null;
+
+      } else if (ev.event_type === 'procurement_comment') {
+        // In the creation pass with the rest, and for the same reason: an edit
+        // filed from a second console can legitimately sort ahead of the
+        // comment it edits, and a single pass would drop it.
+        if (!p.comment_id || !p.subject_id) continue;
+        var cm = comments[p.comment_id] || (comments[p.comment_id] = {
+          comment_id: p.comment_id, subject_type: null, subject_id: null,
+          body: '', actor: null, timestamp: null, edited_at: null, deleted: false
+        });
+        // 'order' is a comment against a TM Master order. It does not write the
+        // order -- TM is still the system of record for that (§4) -- it is a
+        // note of ours filed beside one.
+        cm.subject_type = (p.subject_type === 'order') ? 'order' : 'requisition';
+        cm.subject_id = p.subject_id;
+        cm.body = String(p.body == null ? '' : p.body);
+        cm.actor = cm.actor || ev.actor || null;
+        cm.timestamp = cm.timestamp || ev.timestamp || null;
 
       } else if (ev.event_type === 'po_created') {
         if (!p.po_id) continue;
@@ -756,6 +838,46 @@
         rd.decided_at = e.timestamp || null;
         rd.decided_by = e.actor || null;
 
+      } else if (t === 'requisition_placed') {
+        var rp = reqs[pay.req_id];
+        if (!rp || rp.status === 'cancelled') continue;
+        var orderNo = pay.order_no ? String(pay.order_no).trim() : '';
+        if (orderNo) {
+          // Placing it again with a different number is how a mistyped order
+          // number is corrected -- there is no separate correction event, and a
+          // second shape for "which TM order is this" would be one too many.
+          if (rp.status !== 'placed') rp.status_before_placed = rp.status;
+          rp.status = 'placed';
+          rp.placed_order_no = orderNo;
+          rp.placed_at = e.timestamp || null;
+          rp.placed_by = e.actor || null;
+          rp.placed_note = pay.note || null;
+        } else if (rp.status === 'placed') {
+          // An empty order number is the retraction: it was not keyed into TM
+          // after all, and the draft goes back to whatever it was before. A
+          // draft with no way back would be a row nobody could finish.
+          rp.status = rp.status_before_placed || 'draft';
+          rp.placed_order_no = null;
+          rp.placed_at = null;
+          rp.placed_by = null;
+          rp.placed_note = pay.note || null;
+        }
+
+      } else if (t === 'procurement_comment_edited') {
+        var ce = comments[pay.comment_id];
+        if (!ce) continue;
+        ce.body = String(pay.body == null ? '' : pay.body);
+        ce.edited_at = e.timestamp || null;
+
+      } else if (t === 'procurement_comment_deleted') {
+        var cd = comments[pay.comment_id];
+        if (!cd) continue;
+        // Tombstoned rather than dropped, the way a retired contact is kept
+        // (§4 rule 3): the pane counts what is there, and a comment that
+        // vanishes from one console and not another is worse than one marked
+        // withdrawn on both.
+        cd.deleted = true;
+
       } else if (t === 'requisition_cancelled') {
         var rc = reqs[pay.req_id];
         if (!rc || rc.status === 'closed') continue;
@@ -959,7 +1081,7 @@
     });
 
     return { items: items, requisitions: reqs, purchase_orders: pos,
-             count_sessions: sessions };
+             count_sessions: sessions, comments: comments };
   }
 
   // ── Views over the derived state ───────────────────────────────────────────
@@ -1073,7 +1195,6 @@
         // one piece of context the space itself no longer supplies.
         stowed_at: dead ? homeLoc : null,
         discontinued: off,
-
         elsewhere: q(q(it.on_hand) - here),
         min_qty: effective(it, 'min_qty'),
         critical: !!it.critical,
@@ -1117,7 +1238,6 @@
     // is how a reorder list fills up with parts for a machine that is off the
     // ship — see isDiscontinued for what marks one.
     if (isDiscontinued(item.name)) return false;
-
     // 2,181 items carry no stock figure in the export. Unknown is not zero, and
     // reporting them all as short would bury the ones that really are.
     if (item.stock_unknown) return false;
