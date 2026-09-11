@@ -8,6 +8,32 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.25 — 2026-09-11
+
+- **Oil you add now stays attached to the machine you added it to.** Add Oil
+  moved the tank and wrote the log entry, but the engine, generator or
+  compressor was named only in the Rough Log sentence — so none of it counted
+  towards that machine anywhere. It is recorded on the entry itself now, and the
+  Console shows it under **Inventory › Components › Oil History**: every drop a
+  machine has had, and every drop drained out of it.
+
+- **If you write the same top-up up twice, it counts once.** Record it here and
+  again on a service report and the two appear as one event with both names
+  against it, rather than as two top-ups. Where the amounts disagree, both are
+  kept and flagged rather than one being picked.
+
+- **A pail into a head tank is recorded too.** Where neither end of the movement
+  is a tracked tank there was nothing to write and nothing was written. The
+  top-up is now logged against the machine even though no tank level moves.
+
+- **Names, not ids.** Equipment could show as a long string of letters and
+  numbers instead of its name — three separate causes, including the equipment
+  list quietly giving up if it was asked for too early and then never trying
+  again. Tanks could do the same. Both fixed.
+
+- Quantities are written the same way round as the Console writes them, so a
+  top-up no longer shows as a negative on Tank Levels & Transfers.
+
 ## 1.24 — 2026-09-10
 
 - **Alerts and Shipyard notes are on the phone now.** Notes only ever drew the

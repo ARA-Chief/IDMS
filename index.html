@@ -6276,18 +6276,40 @@ var ER_ASSETS_CACHE  = null;   // [{ code, name }] parsed from OneDrive assets.c
 var ER_ASSETS_LOAD   = null;   // in-flight promise
 
 // Fetch /config/assets.csv from OneDrive and cache a [{code,name}] list.
+//
+// This is what turns '601.001' into 'Main Engine' on every screen that names a
+// component, so a cold or failed load does not degrade gracefully -- it leaves
+// codes and raw rounds-config labels on screen where a name should be. Two
+// things used to make that likely, and both are fixed here:
+//
+//   * It read `graphToken` synchronously and gave up if it was not set yet.
+//     Add Oil calls this in a Promise.all alongside the loaders that refresh
+//     the token, so on a cold open it lost the race with itself. It now
+//     refreshes the token the same way every other reader does.
+//   * A failed fetch cached [] -- and an empty array is truthy, so the guard at
+//     the top returned it for the rest of the session and nothing ever tried
+//     again. A failure is now not cached at all.
 function erLoadAssets() {
-  if (ER_ASSETS_CACHE) return Promise.resolve(ER_ASSETS_CACHE);
+  if (ER_ASSETS_CACHE && ER_ASSETS_CACHE.length) return Promise.resolve(ER_ASSETS_CACHE);
   if (ER_ASSETS_LOAD)  return ER_ASSETS_LOAD;
-  if (!graphToken)     return Promise.resolve([]);
   var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/Documents/IDMS/config/assets.csv:/content';
-  ER_ASSETS_LOAD = fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } })
-    .then(function(r) { return r.ok ? r.text() : ''; })
-    .then(function(csv) {
-      ER_ASSETS_CACHE = erParseAssetsCsv(csv);
-      return ER_ASSETS_CACHE;
+  ER_ASSETS_LOAD = (typeof obsRefreshToken === 'function'
+      ? obsRefreshToken().catch(function() { return graphToken; })
+      : Promise.resolve(graphToken))
+    .then(function() {
+      if (!graphToken) throw new Error('not signed in');
+      return fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
     })
-    .catch(function() { ER_ASSETS_CACHE = []; return []; })
+    .then(function(r) { if (!r.ok) throw new Error('assets.csv ' + r.status); return r.text(); })
+    .then(function(csv) {
+      var rows = erParseAssetsCsv(csv);
+      if (rows.length) ER_ASSETS_CACHE = rows;
+      return rows;
+    })
+    .catch(function(e) {
+      console.warn('[assets] could not read assets.csv:', e && e.message);
+      return ER_ASSETS_CACHE || [];      // not cached -- the next caller retries
+    })
     .finally(function() { ER_ASSETS_LOAD = null; });
   return ER_ASSETS_LOAD;
 }
@@ -10564,7 +10586,12 @@ function addOilFormatDestLabel(assetCode, rawLabel, prefix, kind) {
   // no asset_code at all — e.g. a vesselconfig tank entry). Use the rounds-
   // config label with whatever prefix we built, plus a [tank] tag for
   // tank-level inspection rows so source vs destination stays unambiguous.
-  var label = (prefix ? prefix + ' · ' : '') + (rawLabel || 'Unnamed');
+  //
+  // With neither a name nor a label, the asset code stands alone. It is a
+  // poor label but it is a TRUE one, and an engineer can look it up; the
+  // previous 'Unnamed' told them nothing at all.
+  if (!rawLabel) return assetCode || 'Unnamed';
+  var label = (prefix ? prefix + ' · ' : '') + rawLabel;
   if (assetCode) label += ' (' + assetCode + ')';
   if (kind === 'tk_percent') label += ' [tank]';
   return label;
@@ -10622,7 +10649,13 @@ async function addOilLoadComponents() {
 
     function pushDest(it, labelPrefix, kind) {
       if (!it) return;
-      var rawLabel = it.label || it.item_id || 'Unnamed';
+      // NEVER the item_id. It is a uuid, it means nothing to anybody, and it
+      // used to be the fallback here -- so an add-oil line whose label had not
+      // been filled in on the Console showed up on the phone as
+      // '47248461-0aeb-478e-a927-fe78ef6ab213'. The asset code is the worst
+      // this should ever come to, and the formatter prefers the asset's name
+      // over both.
+      var rawLabel = it.label || '';
 
       var key = (it.item_id || '') + '|' + (it.asset_code || '') + '|' + kind;
       if (seen[key]) return;
@@ -10684,7 +10717,9 @@ async function addOilLoadComponents() {
     // lube tank by virtue of being on this form.
     (ADDOIL.lubeTanks || []).forEach(function(t) {
       if (!t || !t.tank_id) return;
-      var name = t.name || t.abbreviation || t.tank_id;
+      // Not the tank_id: it is a uuid ('a1b2c3d4-0018-4000-8000-...') and
+      // reading one off a dropdown tells nobody which tank they picked.
+      var name = t.name || t.abbreviation || 'Unnamed tank';
       var key  = 'tank|' + t.tank_id;
       if (seen[key]) return;
       seen[key] = true;
@@ -10743,7 +10778,9 @@ async function addOilLoadComponents() {
     // tank name) — the operator can tell waste tanks by their name.
     (ADDOIL.wasteTanks || []).forEach(function(t) {
       if (!t || !t.tank_id) return;
-      var name = t.name || t.abbreviation || t.tank_id;
+      // Not the tank_id: it is a uuid ('a1b2c3d4-0018-4000-8000-...') and
+      // reading one off a dropdown tells nobody which tank they picked.
+      var name = t.name || t.abbreviation || 'Unnamed tank';
       var key  = 'tank|' + t.tank_id;
       if (seen[key]) return;
       seen[key] = true;
@@ -11007,8 +11044,18 @@ function addOilOpenConfirm() {
 // destinations, 'transfer' for tank-to-tank transfers, 'correction' for the
 // general fallback.
 async function addOilApplyTankDeltas(opts) {
-  // opts = { sourceKind, sourceTankId, destKind, destTankId, qty }
+  // opts = { sourceKind, sourceTankId, destKind, destTankId, qty,
+  //          machine: { code, item_id, label, side } | null }
   // Returns { sourceRetained: number|null, destRetained: number|null }.
+  //
+  // `machine` is the whole of the parity fix. Until 2026-09-11 this wrote the
+  // tank movement and NOTHING about the machine the oil went into: the engine
+  // was named only in the rough-log sentence, which is prose. So a top-up
+  // recorded on the phone moved the tank, appeared in the log, and could never
+  // be attributed to a machine again - the Console's oil ledger reads
+  // equipment_id / equipment_code off these entries and skipped every one of
+  // them. Inventory > Components now shows an Oil History per machine, built
+  // from exactly these fields.
   await obsRefreshToken();
   var resp = await fetch(incinGraphUrl(FUELSTATE_PATH), {
     headers: { 'Authorization': 'Bearer ' + graphToken }
@@ -11039,6 +11086,23 @@ async function addOilApplyTankDeltas(opts) {
 
   var sourceRetained = null;
   var destRetained   = null;
+  var wroteAny       = false;
+
+  // The machine, written onto whichever entry it belongs to, in the shape the
+  // Console's own Tank Levels & Transfers writes it. Same field names, same
+  // to_type vocabulary, so one reader serves both surfaces.
+  var mach = opts.machine || null;
+  function withMachine(entry, side) {
+    if (mach && mach.side === side) {
+      entry.equipment_id    = mach.item_id || null;
+      entry.equipment_code  = mach.code    || null;
+      entry.equipment_label = mach.label   || null;
+      if (side === 'from') entry.equipment_side = 'from';
+    }
+    entry.source = 'pwa';
+    wroteAny = true;
+    return entry;
+  }
 
   // Source deduction: only meaningful for lube/waste tank sources. Equipment,
   // Other, and inspection_tank sources have no tracked volume — the if/else
@@ -11046,28 +11110,34 @@ async function addOilApplyTankDeltas(opts) {
   // side (if a real tank) still updates normally below.
   if (opts.sourceKind === 'lube_tank' && opts.sourceTankId) {
     sourceRetained = updateVolume(opts.sourceTankId, -qty);
-    data.lube_log.push({
+    // POSITIVE. This used to be written as -qty, because the row was thought
+    // of as "the deduction" rather than as "the movement". The Console writes
+    // an unsigned amount on every lane and says which way it went in to_type,
+    // and two conventions in one log meant a phone top-up rendered as -15 on
+    // Tank Levels & Transfers and subtracted itself from a machine's totals.
+    // One convention now; the readers coerce the older rows.
+    data.lube_log.push(withMachine({
       id:            nextId++,
       timestamp:     nowIso,
       from_tank_id:  opts.sourceTankId,
       to_tank_id:    (opts.destKind === 'waste_tank' || opts.destKind === 'lube_tank') ? opts.destTankId : null,
-      quantity:      -qty,
-      to_type:       (opts.destKind === 'waste_tank') ? 'transfer' : 'add_oil',
+      quantity:      qty,
+      to_type:       (opts.destKind === 'waste_tank' || opts.destKind === 'lube_tank') ? 'tank' : 'equipment',
       qty_remaining: sourceRetained,
       correction_by: actorName
-    });
+    }, 'to'));
   } else if (opts.sourceKind === 'waste_tank' && opts.sourceTankId) {
     sourceRetained = updateVolume(opts.sourceTankId, -qty);
-    data.waste_log.push({
+    data.waste_log.push(withMachine({
       id:            nextId++,
       timestamp:     nowIso,
       from_tank_id:  opts.sourceTankId,
       to_tank_id:    (opts.destKind === 'waste_tank') ? opts.destTankId : null,
-      quantity:      -qty,
-      to_type:       (opts.destKind === 'waste_tank') ? 'transfer' : 'correction',
+      quantity:      qty,
+      to_type:       (opts.destKind === 'waste_tank') ? 'tank' : 'correction',
       qty_remaining: sourceRetained,
       correction_by: actorName
-    });
+    }, 'to'));
   }
 
   // Destination addition: only meaningful for lube/waste tank destinations.
@@ -11075,28 +11145,53 @@ async function addOilApplyTankDeltas(opts) {
   // no-ops here — user request: "don't worry about adding any oil" for those.
   if (opts.destKind === 'lube_tank' && opts.destTankId) {
     destRetained = updateVolume(opts.destTankId, +qty);
-    data.lube_log.push({
+    data.lube_log.push(withMachine({
       id:            nextId++,
       timestamp:     nowIso,
       from_tank_id:  (opts.sourceKind === 'lube_tank' || opts.sourceKind === 'waste_tank') ? opts.sourceTankId : null,
       to_tank_id:    opts.destTankId,
       quantity:      +qty,
-      to_type:       'add_oil',
+      to_type:       'tank',
       qty_remaining: destRetained,
       correction_by: actorName
-    });
+    }, 'from'));
   } else if (opts.destKind === 'waste_tank' && opts.destTankId) {
     destRetained = updateVolume(opts.destTankId, +qty);
-    data.waste_log.push({
+    // A machine draining into a waste tank is recorded HERE, on the row that
+    // credits the tank, because the machine has no volume of its own to debit
+    // and so writes no row of its own. equipment_side 'from' is what tells the
+    // Console this is oil leaving that machine rather than entering it.
+    data.waste_log.push(withMachine({
       id:            nextId++,
       timestamp:     nowIso,
       from_tank_id:  (opts.sourceKind === 'lube_tank' || opts.sourceKind === 'waste_tank') ? opts.sourceTankId : null,
       to_tank_id:    opts.destTankId,
       quantity:      +qty,
-      to_type:       (opts.sourceKind === 'lube_tank' || opts.sourceKind === 'waste_tank') ? 'transfer' : 'correction',
+      to_type:       'tank',
       qty_remaining: destRetained,
       correction_by: actorName
-    });
+    }, 'from'));
+  }
+
+  // A movement with a machine at one end and no tracked tank at the other:
+  // a pail of oil into a head tank, a drum into a gearbox. Neither side has a
+  // volume to move, so neither branch above wrote anything — and the top-up
+  // existed only in the rough-log sentence, which is prose and which the oil
+  // ledger cannot read. It is still oil that went into a machine, so it gets a
+  // row with no tank on it. `from_description` is what the operator picked or
+  // typed, so the row still says where it came from.
+  if (mach && !wroteAny) {
+    data.lube_log.push(withMachine({
+      id:               nextId++,
+      timestamp:        nowIso,
+      from_tank_id:     null,
+      from_description: opts.sourceLabel || null,
+      to_tank_id:       null,
+      quantity:         qty,
+      to_type:          mach.side === 'from' ? 'drain' : 'equipment',
+      qty_remaining:    null,
+      correction_by:    actorName
+    }, mach.side));
   }
 
   data.lube_log.sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
@@ -11251,6 +11346,22 @@ async function addOilCommit() {
   var destTankId   = (f.destKind === 'lube_tank' || f.destKind === 'waste_tank')
     ? f.destComponent.add_oil_tank_id : null;
 
+  // THE MACHINE. Whichever side of the movement it is on, and the side it is
+  // on, so the log entry can say "oil went into this" or "oil came out of
+  // this" rather than leaving it to the rough-log sentence. Both equipment
+  // (a roundsconfig add-oil line) and inspection_tank (a sight-glass tank on a
+  // machine) count: oil goes into both, and the Console's component tree knows
+  // both by their asset code.
+  function machineOf(kind, comp, side) {
+    if (!comp) return null;
+    if (kind !== 'equipment' && kind !== 'inspection_tank') return null;
+    if (!comp.asset_code && !comp.item_id) return null;
+    return { code: comp.asset_code || null, item_id: comp.item_id || null,
+             label: comp.label || null, side: side };
+  }
+  var machine = machineOf(f.destKind, f.destComponent, 'to')
+             || machineOf(f.fromKind, f.fromComponent, 'from');
+
   var roughLogBody = 'Added ' + f.qty.toFixed(2) + ' USG ' + f.contentsValue
                    + ' to ' + destLabel + (destAsset ? ' (' + destAsset + ')' : '')
                    + ' from ' + fromLabel;
@@ -11266,7 +11377,9 @@ async function addOilCommit() {
         sourceTankId: sourceTankId,
         destKind:     f.destKind,
         destTankId:   destTankId,
-        qty:          f.qty
+        qty:          f.qty,
+        machine:      machine,
+        sourceLabel:  fromLabel
       });
     } catch (e) {
       console.error('[addOil] tank delta failed', e);
@@ -11293,8 +11406,8 @@ async function addOilCommit() {
       user:         (currentUser && currentUser.username) || '',
       display_name: (currentUser && (currentUser.name || currentUser.username)) || '',
       body:         roughLogBody,
-      // equipment_id only attached when destination resolved to a real asset.
-      equipment_id: destAsset,
+      // equipment_id only attached when the movement resolved to a real asset.
+      equipment_id: (machine && machine.code) || destAsset,
       ref_id:       null
     });
 
@@ -11329,7 +11442,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.24';
+var PWA_VERSION  = '1.25';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {
