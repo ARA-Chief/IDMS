@@ -8,6 +8,14 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.26 — 2026-09-12
+
+- **Sign in to Notes and Procurement by typing your username**, the same as the
+  main IDMS sign-in. Both pages asked you to pick your name from a list, and
+  that list had stopped being kept up to date — it only held a handful of
+  people, so most of the crew could not sign in there at all. Anyone who can
+  sign in to IDMS can now sign in to both.
+
 ## 1.25 — 2026-09-11
 
 - **Oil you add now stays attached to the machine you added it to.** Add Oil

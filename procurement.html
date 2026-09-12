@@ -346,10 +346,12 @@
   <div class="center-card">
     <h1>Who are you?</h1>
     <div class="sub">Your IDMS login, so what you record carries your name</div>
-    <select class="field" id="login-user"></select>
-    <input class="field" id="login-pass" type="password" placeholder="Password"
+    <input class="field" id="login-user" type="text" placeholder="Username" autocomplete="username"
+      autocapitalize="none" spellcheck="false"
+      onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
+    <input class="field" id="login-pass" type="password" placeholder="Password" autocomplete="current-password"
       onkeydown="if(event.key==='Enter')pcIdmsLogin()">
-    <button class="btn" onclick="pcIdmsLogin()">Continue</button>
+    <button class="btn" id="login-btn" onclick="pcIdmsLogin()">Continue</button>
     <div class="err" id="login-err"></div>
   </div>
 </div>
@@ -563,13 +565,8 @@ async function pcAfterMsAuth() {
   var saved = pcSavedIdmsUser();
   if (saved) { PC.user = saved; pcEnterApp(); return; }
 
-  var cfg = await pcGetJson(ONEDRIVE_BASE + '/config/userconfig.json');
-  if (!cfg || !cfg.users) { pcAuthError(new Error('userconfig.json unavailable')); return; }
-  PC._users = cfg.users.filter(function (u) { return u.status !== 'retired'; });
-  document.getElementById('login-user').innerHTML = PC._users.map(function (u, i) {
-    return '<option value="' + i + '">' + pcEsc(u.name || u.username) + '</option>';
-  }).join('');
   pcShow('screen-login');
+  document.getElementById('login-user').focus();
 }
 
 // Same three places notes.html reads, in the same order and for the same
@@ -591,15 +588,54 @@ function pcSavedIdmsUser() {
   return null;
 }
 
-function pcIdmsLogin() {
-  var u = PC._users[Number(document.getElementById('login-user').value)];
-  var pass = document.getElementById('login-pass').value;
-  if (!u || u.password !== pass) {
-    document.getElementById('login-err').textContent = 'Wrong password.';
+// Same sign-in as notes.html, and for the same reason: typed username and
+// password checked against crewconfig.crew the way index.html submitLogin checks
+// them. The dropdown this replaced was built from userconfig.users, a retired
+// store frozen at a handful of people, so most of the crew were not in it.
+async function pcIdmsLogin() {
+  var userEl = document.getElementById('login-user');
+  var passEl = document.getElementById('login-pass');
+  var errEl  = document.getElementById('login-err');
+  var btn    = document.getElementById('login-btn');
+  var username = userEl.value.trim().toLowerCase();
+  var pass = passEl.value;
+  errEl.textContent = '';
+  if (!username) { userEl.focus(); return; }
+  if (!pass) { passEl.focus(); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  var roster;
+  try {
+    var cfg = await pcGetJson(ONEDRIVE_BASE + '/config/crewconfig.json');
+    roster = cfg && cfg.crew;
+    if (!roster) {
+      var legacy = await pcGetJson(ONEDRIVE_BASE + '/config/userconfig.json');
+      roster = legacy && legacy.users;
+    }
+  } catch (e) { roster = null; }
+  btn.disabled = false;
+  btn.textContent = 'Continue';
+  if (!roster) { errEl.textContent = 'Could not load the crew list. Check connection.'; return; }
+
+  var u = null;
+  for (var i = 0; i < roster.length; i++) {
+    var r = roster[i];
+    if (r && r.status !== 'retired' && (r.username || '').toLowerCase() === username && r.password === pass) { u = r; break; }
+  }
+  if (!u) {
+    errEl.textContent = 'Incorrect username or password.';
+    passEl.select();
     return;
   }
-  PC.user = { username: u.username, name: u.name, role: u.role,
-              permission_tier: u.permission_tier, departments: u.departments || [] };
+  PC.user = {
+    username: u.username,
+    user_id: u.crew_id || u.user_id || null,
+    name: u.name || u.displayname || u.username,
+    role: u.role_label || u.role || u.role_id || '',
+    permission_tier: u.permission_tier || 'standard',
+    departments: u.departments || (u.department ? [u.department] : [])
+  };
   try { localStorage.setItem('pc_user', JSON.stringify(PC.user)); } catch (e) {}
   pcEnterApp();
 }

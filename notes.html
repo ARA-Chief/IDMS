@@ -290,9 +290,11 @@
   <div class="center-card">
     <h1>Who is this?</h1>
     <div class="sub">Notes are shared and signed — pick yourself, not the tablet.</div>
-    <select class="field" id="login-user"></select>
-    <input class="field" type="password" id="login-pass" placeholder="IDMS password" autocomplete="current-password">
-    <button class="btn" onclick="ntIdmsLogin()">Continue</button>
+    <input class="field" type="text" id="login-user" placeholder="IDMS username" autocomplete="username" autocapitalize="none" spellcheck="false"
+           onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
+    <input class="field" type="password" id="login-pass" placeholder="IDMS password" autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')ntIdmsLogin()">
+    <button class="btn" id="login-btn" onclick="ntIdmsLogin()">Continue</button>
     <div class="err" id="login-err"></div>
   </div>
 </div>
@@ -582,14 +584,8 @@ async function ntAfterMsAuth() {
   var saved = ntSavedIdmsUser();
   if (saved) { NT.user = saved; ntEnterApp(); return; }
 
-  var cfg = await ntGetJson(ONEDRIVE_BASE + '/config/userconfig.json');
-  if (!cfg || !cfg.users) { ntAuthError(new Error('userconfig.json unavailable')); return; }
-  NT._users = cfg.users.filter(function (u) { return u.status !== 'retired'; });
-  var sel = document.getElementById('login-user');
-  sel.innerHTML = NT._users.map(function (u, i) {
-    return '<option value="' + i + '">' + ntEsc(u.name || u.username) + '</option>';
-  }).join('');
   ntShow('screen-login');
+  document.getElementById('login-user').focus();
 }
 
 // Whoever is already signed in to IDMS in this browser. Three places hold it,
@@ -616,14 +612,56 @@ function ntSavedIdmsUser() {
   return null;
 }
 
-function ntIdmsLogin() {
-  var u = NT._users[Number(document.getElementById('login-user').value)];
-  var pass = document.getElementById('login-pass').value;
-  if (!u || u.password !== pass) {
-    document.getElementById('login-err').textContent = 'Wrong password.';
+// Typed username + password, checked the way the PWA's own sign-in checks them
+// (index.html submitLogin): against crewconfig.crew, which is the roster AND the
+// login list. This used to be a dropdown built from userconfig.users — a retired
+// store frozen at the handful who had accounts on migration day, so most of the
+// crew could not sign in here at all. The file is fetched on every attempt so a
+// password changed in the Console takes effect at once.
+async function ntIdmsLogin() {
+  var userEl = document.getElementById('login-user');
+  var passEl = document.getElementById('login-pass');
+  var errEl  = document.getElementById('login-err');
+  var btn    = document.getElementById('login-btn');
+  var username = userEl.value.trim().toLowerCase();
+  var pass = passEl.value;
+  errEl.textContent = '';
+  if (!username) { userEl.focus(); return; }
+  if (!pass) { passEl.focus(); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  var roster;
+  try {
+    var cfg = await ntGetJson(ONEDRIVE_BASE + '/config/crewconfig.json');
+    roster = cfg && cfg.crew;
+    if (!roster) {
+      var legacy = await ntGetJson(ONEDRIVE_BASE + '/config/userconfig.json');
+      roster = legacy && legacy.users;
+    }
+  } catch (e) { roster = null; }
+  btn.disabled = false;
+  btn.textContent = 'Continue';
+  if (!roster) { errEl.textContent = 'Could not load the crew list. Check connection.'; return; }
+
+  var u = null;
+  for (var i = 0; i < roster.length; i++) {
+    var r = roster[i];
+    if (r && r.status !== 'retired' && (r.username || '').toLowerCase() === username && r.password === pass) { u = r; break; }
+  }
+  if (!u) {
+    errEl.textContent = 'Incorrect username or password.';
+    passEl.select();
     return;
   }
-  NT.user = { username: u.username, name: u.name, role: u.role, permission_tier: u.permission_tier };
+  NT.user = {
+    username: u.username,
+    user_id: u.crew_id || u.user_id || null,
+    name: u.name || u.displayname || u.username,
+    role: u.role_label || u.role || u.role_id || '',
+    permission_tier: u.permission_tier || 'standard',
+    departments: u.departments || (u.department ? [u.department] : [])
+  };
   try { localStorage.setItem('nt_user', JSON.stringify(NT.user)); } catch (e) {}
   ntEnterApp();
 }
