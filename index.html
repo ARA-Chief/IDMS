@@ -11576,6 +11576,15 @@ var NTA = { events: [], loadedNames: {}, shownIds: {}, checking: false };
 // (NTC_ALERT_FOLDER); a note in it alerts the whole department.
 var NTA_ALERT_FOLDER = 'Alerts';
 
+// The engine room's Offload List (§41.4e). The Console's Offload screen pushes
+// the worklist here one assignable note per row when an offload commences, and
+// crew file or drag notes into it by hand. Like the Alerts pad, landing in it is
+// the notification: everyone in the engine department is told, and each person
+// acknowledges for themselves. Matched by name in notes.html (NT_OFFLOAD_FOLDER)
+// and in the Console (NTC_OFFLOAD_FOLDER, OFL_NOTES_FOLDER).
+var NTA_OFFLOAD_DEPT   = 'engine';
+var NTA_OFFLOAD_FOLDER = 'Offload List';
+
 // What to say about an alert-pad note. A note raised by a rule carries the
 // rule that raised it and how loudly it wants to be read; one filed by hand
 // carries neither, and says who filed it instead of inventing a rule.
@@ -11679,6 +11688,14 @@ function ntaComputeAlerts() {
       // rule sets group_alert too, and "Group alert from wostara" names the
       // account the Console wrote under, not the rule that fired.
       items.push({ note: n, why: ntaAlertWhy(n) });
+    } else if (n.scope.level === 'department' && n.folder === NTA_OFFLOAD_FOLDER &&
+               n.scope.department === NTA_OFFLOAD_DEPT && myDeptKeys[NTA_OFFLOAD_DEPT]) {
+      // Pushed or moved into the Offload List: the engine room is told. The
+      // test is "open and in the folder", not "just arrived", so a note dragged
+      // in later alerts the same way one pushed at Commence does — and an ack
+      // is per user, so one hand dismissing does not silence the rest.
+      items.push({ note: n, why: 'Offload List — ' + (n.origin === 'offload'
+        ? 'offload work for the engine room' : 'filed by ' + n.author) });
     } else if (n.group_alert && n.scope.level === 'department' && myDeptKeys[n.scope.department]) {
       items.push({ note: n, why: 'Group alert from ' + n.author });
     }
@@ -11752,7 +11769,7 @@ function ntaShowPopup(items) {
   ov.innerHTML =
     '<div id="nta-card">' +
     '<h2>Notes need your attention</h2>' +
-    '<div class="nta-sub">' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' — assigned notes, group alerts and the Alerts pad</div>' +
+    '<div class="nta-sub">' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' — assigned notes, group alerts, the Alerts pad and the Offload List</div>' +
     shown.map(function (it) {
       return '<div class="nta-item"><div class="t">' + ntaEsc(it.note.title) + '</div>' +
              '<div class="w">' + ntaEsc(it.why) + '</div>' +

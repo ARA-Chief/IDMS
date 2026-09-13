@@ -397,8 +397,24 @@ var NT_YARD_DEPT    = 'engine';
 var NT_YARD_FOLDER  = 'Shipyard';
 var NT_ALERT_FOLDER = 'Alerts';
 
+//   Offload List — the Console's Operations → Offload → Commence pushes the
+//              offload worklist here, one assignable note per row
+//              (IDMS-Console/docs/offload.md §9). Engine Room only. Like
+//              Alerts, landing here IS the notification: the hub tells everyone
+//              in the engine department (index.html, NTA_OFFLOAD_FOLDER).
+//              Notes here default to assignable — a plain note added here or
+//              dragged in is made assignable, because the list is work somebody
+//              picks up. Same string as NTC_OFFLOAD_FOLDER in the Console.
+var NT_OFFLOAD_DEPT   = 'engine';
+var NT_OFFLOAD_FOLDER = 'Offload List';
+
+function ntIsOffloadFolder(deptKey, folder) {
+  return deptKey === NT_OFFLOAD_DEPT && folder === NT_OFFLOAD_FOLDER;
+}
+
 function ntIsReservedFolder(deptKey, name) {
   if (name === NT_ALERT_FOLDER) return true;
+  if (ntIsOffloadFolder(deptKey, name)) return true;
   return deptKey === NT_YARD_DEPT && name === NT_YARD_FOLDER;
 }
 
@@ -1427,6 +1443,9 @@ function ntRenderTree() {
   // from; Alerts is the one pad on this page that fills itself, and so the one
   // row a person opens to read rather than to file into. A row you have to
   // scroll past the folder band to reach is a row nobody uses.
+  if (NT.dept === NT_OFFLOAD_DEPT) {
+    h += ntTreeItem({ kind: 'department', owner: null, folder: NT_OFFLOAD_FOLDER }, '🚢 Offload List');
+  }
   if (NT.dept === NT_YARD_DEPT) {
     h += ntTreeItem({ kind: 'department', owner: null, folder: NT_YARD_FOLDER }, '⚓ Shipyard notes');
   }
@@ -1865,6 +1884,8 @@ function ntRenderList() {
       locSub = 'shipyard · ' + ntDeptLabel(NT.dept) + ' — the pool the yard screens draw from';
     } else if (NT.view.folder === NT_ALERT_FOLDER) {
       locSub = 'alerts · ' + ntDeptLabel(NT.dept) + ' — everyone in the department is told';
+    } else if (ntIsOffloadFolder(NT.dept, NT.view.folder)) {
+      locSub = 'offload list · assignable — everyone in the engine room is told when a note lands here';
     } else {
       locSub = NT.view.folder ? 'section · ' + ntDeptLabel(NT.dept) : 'visible to everyone';
     }
@@ -2079,6 +2100,13 @@ async function ntTreeDrop(ev, el) {
       patch:  { scope: scope, folder: view.folder || null },
       before: { scope: n.scope, folder: n.folder || null }
     });
+    // Dragged into the Offload List as a plain note: it arrives as work to be
+    // picked up. Only from unassigned — an equipment note keeps its type, and a
+    // note with people on it is already somebody's.
+    if (scope.level === 'department' && ntIsOffloadFolder(NT.dept, view.folder) &&
+        (n.assignment || 'unassigned') === 'unassigned') {
+      await ntAppendEvent('note_assignment_set', { note_id: n.note_id, mode: 'assignable' });
+    }
     ntToast('Moved to ' + (view.folder || (view.kind === 'general' ? 'General' : ntDeptLabel(NT.dept))));
   } catch (e) { ntToast('Could not move — ' + ntWhyFailed(e)); }
 }
@@ -2510,7 +2538,7 @@ async function ntQuickAdd() {
   try {
     var attachments = [];
     for (var i = 0; i < staged.length; i++) attachments.push(await ntUploadAny(noteId, staged[i]));
-    await ntAppendEvent('note_created', {
+    var created = {
       note_id: noteId,
       title: title,
       scope: ntNewScope(),
@@ -2520,7 +2548,12 @@ async function ntQuickAdd() {
       equipment_code: NT.view.kind === 'equipment' ? NT.view.owner : null,
       origin: 'manual',
       attachments: attachments
-    });
+    };
+    // Offload List notes are work to be picked up — see NT_OFFLOAD_FOLDER.
+    if (created.scope.level === 'department' && ntIsOffloadFolder(NT.dept, created.folder)) {
+      created.assignment = 'assignable';
+    }
+    await ntAppendEvent('note_created', created);
   } catch (e) {
     ntToast('Could not save — ' + ntWhyFailed(e));
     input.value = title;

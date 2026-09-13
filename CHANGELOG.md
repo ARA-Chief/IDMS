@@ -16,6 +16,13 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
   people, so most of the crew could not sign in there at all. Anyone who can
   sign in to IDMS can now sign in to both.
 
+- **The offload list is in Notes.** Engine Room notes have an **🚢 Offload
+  List** row. When an offload is commenced in the Console, every item on the
+  list lands there as its own note that anyone can pick up, and everyone in the
+  engine room is told on the phone. Tick one off here and it is ticked on the
+  Console's list too. A note you add to that folder, or drag into it, is open
+  for anyone to pick up, and the engine room is told about it the same way.
+
 ## 1.25 — 2026-09-11
 
 - **Oil you add now stays attached to the machine you added it to.** Add Oil
