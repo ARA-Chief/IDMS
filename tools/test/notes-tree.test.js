@@ -101,8 +101,12 @@ if (loaded) {
         engine.includes('Shipyard'), true);
   check('Engine Room draws an Alerts row with nothing configured',
         engine.includes('Alerts'), true);
-  check('and all three sit directly under Department notes, above the band',
-        engine.slice(0, 4), [null, 'To Order', 'Shipyard', 'Alerts']);
+  check('Engine Room draws an Offload List row with nothing configured',
+        engine.includes('Offload List'), true);
+  // Same relative order as the Console's sidebar: To Order, then the Offload
+  // List ahead of Shipyard, the Alerts pad last of the reserved rows.
+  check('and all four sit directly under Department notes, above the band',
+        engine.slice(0, 5), [null, 'To Order', 'Offload List', 'Shipyard', 'Alerts']);
 
   // A yard is engineering work — the same rule that hides the Shipyard screens
   // from everyone else. The other two are not: alert rules are written per
@@ -115,15 +119,18 @@ if (loaded) {
   check('Deck gets an Alerts row too', deck.includes('Alerts'), true);
   check('and a To Order row of its own', deck.includes('To Order'), true);
   check('but no Shipyard row', deck.includes('Shipyard'), false);
+  // The offload list is the engine room's; a deck hand's pad is not where the
+  // Console pushes it, and a row there would collect notes nobody is told of.
+  check('and no Offload List row', deck.includes('Offload List'), false);
 
   // A config that somehow carries the name must not produce a second row —
   // one with a ✎ and a ✕ on it, offering to rename what the lane writes into.
   sandbox.NT.dept = 'engine';
-  sandbox.NT.notesConfig.department_folders.engine = ['Alerts', 'Shipyard', 'To Order', 'Overhauls'];
-  const reserved = ['Alerts', 'Shipyard', 'To Order'];
+  sandbox.NT.notesConfig.department_folders.engine = ['Alerts', 'Offload List', 'Shipyard', 'To Order', 'Overhauls'];
+  const reserved = ['Alerts', 'Shipyard', 'To Order', 'Offload List'];
   const dupes = folders().filter(f => reserved.includes(f));
   check('a reserved name in the config is filtered out of the folder band',
-        dupes, ['To Order', 'Shipyard', 'Alerts']);
+        dupes, ['To Order', 'Offload List', 'Shipyard', 'Alerts']);
   check('and an ordinary folder beside it still draws',
         folders().includes('Overhauls'), true);
 
@@ -162,7 +169,28 @@ if (loaded) {
           strIn(read('assignedtasks.js'), 'AT_ORDER_FOLDER'), sandbox.NT_ORDER_FOLDER);
     check('and Requisitions reads that same folder',
           strIn(read('procurement.js'), 'PRC_ORDER_FOLDER'), sandbox.NT_ORDER_FOLDER);
+    check('the Offload List folder is the same string Console side',
+          conStr('NTC_OFFLOAD_FOLDER'), sandbox.NT_OFFLOAD_FOLDER);
+    check('and the Offload List is the same department Console side',
+          conStr('NTC_OFFLOAD_DEPT'), sandbox.NT_OFFLOAD_DEPT);
+    // The offload screen writes into the folder by name too, and a push into a
+    // string the sidebar does not draw is a list nobody can reach.
+    const oflSrc = fs.readFileSync(path.join(CON, 'src', 'renderer', 'js', 'offload.js'), 'utf8');
+    const oflAt = oflSrc.indexOf("const OFL_NOTES_FOLDER");
+    const oflLine = oflAt < 0 ? '' : oflSrc.slice(oflAt, oflSrc.indexOf(';', oflAt));
+    const qa = oflLine.indexOf("'");
+    check('and the offload screen pushes into that same string',
+          qa < 0 ? null : oflLine.slice(qa + 1, oflLine.indexOf("'", qa + 1)), sandbox.NT_OFFLOAD_FOLDER);
   }
+
+  // The phone's alert check is what notifies the engine room; it has to match
+  // the folder the page draws. Same repository, so never skipped.
+  const hub = fs.readFileSync(path.join(REPO, 'index.html'), 'utf8');
+  const m = hub.match(/var NTA_OFFLOAD_FOLDER\s*=\s*'([^']*)'/);
+  const d = hub.match(/var NTA_OFFLOAD_DEPT\s*=\s*'([^']*)'/);
+  check('the hub notifies on the same Offload List string',
+        m && m[1], sandbox.NT_OFFLOAD_FOLDER);
+  check('for the same department', d && d[1], sandbox.NT_OFFLOAD_DEPT);
 }
 
 process.exit(T.done() ? 0 : 1);

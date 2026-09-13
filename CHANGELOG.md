@@ -29,6 +29,17 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
   for oil kept in drums or pails with no tank.
 - Every entry now records which oil it was, so the Console shows the same
   thing you picked.
+- **Sign in to Notes and Procurement by typing your username**, the same as the
+  main IDMS sign-in. Both pages asked you to pick your name from a list, and
+  that list had stopped being kept up to date — it only held a handful of
+  people, so most of the crew could not sign in there at all. Anyone who can
+  sign in to IDMS can now sign in to both.
+- **The offload list is in Notes.** Engine Room notes have an **🚢 Offload
+  List** row. When an offload is commenced in the Console, every item on the
+  list lands there as its own note that anyone can pick up, and everyone in the
+  engine room is told on the phone. Tick one off here and it is ticked on the
+  Console's list too. A note you add to that folder, or drag into it, is open
+  for anyone to pick up, and the engine room is told about it the same way.
 
 ## 1.27 — 2026-09-11
 
