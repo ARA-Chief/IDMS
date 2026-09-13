@@ -17,6 +17,10 @@
   <script src="utils/plan-derive.js"></script>
   <!-- Shared incinerator replay (mirror at IDMS-Console/src/renderer/js/incinerator-reduce.js) -->
   <script src="utils/incinerator-reduce.js"></script>
+  <!-- Stores register + the three-way oil filter Add Oil shares with the Console
+       (mirrors at IDMS-Console/src/renderer/js/procurement-reduce.js and oil-attach.js) -->
+  <script src="utils/procurement-reduce.js"></script>
+  <script src="utils/oil-attach.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -377,6 +381,11 @@
     .incin-table .row-actions button.danger { color: var(--danger); border-color: rgba(220,38,38,0.4); }
     .incin-empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
     .incin-field { display: block; margin-bottom: 14px; text-align: left; }
+    .incin-field label.addoil-ov { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 12px; letter-spacing: 0; text-transform: none; }
+    .incin-field label.addoil-ov input { width: auto; padding: 0; }
+    .incin-field input.addoil-search { margin-top: 6px; }
+    .addoil-hint { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; line-height: 1.4; min-height: 1em; }
+    .addoil-hint b { color: var(--warning, #d97706); font-weight: 600; }
     .incin-field label { display: block; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
     .incin-field input, .incin-field select { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; color: var(--text-primary); font-size: 14px; outline: none; }
     .incin-ret-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
@@ -1862,31 +1871,36 @@
   <div class="modal-overlay" id="modal-addoil-form" style="display:none">
     <div class="modal-card" style="text-align:left">
       <h3 class="modal-title" style="text-align:center;margin-bottom:4px">Add Oil</h3>
-      <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px">Record a lube oil top-up.</p>
+      <p style="font-size:13px;color:var(--text-muted);text-align:center;margin-bottom:20px">Pick the oil or the machine first — the other lists narrow to what is attached.</p>
       <div class="incin-field">
-        <label>Add (contents)</label>
+        <label>Oil (Inventory item)</label>
         <select id="addoil-contents"></select>
+        <label class="addoil-ov"><input type="checkbox" id="addoil-ov-oil"> Override attachment</label>
+        <input id="addoil-oil-search" class="addoil-search" type="search" placeholder="Search every item by name or ITM number" style="display:none">
       </div>
       <div class="incin-field" id="addoil-contents-other-wrap" style="display:none">
-        <label>Contents description (free text)</label>
+        <label>Oil description (free text)</label>
         <input id="addoil-contents-other-text" type="text" placeholder="e.g. Mobilgard 410 NC">
       </div>
       <div class="incin-field">
-        <label>To (equipment)</label>
+        <label>To</label>
         <select id="addoil-dest"></select>
+        <label class="addoil-ov"><input type="checkbox" id="addoil-ov-to"> Override attachment</label>
       </div>
       <div class="incin-field" id="addoil-dest-other-wrap" style="display:none">
         <label>Destination description (free text)</label>
         <input id="addoil-dest-other-text" type="text" placeholder="e.g. spare gearbox, transfer tank, etc.">
       </div>
       <div class="incin-field">
-        <label>From (tank)</label>
+        <label>From</label>
         <select id="addoil-from"></select>
+        <label class="addoil-ov"><input type="checkbox" id="addoil-ov-from"> Override attachment</label>
       </div>
       <div class="incin-field" id="addoil-from-other-wrap" style="display:none">
         <label>Source description (free text)</label>
         <input id="addoil-from-other-text" type="text" placeholder="e.g. 5gal pail, drum #14, etc.">
       </div>
+      <p id="addoil-hint" class="addoil-hint"></p>
       <div class="incin-field" style="margin-bottom:6px">
         <label>Quantity (USG)</label>
         <input id="addoil-qty" type="number" step="0.1" min="0" inputmode="decimal">
@@ -10541,6 +10555,10 @@ async function addOilLoadLubeTanks() {
     if (!resp.ok) { ADDOIL.lubeTanks = []; ADDOIL.wasteTanks = []; return; }
     var cfg = await resp.json();
     var tanks = (cfg && cfg.tanks) || [];
+    // Every tank, for the attachment model: it keeps the ones oil moves
+    // between and reads each one's `asset_code`, which is how an item's SFI
+    // code finds the tank it is kept in.
+    ADDOIL.allTanks   = tanks;
     ADDOIL.lubeTanks  = tanks.filter(function(t) { return t && t.category === 'lube_oil'; });
     // Waste oil tanks are valid destinations (and ORB Code C Item 12.2 / 12.4
     // anchors): used in Rules 1, 4, 5 of the Add Oil → ORB rules matrix.
@@ -10803,101 +10821,265 @@ async function addOilLoadComponents() {
   } catch (_) { ADDOIL.components = []; }
 }
 
-function addOilDistinctContents() {
-  var seen = {};
-  var out = [];
-  (ADDOIL.lubeTanks || []).forEach(function(t) {
-    var c = (t && t.contents) ? String(t.contents).trim() : '';
-    if (c && !seen[c]) { seen[c] = true; out.push(c); }
+// ── The three-way filter (utils/oil-attach.js) ────────────────────────────
+//
+// Oil, To and From each narrow the other two to what is attached: an item from
+// Inventory > Items is attached to the SFI components its codes name, to the
+// tanks it is kept in, and to the shelves the register has it on. Each list
+// has an Override that brings the whole universe back, and a row written
+// through an override says which end was overridden (`attachment_override`).
+// The Console's Tank Levels & Transfers uses the same module, so the two
+// cannot drift into offering different things.
+//
+// Defaults come from history: pick an oil and the From and To it has most
+// often moved between are chosen for you, unless you have already chosen.
+
+ADDOIL.sel     = { item_id: '', from: '', to: '', override: {} };
+ADDOIL.touched = { from: false, to: false };
+ADDOIL.model   = null;
+ADDOIL.stores  = null;     // reduced register, or null when it could not load
+ADDOIL.logs    = [];
+
+var ADDOIL_PC_DB = 'idms-procurement', ADDOIL_PC_STORE = 'catalogue';
+
+function _addOilIdb(mode, key, value) {
+  return new Promise(function(resolve, reject) {
+    if (!window.indexedDB) return reject(new Error('no IndexedDB'));
+    var req = indexedDB.open(ADDOIL_PC_DB, 1);
+    req.onupgradeneeded = function() {
+      if (!req.result.objectStoreNames.contains(ADDOIL_PC_STORE)) req.result.createObjectStore(ADDOIL_PC_STORE);
+    };
+    req.onerror = function() { reject(req.error); };
+    req.onsuccess = function() {
+      var tx = req.result.transaction(ADDOIL_PC_STORE, mode);
+      var st = tx.objectStore(ADDOIL_PC_STORE);
+      if (mode === 'readonly') {
+        var g = st.get(key);
+        g.onsuccess = function() { resolve(g.result || null); };
+        g.onerror = function() { reject(g.error); };
+      } else {
+        st.put(value, key);
+        tx.oncomplete = function() { resolve(true); };
+        tx.onerror = function() { reject(tx.error); };
+      }
+    };
   });
-  out.sort(function(a, b) { return a.localeCompare(b); });
-  return out;
 }
 
-function addOilFillSelect(sel, placeholder, options, valueFn, labelFn) {
-  if (!sel) return;
-  sel.innerHTML = '';
-  var first = document.createElement('option');
-  first.value = ''; first.textContent = placeholder;
-  sel.appendChild(first);
-  (options || []).forEach(function(opt) {
-    var o = document.createElement('option');
-    o.value = valueFn(opt);
-    o.textContent = labelFn(opt);
-    sel.appendChild(o);
+// The stores register, reduced the way procurement.html reduces it. It shares
+// that page's IndexedDB catalogue and localStorage event cache (same origin,
+// same keys, same shapes), so whichever page opened last has already paid for
+// the 1.8 MB and the other reads it for nothing.
+async function addOilLoadStores() {
+  if (typeof procurementReduce === 'undefined') return null;
+  var base = 'https://graph.microsoft.com/v1.0/me/drive/root:/';
+  var catPath = 'Documents/IDMS/data/procurement/catalogue.json';
+  await obsRefreshToken();
+  var auth = { headers: { 'Authorization': 'Bearer ' + graphToken } };
+
+  var cached = null, doc = null;
+  try { cached = await _addOilIdb('readonly', 'catalogue'); } catch (_) {}
+  var etag = null;
+  try {
+    var mr = await fetch(base + encodeURIComponent(catPath).replace(/%2F/g, '/') +
+                         '?select=eTag,lastModifiedDateTime', auth);
+    if (mr.ok) { var meta = await mr.json(); etag = meta.eTag || meta.lastModifiedDateTime || null; }
+  } catch (_) {}
+  if (cached && cached.doc && (etag === null || cached.etag === etag)) {
+    doc = cached.doc;
+  } else if (etag !== null) {
+    try {
+      var cr = await fetch(incinGraphUrl(catPath), auth);
+      if (cr.ok) {
+        doc = await cr.json();
+        try { await _addOilIdb('readwrite', 'catalogue', { etag: etag, doc: doc }); } catch (_) {}
+      }
+    } catch (_) {}
+    if (!doc && cached) doc = cached.doc;
+  }
+
+  // Events: this year's, from the shared cache plus whatever it has not seen.
+  var year = String(new Date().getFullYear());
+  var cacheKey = 'pc_events_cache_' + year;
+  var events = [];
+  try { events = JSON.parse(localStorage.getItem(cacheKey) || '[]') || []; } catch (_) { events = []; }
+  var have = {};
+  events.forEach(function(e) { if (e && e._fn) have[e._fn] = true; });
+  try {
+    var folder = 'Documents/IDMS/data/procurement/events/' + year;
+    var url = base + encodeURIComponent(folder).replace(/%2F/g, '/') + ':/children?$select=name&$top=200';
+    var names = [];
+    while (url) {
+      var lr = await fetch(url, auth);
+      if (lr.status === 404) break;
+      if (!lr.ok) throw new Error('events ' + lr.status);
+      var page = await lr.json();
+      (page.value || []).forEach(function(it) { if (/\.json$/i.test(it.name)) names.push(it.name); });
+      url = page['@odata.nextLink'] || null;
+    }
+    var fresh = names.filter(function(n) { return !have[n]; }).sort();
+    for (var i = 0; i < fresh.length; i++) {
+      var er = await fetch(incinGraphUrl(folder + '/' + fresh[i]), auth);
+      if (!er.ok) continue;
+      var ev = await er.json();
+      if (ev && ev.event_id) { ev._fn = fresh[i]; events.push(ev); }
+    }
+    if (fresh.length) {
+      events.sort(function(a, b) { return (a._fn || '') < (b._fn || '') ? -1 : 1; });
+      try { localStorage.setItem(cacheKey, JSON.stringify(events)); } catch (_) {}
+    }
+  } catch (e) { console.warn('[addOil] procurement events:', e && e.message); }
+
+  var catalogue = doc ? procurementReduce.hydrateCatalogue(doc) : null;
+  var state = procurementReduce.reduce(events, catalogue);
+  state._catalogue = catalogue;
+  return state;
+}
+
+async function addOilLoadLogs() {
+  try {
+    await obsRefreshToken();
+    var r = await fetch(incinGraphUrl(FUELSTATE_PATH), { headers: { 'Authorization': 'Bearer ' + graphToken } });
+    if (!r.ok) return [];
+    var fs = await r.json();
+    return [].concat(fs.lube_log || [], fs.waste_log || []);
+  } catch (_) { return []; }
+}
+
+function addOilBuildModel() {
+  var names = {};
+  (ER_ASSETS_CACHE || []).forEach(function(a) { if (a && a.code) names[a.code] = a.name; });
+  var cat = ADDOIL.stores && ADDOIL.stores._catalogue;
+  var points = (ADDOIL.components || []).filter(function(c) {
+    return c.source_kind === 'add_oil' || c.source_kind === 'inspection_tank';
+  }).map(function(c) {
+    return { code: c.asset_code, item_id: c.item_id, label: c._rawLabel || c.label, kind: c.source_kind };
   });
-  var other = document.createElement('option');
-  other.value = '__OTHER__'; other.textContent = 'Other (write-in)…';
-  sel.appendChild(other);
+  ADDOIL.model = oilAttach.build({
+    tanks: ADDOIL.allTanks || [],
+    points: points,
+    items: (ADDOIL.stores && ADDOIL.stores.items) || {},
+    logs: ADDOIL.logs || [],
+    assetName: function(code) { return names[code] || null; },
+    locName: function(id) {
+      var l = cat && cat.locations && cat.locations[id];
+      return (l && l.path) || id;
+    }
+  });
+}
+
+function _addOilOpt(sel, value, text, selected) {
+  var o = document.createElement('option');
+  o.value = value; o.textContent = text;
+  if (selected) o.selected = true;
+  sel.appendChild(o);
+}
+
+// Group rows under their heading, attached ones first; anything shown only
+// because Override is on is marked, so an override is never an accident.
+function _addOilFillNodes(sel, placeholder, nodes, current) {
+  sel.innerHTML = '';
+  _addOilOpt(sel, '', placeholder, !current);
+  var groups = {}, order = [];
+  nodes.forEach(function(n) {
+    if (!groups[n.group]) { groups[n.group] = []; order.push(n.group); }
+    groups[n.group].push(n);
+  });
+  order.forEach(function(g) {
+    var og = document.createElement('optgroup');
+    og.label = g;
+    groups[g].slice().sort(function(a, b) {
+      return (b.attached - a.attached) || 0;
+    }).forEach(function(n) {
+      var o = document.createElement('option');
+      o.value = n.key;
+      var qty = (n.kind === 'location') ? ' — ' + (Math.round(n.qty * 100) / 100) + ' ' + (n.unit || '') : '';
+      o.textContent = (n.attached ? '' : '⚠ ') + n.label + qty;
+      if (n.key === current) o.selected = true;
+      og.appendChild(o);
+    });
+    sel.appendChild(og);
+  });
+  _addOilOpt(sel, 'other', 'Other (write-in)…', current === 'other');
 }
 
 function addOilPopulateDropdowns() {
   var contentsSel = document.getElementById('addoil-contents');
   var destSel     = document.getElementById('addoil-dest');
   var fromSel     = document.getElementById('addoil-from');
+  if (!contentsSel || !destSel || !fromSel) return;
+  if (!ADDOIL.model) addOilBuildModel();
+  var m = ADDOIL.model, s = ADDOIL.sel;
 
-  var contents = addOilDistinctContents();
-  if (contents.length) {
-    addOilFillSelect(contentsSel, '— select contents —', contents,
-      function(c) { return c; }, function(c) { return c; });
-  } else if (contentsSel) {
-    contentsSel.innerHTML = '<option value="">(no lube-oil contents in vesselconfig)</option>'
-                          + '<option value="__OTHER__">Other (write-in)…</option>';
+  var o = oilAttach.options(m, s);
+
+  // Suggestions fill only the ends nobody has touched.
+  if (s.item_id) {
+    var changed = false;
+    if (!ADDOIL.touched.to && !s.to && o.suggest.to) { s.to = o.suggest.to; changed = true; }
+    if (!ADDOIL.touched.from && !s.from && o.suggest.from) { s.from = o.suggest.from; changed = true; }
+    if (changed) o = oilAttach.options(m, s);
   }
 
-  // FROM dropdown — same shape as TO so the ORB rules matrix can cover
-  // equipment / waste-tank / lube-tank / other on either side:
-  //   - lube oil tanks  (vesselconfig category 'lube_oil')
-  //   - waste oil tanks (vesselconfig category 'waste_oil')
-  //   - equipment       (add_oil items from roundsconfig — sumps, generators,
-  //                      compressors etc.)
-  //   - Other (write-in)
-  // Encoded with the same index-into-ADDOIL.components convention as TO, plus
-  // synthetic 'tank|<tank_id>' / 'equip|<idx>' values aren't needed because
-  // ADDOIL.components already holds everything in one array.
-  if (fromSel) {
-    fromSel.innerHTML = '';
-    var firstF = document.createElement('option');
-    firstF.value = '';
-    firstF.textContent = ADDOIL.components.length
-      ? '— select source —'
-      : '(no sources configured)';
-    fromSel.appendChild(firstF);
-    ADDOIL.components.forEach(function(c, idx) {
-      var o = document.createElement('option');
-      o.value = 'C:' + idx;   // 'C:<idx>' = component-index encoding
-      o.textContent = c.label;
-      fromSel.appendChild(o);
+  // Oil.
+  contentsSel.innerHTML = '';
+  var oilCurrent = s.item_id || (ADDOIL.oilOther ? '__OTHER__' : '');
+  _addOilOpt(contentsSel, '', m.fluids.length ? '— select oil —' : '(no oils linked in Inventory > Items)', !oilCurrent);
+  var oils = o.oils.slice();
+  // Override search: any item in the register, not just the fluids.
+  var q = ((document.getElementById('addoil-oil-search') || {}).value || '').trim().toLowerCase();
+  if (s.override.oil && q.length >= 2 && ADDOIL.stores) {
+    var seen = {};
+    oils.forEach(function(x) { seen[x.item_id] = true; });
+    var hits = 0;
+    Object.keys(ADDOIL.stores.items).some(function(id) {
+      var it = ADDOIL.stores.items[id];
+      if (seen[id] || it.archived) return false;
+      if ((String(it.name || '') + ' ' + id).toLowerCase().indexOf(q) < 0) return false;
+      oils.push({ item_id: id, name: it.name || id, attached: false });
+      return ++hits >= 40;
     });
-    var fromOther = document.createElement('option');
-    fromOther.value = '__OTHER__';
-    fromOther.textContent = 'Other (write-in)…';
-    fromSel.appendChild(fromOther);
   }
+  oils.forEach(function(x) {
+    _addOilOpt(contentsSel, x.item_id, (x.attached ? '' : '⚠ ') + x.name + '  ·  ' + x.item_id,
+               x.item_id === s.item_id);
+  });
+  _addOilOpt(contentsSel, '__OTHER__', 'Other (write-in)…', oilCurrent === '__OTHER__');
 
-  if (destSel) {
-    destSel.innerHTML = '';
-    var firstD = document.createElement('option');
-    firstD.value = '';
-    firstD.textContent = ADDOIL.components.length
-      ? '— select equipment —'
-      : '(no add-oil components in roundsconfig)';
-    destSel.appendChild(firstD);
-    ADDOIL.components.forEach(function(c, idx) {
-      var o = document.createElement('option');
-      o.value = String(idx);
-      o.textContent = c.label;
-      destSel.appendChild(o);
-    });
-    // Other (write-in) — mirrors the FROM dropdown so the operator can
-    // record a top-up to a destination the rounds/vessel config doesn't list
-    // (spare gearbox, transfer tank, off-vessel container, etc.).
-    var destOther = document.createElement('option');
-    destOther.value = '__OTHER__';
-    destOther.textContent = 'Other (write-in)…';
-    destSel.appendChild(destOther);
-  }
+  _addOilFillNodes(destSel, '— select destination —', o.to, s.to);
+  _addOilFillNodes(fromSel, '— select source —', o.from, s.from);
+
+  document.getElementById('addoil-ov-oil').checked  = !!s.override.oil;
+  document.getElementById('addoil-ov-to').checked   = !!s.override.to;
+  document.getElementById('addoil-ov-from').checked = !!s.override.from;
+  document.getElementById('addoil-oil-search').style.display = s.override.oil ? '' : 'none';
+
+  addOilRenderHint(o);
   addOilToggleOthers();
+}
+
+// attachment_override slots, in words.
+function addOilOverrideWords(used) {
+  var w = { oil: 'this item is not linked as a fluid',
+            to: 'the destination is not attached to this oil',
+            from: 'the source is not attached to this oil' };
+  return (used || []).map(function(s) { return w[s] || s; }).join('; ');
+}
+
+function addOilRenderHint(o) {
+  var el = document.getElementById('addoil-hint');
+  if (!el) return;
+  var m = ADDOIL.model, s = ADDOIL.sel, bits = [];
+  if (!ADDOIL.stores) bits.push('Stores register not loaded — oils can still be written in.');
+  else if (!m.fluids.length) bits.push('No oils are linked yet. Link one in Inventory › Items › policy, or use Override.');
+  if (s.item_id) {
+    var p = oilAttach.precedent(m, s.item_id);
+    var n = p.to.reduce(function(t, x) { return t + x.n; }, 0);
+    if (n && (o.suggest.to || o.suggest.from)) bits.push('Defaults from ' + n + ' past transfer' + (n === 1 ? '' : 's') + ' of this oil.');
+    var used = oilAttach.overridesUsed(m, s);
+    if (used.length) bits.push('<b>Override: ' + addOilOverrideWords(used) + '. It will be recorded as an override.</b>');
+  }
+  el.innerHTML = bits.join(' ');
 }
 
 function addOilToggleOthers() {
@@ -10908,8 +11090,30 @@ function addOilToggleOthers() {
   var fWrap = document.getElementById('addoil-from-other-wrap');
   var dWrap = document.getElementById('addoil-dest-other-wrap');
   if (cSel && cWrap) cWrap.style.display = (cSel.value === '__OTHER__') ? '' : 'none';
-  if (fSel && fWrap) fWrap.style.display = (fSel.value === '__OTHER__') ? '' : 'none';
-  if (dSel && dWrap) dWrap.style.display = (dSel.value === '__OTHER__') ? '' : 'none';
+  if (fSel && fWrap) fWrap.style.display = (fSel.value === 'other') ? '' : 'none';
+  if (dSel && dWrap) dWrap.style.display = (dSel.value === 'other') ? '' : 'none';
+}
+
+function addOilOnChange(slot) {
+  var s = ADDOIL.sel;
+  if (slot === 'oil') {
+    var v = document.getElementById('addoil-contents').value;
+    ADDOIL.oilOther = (v === '__OTHER__');
+    var next = (v && v !== '__OTHER__') ? v : '';
+    if (next !== s.item_id) {
+      s.item_id = next;
+      // A new oil re-earns its defaults: untouched ends are cleared so the
+      // suggestion for THIS oil can land, touched ones are kept.
+      if (!ADDOIL.touched.to) s.to = '';
+      if (!ADDOIL.touched.from) s.from = '';
+    }
+  } else if (slot === 'to' || slot === 'from') {
+    s[slot] = document.getElementById(slot === 'to' ? 'addoil-dest' : 'addoil-from').value;
+    ADDOIL.touched[slot] = !!s[slot];
+  } else if (slot === 'ov-oil' || slot === 'ov-to' || slot === 'ov-from') {
+    s.override[slot.slice(3)] = document.getElementById('addoil-' + slot).checked;
+  }
+  addOilPopulateDropdowns();
 }
 
 async function openAddOil() {
@@ -10920,27 +11124,38 @@ async function openAddOil() {
     document.getElementById('addoil-contents-other-text').value = '';
     document.getElementById('addoil-from-other-text').value     = '';
     document.getElementById('addoil-dest-other-text').value     = '';
+    document.getElementById('addoil-oil-search').value          = '';
+    ADDOIL.sel = { item_id: '', from: '', to: '', override: {} };
+    ADDOIL.touched = { from: false, to: false };
+    ADDOIL.oilOther = false;
+    ADDOIL.model = null;
     // Show modal immediately with placeholder while we load.
     document.getElementById('modal-addoil-form').style.display = 'flex';
-    // Load the assets CSV in parallel — its [{code, name}] entries let
-    // addOilLoadComponents resolve asset_code (e.g. '601.001') to the
-    // canonical Equipment-Setup display name ('Main Engine') instead of
-    // showing the rounds-config item label.
-    await Promise.all([
+    document.getElementById('addoil-hint').textContent = 'Loading tanks, equipment and stores…';
+    // assets.csv names the components ('601.001' -> 'Main Engine'); fuelstate
+    // gives the history the defaults come from; the stores register gives the
+    // oils and the shelves they are on.
+    var results = await Promise.all([
       addOilLoadLubeTanks(),
       addOilLoadComponents(),
-      (typeof erLoadAssets === 'function' ? erLoadAssets() : Promise.resolve([]))
+      (typeof erLoadAssets === 'function' ? erLoadAssets() : Promise.resolve([])),
+      addOilLoadLogs(),
+      addOilLoadStores().catch(function(e) { console.warn('[addOil] stores:', e && e.message); return null; })
     ]);
-    // Re-label components now that the assets cache is hot. Components were
-    // built without name resolution; rebuild labels in place using the cache.
+    ADDOIL.logs = results[3] || [];
+    ADDOIL.stores = results[4];
     addOilRelabelComponentsFromAssets();
+    addOilBuildModel();
     addOilPopulateDropdowns();
-    var cSel = document.getElementById('addoil-contents');
-    var fSel = document.getElementById('addoil-from');
-    var dSel = document.getElementById('addoil-dest');
-    if (cSel) cSel.onchange = addOilToggleOthers;
-    if (fSel) fSel.onchange = addOilToggleOthers;
-    if (dSel) dSel.onchange = addOilToggleOthers;
+    document.getElementById('addoil-contents').onchange = function() { addOilOnChange('oil'); };
+    document.getElementById('addoil-dest').onchange     = function() { addOilOnChange('to'); };
+    document.getElementById('addoil-from').onchange     = function() { addOilOnChange('from'); };
+    document.getElementById('addoil-ov-oil').onchange   = function() { addOilOnChange('ov-oil'); };
+    document.getElementById('addoil-ov-to').onchange    = function() { addOilOnChange('ov-to'); };
+    document.getElementById('addoil-ov-from').onchange  = function() { addOilOnChange('ov-from'); };
+    var srch = document.getElementById('addoil-oil-search');
+    var t = null;
+    srch.oninput = function() { clearTimeout(t); t = setTimeout(addOilPopulateDropdowns, 250); };
   } finally { ADDOIL.loading = false; }
 }
 
@@ -10952,58 +11167,50 @@ function addOilCloseConfirm() {
 }
 
 function addOilTankFullName(tankId) {
-  var t = (ADDOIL.lubeTanks || []).find(function(x) { return x.tank_id === tankId; });
+  var t = (ADDOIL.allTanks || []).find(function(x) { return x.tank_id === tankId; });
   if (t) return t.name || t.abbreviation || tankId;
   return tankId || '—';
 }
 
-// Resolve a dropdown value (numeric index, 'C:<idx>' for FROM, '__OTHER__',
-// or '') into a component + kind tag for the ORB rules matrix.
-//   kind in: 'equipment' | 'lube_tank' | 'waste_tank' | 'other' | ''
-// 'equipment' = add_oil row from roundsconfig (has asset_code).
-// 'lube_tank' / 'waste_tank' = vesselconfig tank entries.
-// 'other' = free-text write-in.
-// ''       = nothing selected.
-function _addOilResolveSlot(rawVal) {
-  if (rawVal === '__OTHER__') return { kind: 'other', component: null };
-  if (rawVal === '') return { kind: '', component: null };
-  // FROM dropdown encodes 'C:<idx>'; TO dropdown encodes plain '<idx>'.
-  // Either way, strip the optional 'C:' prefix to read the index.
-  var idx = (typeof rawVal === 'string' && rawVal.indexOf('C:') === 0)
-    ? Number(rawVal.slice(2))
-    : Number(rawVal);
-  if (!Number.isFinite(idx)) return { kind: '', component: null };
-  var c = ADDOIL.components[idx] || null;
-  if (!c) return { kind: '', component: null };
-  // ADDOIL.components items carry source_kind set by addOilLoadComponents:
-  //   'add_oil'         → equipment
-  //   'lube_tank'       → lube oil tank        (vesselconfig 'lube_oil' category)
-  //   'waste_tank'      → waste oil tank       (vesselconfig 'waste_oil' category)
-  //   'inspection_tank' → "TANK LEVEL INSPECTION" section item — no tracked
-  //                       volume, treated like equipment for ORB purposes but
-  //                       skipped entirely by addOilApplyTankDeltas.
-  var kind = (c.source_kind === 'lube_tank')       ? 'lube_tank'
-           : (c.source_kind === 'waste_tank')      ? 'waste_tank'
-           : (c.source_kind === 'inspection_tank') ? 'inspection_tank'
-           : 'equipment';
-  return { kind: kind, component: c };
+// Resolve a node key into the kind vocabulary the tank-delta writer and the
+// ORB rules matrix below have always used:
+//   'equipment' | 'inspection_tank' | 'lube_tank' | 'waste_tank' | 'location' | 'other' | ''
+// and a component-shaped object ({ label, asset_code, item_id, add_oil_tank_id }).
+function _addOilResolveSlot(key) {
+  if (key === 'other') return { kind: 'other', component: null };
+  if (!key) return { kind: '', component: null };
+  var n = oilAttach.nodeByKey(ADDOIL.model, key, ADDOIL.sel.item_id);
+  if (!n) return { kind: '', component: null };
+  if (n.kind === 'tank') {
+    return { kind: n.category === 'waste_oil' ? 'waste_tank' : 'lube_tank',
+             component: { label: n.label, asset_code: n.code, item_id: null, add_oil_tank_id: n.tank_id } };
+  }
+  if (n.kind === 'location') {
+    return { kind: 'location',
+             component: { label: n.label, asset_code: null, item_id: null, location_id: n.location_id } };
+  }
+  return { kind: n.point_kind === 'inspection_tank' ? 'inspection_tank' : 'equipment',
+           component: { label: n.label, asset_code: n.code, item_id: n.point_item_id } };
 }
 
 function addOilReadForm() {
-  var contentsVal = (document.getElementById('addoil-contents') || {}).value || '';
-  var fromRaw     = (document.getElementById('addoil-from')     || {}).value || '';
-  var dstRaw      = (document.getElementById('addoil-dest')     || {}).value || '';
-  var qty         = Number((document.getElementById('addoil-qty') || {}).value || 0);
+  var s = ADDOIL.sel;
+  var qty = Number((document.getElementById('addoil-qty') || {}).value || 0);
   var contentsOther = ((document.getElementById('addoil-contents-other-text') || {}).value || '').trim();
   var fromOther     = ((document.getElementById('addoil-from-other-text')     || {}).value || '').trim();
   var destOther     = ((document.getElementById('addoil-dest-other-text')     || {}).value || '').trim();
+  var item = (s.item_id && ADDOIL.stores) ? ADDOIL.stores.items[s.item_id] : null;
 
-  var fromSlot = _addOilResolveSlot(fromRaw);
-  var destSlot = _addOilResolveSlot(dstRaw);
+  var fromSlot = _addOilResolveSlot(s.from);
+  var destSlot = _addOilResolveSlot(s.to);
 
   return {
-    contentsKind:  (contentsVal === '__OTHER__') ? 'other' : (contentsVal ? 'list' : ''),
-    contentsValue: (contentsVal && contentsVal !== '__OTHER__') ? contentsVal : contentsOther,
+    contentsKind:  s.item_id ? 'item' : (ADDOIL.oilOther ? 'other' : ''),
+    contentsValue: item ? (item.name || s.item_id) : (s.item_id || contentsOther),
+    item:          item,
+    oilFields:     oilAttach.entryFields(ADDOIL.model, {
+                     item_id: s.item_id, from: s.from, to: s.to,
+                     fluid_text: s.item_id ? '' : contentsOther }),
     fromKind:      fromSlot.kind,
     fromComponent: fromSlot.component,
     fromText:      fromOther,
@@ -11016,8 +11223,8 @@ function addOilReadForm() {
 
 function addOilOpenConfirm() {
   var f = addOilReadForm();
-  if (!f.contentsKind) { alert('Please select contents.'); return; }
-  if (f.contentsKind === 'other' && !f.contentsValue) { alert('Please describe the contents.'); return; }
+  if (!f.contentsKind) { alert('Please select the oil.'); return; }
+  if (f.contentsKind === 'other' && !f.contentsValue) { alert('Please describe the oil.'); return; }
   if (!f.destKind) { alert('Please select a destination.'); return; }
   if (f.destKind === 'other' && !f.destText) { alert('Please describe the destination.'); return; }
   if (!f.fromKind) { alert('Please select a source.'); return; }
@@ -11026,9 +11233,19 @@ function addOilOpenConfirm() {
 
   var fromLabel = (f.fromKind === 'other') ? f.fromText : f.fromComponent.label;
   var destLabel = (f.destKind === 'other') ? f.destText : f.destComponent.label;
-  var msg = 'Add ' + f.contentsValue + ' to ' + destLabel
+  var msg = 'Add ' + f.contentsValue + (f.item ? ' (' + f.item.item_id + ')' : '') + ' to ' + destLabel
           + ' from ' + fromLabel + ', qty. ' + f.qty.toFixed(2) + ' USG';
-  document.getElementById('addoil-confirm-text').textContent = msg;
+  if (f.fromKind === 'location' && f.item) {
+    msg += oilAttach.issuesStock(f.item)
+      ? '\n\n' + f.qty.toFixed(2) + ' ' + (f.item.unit || '') + ' will be issued out of stores.'
+      : '\n\nThis item is counted in "' + (f.item.unit || '?') + '", not gallons, so nothing is taken ' +
+        'off its stock. Issue the drum or pail in Procurement when it is empty.';
+  }
+  var used = f.oilFields.attachment_override || [];
+  if (used.length) msg += '\n\nRecorded as an attachment override: ' + addOilOverrideWords(used) + '.';
+  var el = document.getElementById('addoil-confirm-text');
+  el.textContent = msg;
+  el.style.whiteSpace = 'pre-line';
   document.getElementById('modal-addoil-confirm').style.display = 'flex';
 }
 
@@ -11037,25 +11254,19 @@ function addOilOpenConfirm() {
 // volumes for the source and destination tanks (if they're tracked), so the
 // caller can pass them into ORB `ret.` fields.
 //
-// Signed quantity is encoded per side: lube_log entries are negative for
-// deductions and positive for additions; waste_log entries (Code C 12.2
-// destinations) are positive for additions. `to_type` matches existing
-// fuel-state semantics: 'add_oil' for additions to/from equipment-style
-// destinations, 'transfer' for tank-to-tank transfers, 'correction' for the
-// general fallback.
+// The rows themselves are written by oilAttach.writeMovement (utils/oil-attach.js),
+// the same function the Console's Tank Levels & Transfers calls, so a top-up
+// recorded on either surface leaves the same row. What stays here is only what
+// is the phone's own: reading and writing the file, and how a volume is rounded.
 async function addOilApplyTankDeltas(opts) {
   // opts = { sourceKind, sourceTankId, destKind, destTankId, qty,
-  //          machine: { code, item_id, label, side } | null }
+  //          machine: { code, item_id, label, side } | null,
+  //          sourceLabel, oil: oilAttach.entryFields() }
   // Returns { sourceRetained: number|null, destRetained: number|null }.
   //
-  // `machine` is the whole of the parity fix. Until 2026-09-11 this wrote the
-  // tank movement and NOTHING about the machine the oil went into: the engine
-  // was named only in the rough-log sentence, which is prose. So a top-up
-  // recorded on the phone moved the tank, appeared in the log, and could never
-  // be attributed to a machine again - the Console's oil ledger reads
-  // equipment_id / equipment_code off these entries and skipped every one of
-  // them. Inventory > Components now shows an Oil History per machine, built
-  // from exactly these fields.
+  // `machine` is the 2026-09-11 parity fix: the machine is named on the row,
+  // not only in the rough-log sentence, so the Console's oil ledger can
+  // attribute it. `oil` is the 2026-09-12 one: the item the oil traces to.
   await obsRefreshToken();
   var resp = await fetch(incinGraphUrl(FUELSTATE_PATH), {
     headers: { 'Authorization': 'Bearer ' + graphToken }
@@ -11067,132 +11278,31 @@ async function addOilApplyTankDeltas(opts) {
   if (!Array.isArray(data.waste_log)) data.waste_log = [];
   if (!Array.isArray(data.tanks))     data.tanks     = [];
 
-  var qty       = Math.abs(Number(opts.qty));
-  var nowIso    = new Date().toISOString();
-  var actorName = (currentUser && (currentUser.name || currentUser.username)) || '';
-  var nextId    = Date.now();
-
   function findTank(tid) {
     return data.tanks.find(function(x) { return x && x.tank_id === tid; }) || null;
   }
-  function updateVolume(tid, delta) {
-    var t = findTank(tid);
-    if (!t) return null;
-    var prev = Number(t.volume) || 0;
-    var next = Math.max(0, prev + delta);
-    t.volume = Number(next.toFixed(2));
-    return t.volume;
-  }
-
-  var sourceRetained = null;
-  var destRetained   = null;
-  var wroteAny       = false;
-
-  // The machine, written onto whichever entry it belongs to, in the shape the
-  // Console's own Tank Levels & Transfers writes it. Same field names, same
-  // to_type vocabulary, so one reader serves both surfaces.
-  var mach = opts.machine || null;
-  function withMachine(entry, side) {
-    if (mach && mach.side === side) {
-      entry.equipment_id    = mach.item_id || null;
-      entry.equipment_code  = mach.code    || null;
-      entry.equipment_label = mach.label   || null;
-      if (side === 'from') entry.equipment_side = 'from';
+  var io = {
+    get: function(tid) { var t = findTank(tid); return t ? Number(t.volume) || 0 : 0; },
+    set: function(tid, vol) {
+      var t = findTank(tid);
+      if (!t) return null;
+      t.volume = Number(Math.max(0, vol).toFixed(2));
+      return t.volume;
     }
-    entry.source = 'pwa';
-    wroteAny = true;
-    return entry;
-  }
+  };
 
-  // Source deduction: only meaningful for lube/waste tank sources. Equipment,
-  // Other, and inspection_tank sources have no tracked volume — the if/else
-  // chain below intentionally leaves them as no-ops on this side. The OTHER
-  // side (if a real tank) still updates normally below.
-  if (opts.sourceKind === 'lube_tank' && opts.sourceTankId) {
-    sourceRetained = updateVolume(opts.sourceTankId, -qty);
-    // POSITIVE. This used to be written as -qty, because the row was thought
-    // of as "the deduction" rather than as "the movement". The Console writes
-    // an unsigned amount on every lane and says which way it went in to_type,
-    // and two conventions in one log meant a phone top-up rendered as -15 on
-    // Tank Levels & Transfers and subtracted itself from a machine's totals.
-    // One convention now; the readers coerce the older rows.
-    data.lube_log.push(withMachine({
-      id:            nextId++,
-      timestamp:     nowIso,
-      from_tank_id:  opts.sourceTankId,
-      to_tank_id:    (opts.destKind === 'waste_tank' || opts.destKind === 'lube_tank') ? opts.destTankId : null,
-      quantity:      qty,
-      to_type:       (opts.destKind === 'waste_tank' || opts.destKind === 'lube_tank') ? 'tank' : 'equipment',
-      qty_remaining: sourceRetained,
-      correction_by: actorName
-    }, 'to'));
-  } else if (opts.sourceKind === 'waste_tank' && opts.sourceTankId) {
-    sourceRetained = updateVolume(opts.sourceTankId, -qty);
-    data.waste_log.push(withMachine({
-      id:            nextId++,
-      timestamp:     nowIso,
-      from_tank_id:  opts.sourceTankId,
-      to_tank_id:    (opts.destKind === 'waste_tank') ? opts.destTankId : null,
-      quantity:      qty,
-      to_type:       (opts.destKind === 'waste_tank') ? 'tank' : 'correction',
-      qty_remaining: sourceRetained,
-      correction_by: actorName
-    }, 'to'));
-  }
-
-  // Destination addition: only meaningful for lube/waste tank destinations.
-  // Equipment, Other, and inspection_tank destinations are intentionally
-  // no-ops here — user request: "don't worry about adding any oil" for those.
-  if (opts.destKind === 'lube_tank' && opts.destTankId) {
-    destRetained = updateVolume(opts.destTankId, +qty);
-    data.lube_log.push(withMachine({
-      id:            nextId++,
-      timestamp:     nowIso,
-      from_tank_id:  (opts.sourceKind === 'lube_tank' || opts.sourceKind === 'waste_tank') ? opts.sourceTankId : null,
-      to_tank_id:    opts.destTankId,
-      quantity:      +qty,
-      to_type:       'tank',
-      qty_remaining: destRetained,
-      correction_by: actorName
-    }, 'from'));
-  } else if (opts.destKind === 'waste_tank' && opts.destTankId) {
-    destRetained = updateVolume(opts.destTankId, +qty);
-    // A machine draining into a waste tank is recorded HERE, on the row that
-    // credits the tank, because the machine has no volume of its own to debit
-    // and so writes no row of its own. equipment_side 'from' is what tells the
-    // Console this is oil leaving that machine rather than entering it.
-    data.waste_log.push(withMachine({
-      id:            nextId++,
-      timestamp:     nowIso,
-      from_tank_id:  (opts.sourceKind === 'lube_tank' || opts.sourceKind === 'waste_tank') ? opts.sourceTankId : null,
-      to_tank_id:    opts.destTankId,
-      quantity:      +qty,
-      to_type:       'tank',
-      qty_remaining: destRetained,
-      correction_by: actorName
-    }, 'from'));
-  }
-
-  // A movement with a machine at one end and no tracked tank at the other:
-  // a pail of oil into a head tank, a drum into a gearbox. Neither side has a
-  // volume to move, so neither branch above wrote anything — and the top-up
-  // existed only in the rough-log sentence, which is prose and which the oil
-  // ledger cannot read. It is still oil that went into a machine, so it gets a
-  // row with no tank on it. `from_description` is what the operator picked or
-  // typed, so the row still says where it came from.
-  if (mach && !wroteAny) {
-    data.lube_log.push(withMachine({
-      id:               nextId++,
-      timestamp:        nowIso,
-      from_tank_id:     null,
-      from_description: opts.sourceLabel || null,
-      to_tank_id:       null,
-      quantity:         qty,
-      to_type:          mach.side === 'from' ? 'drain' : 'equipment',
-      qty_remaining:    null,
-      correction_by:    actorName
-    }, mach.side));
-  }
+  var res = oilAttach.writeMovement(data, {
+    from:        { kind: opts.sourceKind, tank_id: opts.sourceTankId || null },
+    to:          { kind: opts.destKind,   tank_id: opts.destTankId   || null },
+    qty:         opts.qty,
+    machine:     opts.machine || null,
+    oil:         opts.oil || null,
+    sourceLabel: opts.sourceLabel || null,
+    actor:       (currentUser && (currentUser.name || currentUser.username)) || '',
+    source:      'pwa',
+    now:         new Date().toISOString(),
+    nextId:      Date.now()
+  }, io);
 
   data.lube_log.sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
   data.waste_log.sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
@@ -11202,7 +11312,7 @@ async function addOilApplyTankDeltas(opts) {
     headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
     body:    JSON.stringify(data, null, 2)
   });
-  return { sourceRetained: sourceRetained, destRetained: destRetained };
+  return { sourceRetained: res.sourceRetained, destRetained: res.destRetained };
 }
 
 // Build a Code-C ORB inbox payload per the Add Oil rules matrix:
@@ -11247,7 +11357,8 @@ function _addOilBuildOrbPayload(f, retained, nowIso, qtyUsg) {
   // inspection_tank items (from the "TANK LEVEL INSPECTION" rounds section)
   // share the no-source-ret behavior with free-text Other, so they collapse
   // into the same branch here. fromLabel was set upstream to the item label.
-  if ((f.fromKind === 'other' || f.fromKind === 'inspection_tank') && f.destKind === 'waste_tank') {
+  // A stores shelf (a drum, a pail) has no tracked volume either, so it joins them.
+  if ((f.fromKind === 'other' || f.fromKind === 'inspection_tank' || f.fromKind === 'location') && f.destKind === 'waste_tank') {
     return {
       template: '12_internal',
       narrative:
@@ -11325,6 +11436,39 @@ async function _addOilPushOrbInbox(orbBuild, nowIso, refId) {
   if (!resp.ok) throw new Error('ORB inbox PUT failed: ' + resp.status);
 }
 
+// One stock_movement on the procurement stream (§42.7): an issue off the shelf
+// the oil was poured from. movement_id is derived from the rough-log id, and
+// the event id from the movement, so a retry lands on the same file and 412s.
+async function _addOilIssueStock(f, machine, refId, nowIso, note) {
+  await obsRefreshToken();
+  var movementId = 'addoil-' + refId;
+  var filename = nowIso.replace(/[:.-]/g, '') + '-' + movementId + '.json';
+  var path = 'Documents/IDMS/data/procurement/events/' + nowIso.slice(0, 4) + '/' + filename;
+  var body = {
+    schema_version: 1,
+    event_id:   movementId,
+    event_type: 'stock_movement',
+    actor:      (currentUser && currentUser.username) || 'unknown',
+    timestamp:  nowIso,
+    payload: {
+      movement_id:    movementId,
+      item_id:        f.item.item_id,
+      kind:           'issue',
+      location_id:    f.fromComponent.location_id,
+      qty:            Math.abs(Number(f.qty)),
+      equipment_code: (machine && machine.side === 'to' && machine.code) || null,
+      reason:         'Add Oil',
+      note:           note
+    }
+  };
+  var resp = await fetch(incinGraphUrl(path), {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + graphToken, 'Content-Type': 'application/json', 'If-None-Match': '*' },
+    body: JSON.stringify(body, null, 2)
+  });
+  if (resp.status !== 412 && !resp.ok) throw new Error('stock_movement PUT ' + resp.status);
+}
+
 async function addOilCommit() {
   var f = addOilReadForm();
   // Either a real destination component (list/lube/waste/equipment) or a
@@ -11362,9 +11506,14 @@ async function addOilCommit() {
   var machine = machineOf(f.destKind, f.destComponent, 'to')
              || machineOf(f.fromKind, f.fromComponent, 'from');
 
+  var overrideUsed = (f.oilFields && f.oilFields.attachment_override) || [];
   var roughLogBody = 'Added ' + f.qty.toFixed(2) + ' USG ' + f.contentsValue
-                   + ' to ' + destLabel + (destAsset ? ' (' + destAsset + ')' : '')
-                   + ' from ' + fromLabel;
+                   + (f.item ? ' (' + f.item.item_id + ')' : '')
+                   + ' to ' + destLabel
+                   // The label is usually 'Main Engine (601.001)' already; do not say it twice.
+                   + (destAsset && destLabel.indexOf(destAsset) < 0 ? ' (' + destAsset + ')' : '')
+                   + ' from ' + fromLabel
+                   + (overrideUsed.length ? ' — attachment override: ' + addOilOverrideWords(overrideUsed) : '');
 
   try {
     // (1) Apply tank deltas (deduct source / add destination as applicable).
@@ -11379,7 +11528,8 @@ async function addOilCommit() {
         destTankId:   destTankId,
         qty:          f.qty,
         machine:      machine,
-        sourceLabel:  fromLabel
+        sourceLabel:  fromLabel,
+        oil:          f.oilFields
       });
     } catch (e) {
       console.error('[addOil] tank delta failed', e);
@@ -11411,7 +11561,21 @@ async function addOilCommit() {
       ref_id:       null
     });
 
-    // (3) ORB inbox event — only when the destination is a waste oil tank
+    // (3) Stores issue — only when the oil came off a shelf. Oil out of a tank
+    // moves the tank and nothing else: the entry carries item_id so it is
+    // traceable, but the bulk item is not also debited, or the same oil would be
+    // counted in two ledgers that then drift apart. And only from an item counted
+    // in gallons (oilAttach.issuesStock): 5 USG is not five drums.
+    if (f.fromKind === 'location' && f.item && f.fromComponent && oilAttach.issuesStock(f.item)) {
+      try { await _addOilIssueStock(f, machine, roughLogId, nowIso, roughLogBody); }
+      catch (e) {
+        console.error('[addOil] stores issue failed', e);
+        alert('The oil was logged, but taking it out of stores failed (' + (e && e.message) + '). ' +
+              'Record an Issue against ' + f.item.item_id + ' in Procurement.');
+      }
+    }
+
+    // (4) ORB inbox event — only when the destination is a waste oil tank
     // (per user spec). For source=lube + dest=non-waste, etc., no ORB.
     var orbBuild = _addOilBuildOrbPayload(f, retained, nowIso, f.qty);
     if (orbBuild) {
@@ -11442,7 +11606,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.27';
+var PWA_VERSION  = '1.28';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {

@@ -8,6 +8,28 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.28 — 2026-09-12
+
+- **Add Oil starts with the oil or the machine.** The Oil list is items from
+  Inventory › Items, with their item numbers. Pick an oil and To and From show
+  only where it is linked to go and where it is kept. Pick a machine instead
+  and only its oils are listed.
+- **To and From are filled in for you** from where that oil has usually gone
+  before. Change either one and it stays as you set it.
+- **Override attachment, for when SOP is not followed.** Each list has one. It
+  shows everything, marks what is not linked with ⚠, and the entry is recorded
+  as an override.
+- **Oil can come out of stores.** A shelf that holds the oil is offered as a
+  From, and oil taken from it comes out of stock when the item is counted in
+  gallons — a drum or pail item is left for you to issue when it is empty. Oil
+  out of a tank moves the tank, which is what the stability booklet reads.
+- **An item can carry more than one SFI code.** Under Procurement → item →
+  Set minimum & policy, list every place it belongs, separated by commas — an
+  oil under the system it feeds *and* the tank it is kept in. Tick **Fluid**
+  for oil kept in drums or pails with no tank.
+- Every entry now records which oil it was, so the Console shows the same
+  thing you picked.
+
 ## 1.27 — 2026-09-11
 
 - **Oil you add now stays attached to the machine you added it to.** Add Oil

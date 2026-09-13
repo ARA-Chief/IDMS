@@ -281,7 +281,43 @@
   // no such field and never will — it does not know the vessel has tanks — so
   // it is policy in exactly the sense the rest of this list is, "how this item
   // joins the rest of IDMS".
-  var POLICY_FIELDS = ['min_qty', 'max_qty', 'reorder_qty', 'sfi_code', 'barcode', 'notes', 'tank_id'];
+  //
+  // `sfi_codes` is the many-places answer. One part is fitted in more than one
+  // machine, and one oil lives in a storage tank AND feeds the system it is
+  // bought for — Mobilgard 410 belongs to the Main Engine lube oil system,
+  // where the service reports are, and to tank 22, where it is kept. A single
+  // `sfi_code` could only ever say one of those. The list is the whole set;
+  // `sfi_code` stays, and writers keep it equal to the first entry, so every
+  // reader that only knows the one code still finds the item somewhere true.
+  // Read the set through `sfiCodes()`, never off the policy directly.
+  //
+  // `fluid` puts the item on Add Oil's contents list. A tank link implies it;
+  // the flag is for oil that is kept in drums and pails and has no tank.
+  var POLICY_FIELDS = ['min_qty', 'max_qty', 'reorder_qty', 'sfi_code', 'sfi_codes',
+                       'barcode', 'notes', 'tank_id', 'fluid'];
+
+  // Trimmed, de-duplicated, order kept. Anything that is not a list of strings
+  // reads as no list rather than as a list of garbage.
+  function normCodes(v) {
+    if (!Array.isArray(v)) return [];
+    var seen = {}, out = [];
+    for (var i = 0; i < v.length; i++) {
+      var c = (v[i] === null || v[i] === undefined) ? '' : String(v[i]).trim();
+      if (!c || seen[c]) continue;
+      seen[c] = true;
+      out.push(c);
+    }
+    return out;
+  }
+
+  // Every SFI code this item is cross-linked to: the single code in force
+  // first, then the policy list. Never null — an unlinked item is [].
+  function sfiCodes(item) {
+    if (!item) return [];
+    var one = effective(item, 'sfi_code');
+    var list = normCodes(item.policy && item.policy.sfi_codes);
+    return normCodes([one].concat(list));
+  }
 
   // Sparse patch: an absent key means unchanged, an explicit null clears
   // (§42.4). `item_id` can never be patched.
@@ -697,8 +733,15 @@
         if (!pit) continue;
         POLICY_FIELDS.forEach(function (f) {
           if (Object.prototype.hasOwnProperty.call(pay, f)) {
-            if (pay[f] === null) delete pit.policy[f];
-            else pit.policy[f] = pay[f];
+            var val = pay[f];
+            // An empty list clears, the same as null: "linked to nothing" and
+            // "no links set" must not be two different states.
+            if (f === 'sfi_codes' && val !== null) {
+              val = normCodes(val);
+              if (!val.length) val = null;
+            }
+            if (val === null) delete pit.policy[f];
+            else pit.policy[f] = val;
           }
         });
         pit.policy_set_at = e.timestamp || null;
@@ -1366,6 +1409,7 @@
     reduce: reduce,
     hydrateCatalogue: hydrateCatalogue,
     effective: effective,
+    sfiCodes: sfiCodes,
     itemCode: itemCode,
     locCode: locCode,
     POLICY_FIELDS: POLICY_FIELDS,

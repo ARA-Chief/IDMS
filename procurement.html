@@ -1375,7 +1375,7 @@ function pcRegisterMatches() {
     if (terms.length) {
       var hay = (i.item_id + ' ' + i.name + ' ' + (i.part_number || '') + ' ' +
                  (i.stock_tag || '') + ' ' + (i.tm_item_no || '') + ' ' +
-                 (procurementReduce.effective(i, 'sfi_code') || '')).toLowerCase();
+                 procurementReduce.sfiCodes(i).join(' ')).toLowerCase();
       var miss = false;
       for (var t = 0; t < terms.length; t++) {
         if (hay.indexOf(terms[t]) === -1) { miss = true; break; }
@@ -1520,8 +1520,9 @@ function pcViewItem(item) {
   var isMirror = item.source === 'tm';
   var sub = [item.item_id];
   if (item.part_number) sub.push('P/N ' + item.part_number);
-  var sfi = procurementReduce.effective(item, 'sfi_code');
-  if (sfi) sub.push('SFI ' + sfi);
+  var sfi = procurementReduce.sfiCodes(item);
+  if (sfi.length) sub.push('SFI ' + sfi.join(', '));
+  if (item.policy && (item.policy.fluid || item.policy.tank_id)) sub.push('fluid');
   if (item.item_type) sub.push(item.item_type);
 
   pcHead(item.name || '(unnamed)', sub.join('  ·  '),
@@ -1731,13 +1732,19 @@ function pcPolicyForm(itemId) {
         '<input class="field" id="pol-reorder" type="number" step="any" value="' + pcEsc(v('reorder_qty')) + '"></div>' +
     '</div>' +
     '<div class="fieldrow">' +
-      '<div><label class="lbl">SFI code</label>' +
-        '<input class="field" id="pol-sfi" placeholder="360.001" value="' + pcEsc(v('sfi_code')) + '"></div>' +
+      '<div><label class="lbl">SFI codes</label>' +
+        '<input class="field" id="pol-sfi" placeholder="601.001.075, 233.075.01" value="' +
+        pcEsc(procurementReduce.sfiCodes(it).join(', ')) + '"></div>' +
       '<div><label class="lbl">Barcode</label>' +
         '<input class="field" id="pol-barcode" value="' + pcEsc(v('barcode')) + '"></div>' +
     '</div>' +
-    '<div class="sheet-sub" style="margin:0 0 10px">An SFI code joins this part to the asset register, ' +
-      'and through it to task records and failure history. The export carries none.</div>' +
+    '<div class="sheet-sub" style="margin:0 0 10px">SFI codes join this part to the asset register, ' +
+      'and through it to task records and failure history. The export carries none. List every place it ' +
+      'belongs, separated by commas — an oil goes under the system it feeds and the tank it is kept in ' +
+      '(Mobilgard 410: 601.001.075, 233.075.01). The first is the main one.</div>' +
+    '<label class="lbl" style="display:flex;gap:8px;align-items:center;margin:0 0 12px">' +
+      '<input type="checkbox" id="pol-fluid"' + (pol.fluid ? ' checked' : '') + ' style="width:auto"> ' +
+      'Fluid — offer it on Add Oil (implied when one of its codes is a tank)</label>' +
     '<label class="lbl">Note</label><input class="field" id="pol-notes" value="' + pcEsc(v('notes')) + '">' +
     '<div class="err" id="pol-err"></div>' +
     '<div class="sheet-actions">' +
@@ -1753,7 +1760,13 @@ async function pcPolicySave(itemId) {
   payload.min_qty     = pcNum('pol-min');
   payload.max_qty     = pcNum('pol-max');
   payload.reorder_qty = pcNum('pol-reorder');
-  payload.sfi_code    = pcVal('pol-sfi') || null;
+  // One code or many. The first stays in sfi_code for every reader that only
+  // knows one; the whole list goes in sfi_codes (procurementReduce.sfiCodes).
+  var codes = pcVal('pol-sfi').split(/[,;s]+/).map(function (c) { return c.trim(); })
+    .filter(function (c, i, a) { return c && a.indexOf(c) === i; });
+  payload.sfi_code    = codes[0] || null;
+  payload.sfi_codes   = codes.length ? codes : null;
+  payload.fluid       = document.getElementById('pol-fluid').checked ? true : null;
   payload.barcode     = pcVal('pol-barcode') || null;
   payload.notes       = pcVal('pol-notes') || null;
 

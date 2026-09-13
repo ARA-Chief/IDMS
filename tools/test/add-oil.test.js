@@ -127,6 +127,8 @@ const TANKS_STATE = () => ({
 function deltaSandbox(state) {
   const saved = { state: state };
   const sb = lift(['addOilApplyTankDeltas'], {
+    // The rows are written by the shared module, as they are in the page.
+    oilAttach: require(path.join(__dirname, '..', '..', 'utils', 'oil-attach.js')),
     obsRefreshToken: async () => 'tok',
     graphToken: 'tok',
     incinGraphUrl: p => 'https://example/' + p,
@@ -239,6 +241,67 @@ function deltaSandbox(state) {
       destKind: 'other', destTankId: null, qty: 2, machine: null
     });
     assert.strictEqual((sb.saved.written || TANKS_STATE()).lube_log.length, 0);
+  });
+
+  console.log('\nThe oil itself is on the row (2026-09-12)');
+
+  await testAsync('a top-up carries the item it traces to', async () => {
+    const sb = deltaSandbox(TANKS_STATE());
+    await sb.addOilApplyTankDeltas({
+      sourceKind: 'lube_tank', sourceTankId: 'TK-LO-1',
+      destKind: 'equipment', destTankId: null, qty: 8,
+      machine: { code: '601.001', item_id: 'RI-ME', label: 'Main Engine (601.001)', side: 'to' },
+      oil: { item_id: 'ITM-10917', fluid: 'Oil, Lubricating, Mobilgard 410 NC, Bulk' }
+    });
+    const e = sb.saved.written.lube_log[0];
+    assert.strictEqual(e.item_id, 'ITM-10917');
+    assert.strictEqual(e.fluid, 'Oil, Lubricating, Mobilgard 410 NC, Bulk');
+    assert.strictEqual(e.from_tank_id, 'TK-LO-1');
+    assert.strictEqual(e.from_description, undefined, 'a tank source needs no description');
+  });
+
+  await testAsync('both rows of a tank-to-tank move carry it, and the override', async () => {
+    const sb = deltaSandbox(TANKS_STATE());
+    await sb.addOilApplyTankDeltas({
+      sourceKind: 'lube_tank', sourceTankId: 'TK-LO-1',
+      destKind: 'waste_tank', destTankId: 'TK-WO-1', qty: 20, machine: null,
+      oil: { item_id: 'ITM-10928', fluid: 'Delvac', attachment_override: ['from'] }
+    });
+    const rows = sb.saved.written.lube_log.concat(sb.saved.written.waste_log);
+    assert.strictEqual(rows.length, 2);
+    assert.ok(rows.every(e => e.item_id === 'ITM-10928'));
+    assert.ok(rows.every(e => e.attachment_override && e.attachment_override[0] === 'from'));
+  });
+
+  await testAsync('pails off a shelf into a machine name the shelf', async () => {
+    const sb = deltaSandbox(TANKS_STATE());
+    await sb.addOilApplyTankDeltas({
+      sourceKind: 'location', sourceTankId: null,
+      destKind: 'equipment', destTankId: null, qty: 5,
+      sourceLabel: 'Stores — Below Main Deck',
+      machine: { code: '651.001', item_id: 'RI-DG1', label: 'DG1', side: 'to' },
+      oil: { item_id: 'ITM-06437', fluid: 'DELO 400', from_location_id: 'LOC-0200' }
+    });
+    const e = sb.saved.written.lube_log[0];
+    assert.strictEqual(e.from_location_id, 'LOC-0200');
+    assert.strictEqual(e.from_description, 'Stores — Below Main Deck');
+    assert.strictEqual(e.equipment_code, '651.001');
+    assert.strictEqual(sb.saved.written.tanks.find(t => t.tank_id === 'TK-LO-1').volume, 400, 'no tank moved');
+  });
+
+  await testAsync('drums off a shelf into a tank credit the tank and name the shelf', async () => {
+    const sb = deltaSandbox(TANKS_STATE());
+    await sb.addOilApplyTankDeltas({
+      sourceKind: 'location', sourceTankId: null,
+      destKind: 'lube_tank', destTankId: 'TK-LO-1', qty: 55, machine: null,
+      sourceLabel: 'Stores — Below Main Deck',
+      oil: { item_id: 'ITM-10921', fluid: 'Mobilgear drums', from_location_id: 'LOC-0001' }
+    });
+    const e = sb.saved.written.lube_log[0];
+    assert.strictEqual(e.to_tank_id, 'TK-LO-1');
+    assert.strictEqual(e.from_tank_id, null);
+    assert.strictEqual(e.from_location_id, 'LOC-0001');
+    assert.strictEqual(sb.saved.written.tanks.find(t => t.tank_id === 'TK-LO-1').volume, 455);
   });
 
   console.log('\n' + (failed ? '✗ ' + failed + ' failed, ' + passed + ' passed'
