@@ -345,6 +345,14 @@
     var p = ev.payload || {};
     var kind = p.kind;
     var from = locOf(p.location_id);
+    // When the stock actually moved, which is not always when somebody filed
+    // it: a bunkering keyed in two days later carries `occurred_at`. The
+    // ledger row and the item's "last counted" read that, because that is what
+    // they are asked about. `ev.timestamp` stays what it has always been — when
+    // the event was written — and remains what ordering and the catalogue
+    // baseline compare, so a backdated movement cannot fall behind the
+    // baseline and be dropped as already absorbed (§42.14).
+    var when = p.occurred_at || ev.timestamp || null;
     var row = {
       movement_id: p.movement_id || ev.event_id,
       item_id: item.item_id,
@@ -367,7 +375,8 @@
       reason: p.reason || null,
       note: p.note || null,
       actor: ev.actor || null,
-      timestamp: ev.timestamp || null
+      timestamp: when,
+      filed_at: ev.timestamp || null
     };
 
     function at(loc) { return q(item.by_location[loc] || 0); }
@@ -411,8 +420,8 @@
       row.book_qty = book;
       row.variance = q(counted - book);
       row.delta = row.variance;
-      item.last_count_at = ev.timestamp || item.last_count_at;
-      item.last_verified_at = ev.timestamp || item.last_verified_at;
+      item.last_count_at = when || item.last_count_at;
+      item.last_verified_at = when || item.last_verified_at;
 
     } else {
       return null;              // unknown kind — recorded nowhere, changes nothing
@@ -421,7 +430,7 @@
     item.on_hand = q(Object.keys(item.by_location).reduce(function (sum, k) {
       return sum + q(item.by_location[k]);
     }, 0));
-    item.last_movement_at = ev.timestamp || item.last_movement_at;
+    item.last_movement_at = when || item.last_movement_at;
     return row;
   }
 
