@@ -78,6 +78,24 @@ check('the contact reducer is byte-identical too',
 check('the notes reducer is byte-identical too',
   fs.readFileSync(IDMS + '/utils/notes-reduce.js').equals(
     fs.readFileSync(CON + '/src/renderer/js/notes-reduce.js')));
+// The rule that turns a rounds comment into a note against the machine it is
+// about. BOTH ends raise these notes — the phone when it submits a round, the
+// Console when a comment is typed there or arrives on an ingested roundslog —
+// and the only thing stopping the same comment being filed twice is that both
+// derive the same note id from it. Drift here does not show up as an error; it
+// shows up as two notes on a machine saying the same thing.
+check('the rounds-comment note rule is byte-identical too',
+  fs.readFileSync(IDMS + '/utils/rounds-notes.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/rounds-notes.js')));
+check('the Console loads it before the lane that writes through it', (() => {
+  const html = fs.readFileSync(CON + '/src/renderer/index.html', 'utf8');
+  const a = html.indexOf('js/rounds-notes.js'), b = html.indexOf('js/sync-rounds-notes.js');
+  return a !== -1 && b !== -1 && a < b;
+})());
+check('the phone loads it on the page that submits rounds', (() => {
+  const html = fs.readFileSync(IDMS + '/index.html', 'utf8');
+  return html.indexOf('utils/rounds-notes.js') !== -1;
+})());
 // The oil filter and the transfer writer. The phone's Add Oil and the Console's
 // Tank Levels & Transfers disagreeing about which oil goes where — or writing
 // two shapes of row — is exactly the parity failure this module exists to end.
@@ -210,6 +228,14 @@ for (const id in state.items) {
     is_low: R.isLow(it) ? 1 : 0, critical: it.critical ? 1 : 0, blocked: it.blocked ? 1 : 0,
     archived: it.archived ? 1 : 0,
     supplier: (it.suppliers && it.suppliers[0] && it.suppliers[0].supplier_id) || null,
+    // Who makes it and who sells it, as four separate facts rather than the one
+    // `part_number` that used to have to stand for two of them (§14.5a in the
+    // Console's docs/procurement-registry.md).
+    maker: it.maker || null,
+    makers_type: it.makers_type || null,
+    makers_part_no: it.makers_part_no || null,
+    suppliers_ref: it.suppliers_ref
+      || (it.suppliers && it.suppliers[0] && it.suppliers[0].supplier_part_number) || null,
     last_known_price: (it.last_known_price === 0 || it.last_known_price) ? Number(it.last_known_price) : null,
     currency: it.currency || null,
     consumption_json: JSON.stringify(it.consumption || {}),

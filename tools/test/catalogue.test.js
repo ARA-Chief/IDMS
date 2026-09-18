@@ -22,6 +22,35 @@ check('items hydrated', Object.keys(cat.items).length, doc.counts.items);
 check('locations hydrated', Object.keys(cat.locations).length, doc.counts.locations);
 console.log('  ..   hydrate took ' + tHydrate + ' ms');
 
+// The maker and the maker's own type number are NOT in catalogue.json. They sit
+// in catalogue-detail.json, a separate 2 MB file, and hydrate reads it when it
+// is handed one — which is what the Console does for the four narrowing boxes on
+// an order line (its docs/procurement-registry.md §14.5a). This is the case the
+// column-presence check in console-derive.test.js cannot make: that check passes
+// on four nulls, and four nulls is exactly what the drift looked like.
+console.log('\nthe maker, which lives in the detail file');
+var DETAIL = require('path').join(require('path').dirname(CAT), 'catalogue-detail.json');
+if (!fs.existsSync(DETAIL)) {
+  T.note('no catalogue-detail.json beside the catalogue — the maker is not checked');
+} else {
+  var detail = JSON.parse(fs.readFileSync(DETAIL, 'utf8'));
+  var withDetail = R.hydrateCatalogue(doc, detail);
+  var makers = Object.keys(withDetail.items)
+    .filter(function (k) { return withDetail.items[k].maker; });
+  check('hydrating without it leaves the maker null, rather than refusing the catalogue',
+        Object.keys(cat.items).every(function (k) { return cat.items[k].maker === null; }), true);
+  check('hydrating with it puts makers on the items', makers.length > 0, true);
+  // The detail file is keyed by the BARE integer id, not by ITM-#####, so the
+  // lookup has to happen while the raw row is still in hand. Get that wrong and
+  // every maker is null — which reads as "TM never recorded one" and is silent.
+  var one = withDetail.items[makers[0]];
+  var bare = String(one.item_id).replace(/^ITM-0*/, '');
+  check('and it is the maker the detail file holds for that id',
+        one.maker, (detail.items[bare] || detail.items[Number(bare)] || {}).maker);
+  T.note(makers.length + ' of ' + Object.keys(withDetail.items).length +
+         ' items carry a maker; the rest are items TM never recorded one for');
+}
+
 console.log('\ndictionary decoding');
 var withType = Object.keys(cat.items).filter(function (k) { return cat.items[k].item_type; });
 check('item_type decoded to a string, not an index',

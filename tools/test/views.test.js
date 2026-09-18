@@ -104,4 +104,48 @@ if (start !== -1 && end > start) {
   check('and so does the requisition raised from the list', line && line.qty, 17);
 }
 
+// ── Editing a draft must not blank what it cannot show ──────────────────────
+//
+// `requisition_updated` replaces a draft's lines outright, so whatever the edit
+// form hands back IS the line. The form shows six boxes; the line carries
+// sixteen authored fields, the other ten written on the Console where the boxes
+// for them are (IDMS-Console/docs/procurement-registry.md §14.5a). Rebuilding
+// the line from what is on screen blanked the maker, the supplier, both their
+// reference numbers, the price and the sequence — silently, on a draft two
+// people were working on together.
+//
+// The authored set is read out of the reducer rather than listed here, so a
+// field added to a line and not to the form is a failure and not a surprise.
+T.head('editing a draft carries the fields the form cannot show');
+const reduceSrc = fs.readFileSync(REDUCER, 'utf8');
+const nrlAt = reduceSrc.indexOf('function normaliseReqLine');
+const nrlEnd = reduceSrc.indexOf('\n  }', nrlAt);
+const authored = nrlAt === -1 ? [] :
+  (reduceSrc.slice(nrlAt, nrlEnd).match(/^\s{6}([a-z_]+): .*\bl\.[a-z_]+/gm) || [])
+    .map(m => m.trim().split(':')[0]);
+check('the authored fields were found in the reducer', authored.length >= 14, true);
+T.note(authored.length + ' authored fields on a requisition line');
+
+const ediAt = html.indexOf('function pcReqEditableLine');
+const ediEnd = html.indexOf('\n}', ediAt);
+check('the edit form\u2019s line builder is where it was left', ediAt !== -1 && ediEnd > ediAt, true);
+
+if (authored.length && ediAt !== -1) {
+  // eslint-disable-next-line no-new-func
+  const build = new Function(html.slice(ediAt, ediEnd + 2) + '\nreturn pcReqEditableLine;')();
+  // Every authored field set to something recognisable, so a dropped one reads
+  // as undefined rather than as a null that was always going to be null.
+  const full = {};
+  authored.forEach(k => { full[k] = 'kept-' + k; });
+  const out = build(full);
+  // Compared as a list rather than a count, so a failure names what was blanked.
+  check('the form hands back every authored field',
+        authored.filter(k => out[k] !== full[k]), []);
+  // And none of the reducer's own work, which is recomputed on every replay and
+  // would be stated as fact by anyone reading the event.
+  const derived = ['decision', 'qty_approved', 'ordered_qty', 'received_qty', 'po_ids'];
+  check('and none of the reducer\u2019s derived fields',
+        derived.filter(k => k in out), []);
+}
+
 process.exit(T.done() ? 0 : 1);
