@@ -1922,6 +1922,14 @@ async function reConfirmSubmit() {
     // Submit confirmed by OneDrive — safe to drop the local draft.
     reClearDraft();
 
+    // Every comment on this round, filed against the machine it is about.
+    // After the roundslog, never before, and never able to fail the submit.
+    try {
+      await rePublishCommentNotes(entries, { date: dateStr, round_number: RE.roundNum });
+    } catch (e) {
+      console.warn('[rounds] comment notes skipped:', e && e.message);
+    }
+
     RE.submitting = false;
     // If the Fresh Water Generator auto-comment generated a summary on this
     // submit, show the operator a one-screen plant-health readout (projected
@@ -2205,6 +2213,98 @@ async function reUploadCommentPhotos(itemId, files) {
   for (const f of files) {
     const att = await erTaskUploadImage(itemId, f);
     out.push(att);
+  }
+  return out;
+}
+
+// ── Comments become notes against the machine ───────────────────────────────
+//
+// A comment in the roundslog is findable by anybody who goes looking at that
+// day's round. Nobody does. The finding belongs on the machine, so every
+// comment is published a second time as a note in the Notes Hub against the
+// component the round item names — and then it is on the phone's Notes page,
+// on Records > Notes under the engine room's Rounds pad, and on Inventory >
+// Components > Notes on the Console, for as long as the machine exists.
+//
+// The rule for what a comment becomes, and the id it gets, is in
+// utils/rounds-notes.js — mirrored byte-identical into the Console, because
+// both ends raise these notes and an id derived differently at either end
+// would file the same comment twice.
+//
+// Published at SUBMIT, not when the comment is typed. Until then the round is
+// a local draft: the comment can still be superseded, the round number and the
+// readings are not final, and nothing has been claimed. The note carries the
+// reading at the time, which is only true once the round is.
+//
+// Nothing here can fail the submit. The round is already on OneDrive by the
+// time this runs, and the Console publishes anything that did not make it when
+// it ingests the roundslog (sync-rounds-notes.js) — so a phone that lost signal
+// between the two writes loses nothing but a few minutes.
+
+function reNotesEventPath(iso, eventId) {
+  return ONEDRIVE_BASE + '/data/notes/events/' + iso.slice(0, 4) + '/' +
+         iso.replace(/[:.\-]/g, '') + '-' + eventId + '.json';
+}
+
+function reUuid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+// One event file, written once. `If-None-Match: *` makes a retry that already
+// landed a no-op rather than a second event — the same guard notes.html uses.
+async function reAppendNotesEvent(eventType, actor, payload) {
+  const iso     = new Date().toISOString();
+  const eventId = reUuid();
+  const resp = await reAuthFetch(reGraphUrl(reNotesEventPath(iso, eventId)), {
+    method:  'PUT',
+    headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
+    body: JSON.stringify({
+      schema_version: 1,
+      event_id:   eventId,
+      event_type: eventType,
+      actor:      actor,
+      timestamp:  iso,
+      payload:    payload
+    }, null, 2)
+  });
+  if (resp.status !== 412 && !resp.ok) throw reHttpError('Note event PUT failed', resp.status);
+}
+
+/**
+ * @param {Array}  entries  the entries just submitted, comments and all
+ * @param {object} ctx      { date, round_number }
+ * @returns {Promise<{written:number, failed:number}>}
+ */
+async function rePublishCommentNotes(entries, ctx) {
+  const out = { written: 0, failed: 0 };
+  if (typeof roundsNotes === 'undefined' || !roundsNotes) return out;
+
+  // No existence check: these comments were typed into a draft on this phone
+  // minutes ago and have never been anywhere. The Console asks, because what
+  // it is publishing may have been published by the phone that wrote it.
+  const plan = roundsNotes.plan(entries, ctx, new Set());
+  for (const w of plan.writes) {
+    try {
+      // The comment's own author, not whoever is submitting: a round handed
+      // over mid-watch carries two people's remarks.
+      await reAppendNotesEvent(w.eventType,
+        w.actor || (currentUser && currentUser.username) || 'unknown', w.payload);
+      out.written++;
+    } catch (e) {
+      out.failed++;
+      console.warn('[rounds] comment note not filed:', e && e.message);
+    }
+  }
+  if (plan.uncoded) {
+    // Not an error and not silent. An item nobody pointed at a machine in
+    // Rounds Setup has nowhere to file to, and the person who can fix that is
+    // reading a console log, not this screen.
+    console.warn('[rounds] ' + plan.uncoded +
+      ' comment(s) on items with no component code — not filed against a machine');
   }
   return out;
 }

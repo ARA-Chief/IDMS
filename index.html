@@ -14,6 +14,7 @@
   <script src="utils/crew-display.js"></script>
   <!-- Shared Notes Hub reducer (mirror at IDMS-Console/src/renderer/js/notes-reduce.js) -->
   <script src="utils/notes-reduce.js"></script>
+  <script src="utils/rounds-notes.js"></script>
   <script src="utils/plan-derive.js"></script>
   <!-- Shared incinerator replay (mirror at IDMS-Console/src/renderer/js/incinerator-reduce.js) -->
   <script src="utils/incinerator-reduce.js"></script>
@@ -11606,7 +11607,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.28';
+var PWA_VERSION  = '1.29';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {
