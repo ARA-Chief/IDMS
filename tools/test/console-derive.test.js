@@ -228,6 +228,14 @@ for (const id in state.items) {
     is_low: R.isLow(it) ? 1 : 0, critical: it.critical ? 1 : 0, blocked: it.blocked ? 1 : 0,
     archived: it.archived ? 1 : 0,
     supplier: (it.suppliers && it.suppliers[0] && it.suppliers[0].supplier_id) || null,
+    // Who makes it and who sells it, as four separate facts rather than the one
+    // `part_number` that used to have to stand for two of them (§14.5a in the
+    // Console's docs/procurement-registry.md).
+    maker: it.maker || null,
+    makers_type: it.makers_type || null,
+    makers_part_no: it.makers_part_no || null,
+    suppliers_ref: it.suppliers_ref
+      || (it.suppliers && it.suppliers[0] && it.suppliers[0].supplier_part_number) || null,
     last_known_price: (it.last_known_price === 0 || it.last_known_price) ? Number(it.last_known_price) : null,
     currency: it.currency || null,
     consumption_json: JSON.stringify(it.consumption || {}),

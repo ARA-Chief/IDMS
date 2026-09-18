@@ -117,8 +117,14 @@
   // Columnar, dictionary-encoded on the low-cardinality columns. Both the PWA
   // and the Console hydrate through this one function so neither has to know
   // the encoding.
-  function hydrateCatalogue(doc) {
+  // `detail` is catalogue-detail.json, and is optional: it is a separate 2 MB
+  // file and a console that has never fetched it still gets a whole catalogue,
+  // only without the maker on it. It is keyed by the item's BARE integer id,
+  // not by ITM-#####, so the lookup happens here where the raw row is still in
+  // hand rather than after itemCode() has renamed it.
+  function hydrateCatalogue(doc, detail) {
     if (!doc || !Array.isArray(doc.items)) return null;
+    var detailItems = (detail && detail.items) || null;
     var tables = doc.tables || {};
     var idx = {};
     (doc.item_fields || []).forEach(function (f, i) { idx[f] = i; });
@@ -158,6 +164,7 @@
       var id = itemCode(row[idx.id]);
       var loc = val(row, 'loc');
       var flags = val(row, 'flags') || 0;
+      var det = detailItems ? (detailItems[row[idx.id]] || detailItems[String(row[idx.id])] || null) : null;
       items[id] = {
         item_id: id,
         name: val(row, 'name') || id,
@@ -174,6 +181,12 @@
         supplier: val(row, 'supplier'),
         suppliers_ref: val(row, 'suppliers_ref'),
         makers_part_no: val(row, 'makers_part_no'),
+        // The maker and the maker's own type number live in the detail file,
+        // not here. Null when it has not been fetched, which is a different
+        // thing from an item whose maker TM never recorded — 4,380 of the
+        // 14,487 are in that second state and always will be.
+        maker: (det && det.maker) || null,
+        makers_type: (det && det.makers_type) || null,
         stock_tag: val(row, 'stock_tag'),
         tm_item_no: val(row, 'tm_item_no'),
         est_delivery_days: val(row, 'est_delivery_days'),
@@ -218,6 +231,14 @@
       unit: 'ea',
       notes: '',
       part_number: null,
+      // The two numbers a part is ordered by, kept apart. `part_number` stays
+      // the one-line reference every other screen shows, and is still filled
+      // from whichever of these TM had -- but it is a display convenience now,
+      // not the only place either number survives.
+      makers_part_no: null,
+      suppliers_ref: null,
+      maker: null,
+      makers_type: null,
       sfi_code: null,
       barcode: null,
       category_id: null,
@@ -450,7 +471,15 @@
       // All optional: a line that is just "we need two of these" is still the
       // normal case, and every field here stays null for it.
       seq: (l && (l.seq === 0 || l.seq)) ? Number(l.seq) : null,
+      // Who makes it and who sells it, beside their two reference numbers.
+      // `supplier` is a name and `supplier_id` a CON-#### when the name came
+      // out of the contact book -- a line can be written against a supplier
+      // the book has never heard of, and refusing that would make the field
+      // useless for exactly the part it is most needed for.
+      maker: (l && l.maker) || null,
       makers_part_no: (l && l.makers_part_no) || null,
+      supplier: (l && l.supplier) || null,
+      supplier_id: (l && l.supplier_id) || null,
       suppliers_ref: (l && l.suppliers_ref) || null,
       unit_price: (l && (l.unit_price === 0 || l.unit_price)) ? Number(l.unit_price) : null,
       currency: (l && l.currency) || null,
@@ -598,7 +627,16 @@
         it.item_type = c.item_type;
         it.item_category = c.item_category;
         it.default_location_id = c.location_id;
+        // Kept as it was, deliberately: 2,035 items carry a supplier's ref and
+        // no maker's part number, and blanking their P/N everywhere it is
+        // shown -- Stock Location, tasks, the equipment register mirror -- to
+        // make a point about naming would cost more than it buys. The four
+        // columns below are where the distinction is real.
         it.part_number = c.makers_part_no || c.suppliers_ref || null;
+        it.makers_part_no = c.makers_part_no || null;
+        it.suppliers_ref = c.suppliers_ref || null;
+        it.maker = c.maker || null;
+        it.makers_type = c.makers_type || null;
         it.min_qty = c.min_qty;
         it.max_qty = c.max_qty;
         it.stock_tag = c.stock_tag;

@@ -8,6 +8,14 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.30 — 2026-09-18
+
+- **Editing a requisition no longer empties boxes this app cannot show.** A
+  line written on the Console carries a maker, a supplier and both their
+  reference numbers, and a price; changing a quantity here used to wipe them,
+  so the person keying the order into TM Master found the boxes blank. They
+  are carried through untouched now.
+
 ## 1.29 — 2026-09-18
 
 - **A comment you leave on rounds now stays with the machine.** Whatever you

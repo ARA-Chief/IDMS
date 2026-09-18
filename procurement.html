@@ -3326,12 +3326,35 @@ function pcViewReq(r) {
   document.getElementById('body').innerHTML = head + lines + actions;
 }
 
+// One line of a draft, as this form will hand it back.
+//
+// This used to rebuild the line from the six boxes on screen, which quietly
+// blanked everything else on it. A requisition on its way to becoming a TM
+// Master order carries a maker, a supplier and their two reference numbers, and
+// a price and a sequence besides — all written on the Console, where the boxes
+// for them are (IDMS-Console/docs/procurement-registry.md §14.5a). None of that
+// is editable here and all of it has to survive somebody on deck fixing a
+// quantity, because `requisition_updated` replaces a draft's lines outright.
+//
+// Authored fields only. `decision`, `qty_approved`, `ordered_qty`,
+// `received_qty` and `po_ids` are the reducer's own work, recomputed on every
+// replay, and writing them back into an event would state as fact something
+// nobody typed.
+function pcReqEditableLine(l) {
+  return {
+    line_id: l.line_id, item_id: l.item_id, description: l.description,
+    qty: l.qty, unit: l.unit, notes: l.notes,
+    seq: l.seq, maker: l.maker, makers_part_no: l.makers_part_no,
+    supplier: l.supplier, supplier_id: l.supplier_id, suppliers_ref: l.suppliers_ref,
+    unit_price: l.unit_price, currency: l.currency,
+    component: l.component, critical_category: l.critical_category
+  };
+}
+
 function pcReqForm(prefillLines, editReqId) {
   var existing = editReqId ? PC.state.requisitions[editReqId] : null;
-  var lines = prefillLines || (existing ? existing.lines.map(function (l) {
-    return { line_id: l.line_id, item_id: l.item_id, description: l.description,
-             qty: l.qty, unit: l.unit, notes: l.notes };
-  }) : [{ line_id: pcUuid(), item_id: null, description: '', qty: 1, unit: 'ea', notes: '' }]);
+  var lines = prefillLines || (existing ? existing.lines.map(pcReqEditableLine)
+    : [{ line_id: pcUuid(), item_id: null, description: '', qty: 1, unit: 'ea', notes: '' }]);
 
   PC._reqLines = lines;
 
