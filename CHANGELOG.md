@@ -8,6 +8,26 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.31 — 2026-09-20
+
+- **A note about a machine now lives in one place.** Set a note's type to
+  **Equipment** and name the machine, and it leaves its list for the
+  **Equipment** band at the foot of the Notes sidebar — the tree of component
+  codes. No more finding the same note twice.
+- Alerts, To Order and the Offload List are untouched: a note there that
+  names a machine is still on the list somebody works off. Only notes whose
+  *type* is Equipment move, and one you have not given a machine to yet stays
+  where it is until you pick one.
+- **A folder keeps what you filed into it.** Only the lists a note fell into
+  by default — the department's own list, General, somebody's personal list —
+  let it go. Rounds comments stay in the Rounds folder and appear under their
+  machine as well, so you can reach one from the round or from the machine.
+  It is still one note either way.
+- **Two new Recents rows**, one for the vessel and one for your department,
+  each showing the last ten notes anybody edited — most recent first, with a
+  line saying which list each one came out of. Open, edit or delete them from
+  there like any other note. Nothing is filed into a Recents row.
+
 ## 1.30 — 2026-09-18
 
 - **Editing a requisition no longer empties boxes this app cannot show.** A

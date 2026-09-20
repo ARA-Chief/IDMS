@@ -195,6 +195,8 @@
   .note-meta .eq { color: var(--accent-dim); }
   .note-meta .mirror { color: var(--accent); }
   .note-meta .expiry { color: var(--warning); }
+  /* Where a note actually lives, shown only in Recents — see ntWhereNoteLives. */
+  .note-meta .whence { color: var(--text-secondary); }
   .glyphs { display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-size: 13px; flex-shrink: 0; margin-top: 1px; }
   .star-btn { background: none; border: none; cursor: pointer; font-size: 15px; line-height: 1; color: var(--text-muted); padding: 0 2px; }
   .star-btn.on { color: var(--star); }
@@ -326,7 +328,7 @@
       <button class="btn" id="reauth-btn" onclick="ntReconnect()">Sign in again</button>
     </div>
     <div class="list-wrap">
-      <div class="quick-add">
+      <div class="quick-add" id="quick-add">
         <div class="qa-bar" id="qa-bar">
           <input id="qa-title" placeholder="Add a note — single-line title" maxlength="200"
                  onkeydown="if(event.key==='Enter')ntQuickAdd()">
@@ -451,7 +453,11 @@ var NT = {
   shared: false,           // this window writes as "Browser addition" (§41.4d)
   events: [], loadedNames: {}, notes: {},
   dept: null,
-  // view.kind: 'general' | 'department' | 'crew'
+  // view.kind: 'general' | 'department' | 'crew' | 'equipment' | 'recent'
+  // An equipment view names an asset code in `owner`; a recent view names its
+  // reach there — 'dept' for this department plus General, 'vessel' for
+  // everything. Neither is a place: nothing is filed in a recent view, and an
+  // equipment note lives under its code rather than in a folder.
   view: { kind: 'department', owner: null, folder: null },
   openNote: null,
   showArchived: false, showCompleted: false, showInactive: false,
@@ -1289,6 +1295,22 @@ function ntInView(n, v) {
     if (!n.equipment_code || !ntEqInScope(n)) return false;
     return ntCodeUnder(n.equipment_code, v.owner);
   }
+  // Recents is a mirror rather than a place, and what it shows is a matter of
+  // order and a cap rather than of membership — so it is answered in
+  // ntRecentNotes, and nothing is ever "in" it. Returning false here also
+  // keeps a count off its sidebar row, which is right: ten rows of whatever
+  // was last touched is not a backlog to be worked down.
+  if (v.kind === 'recent') return false;
+
+  // Everything below this line is an ordinary list, and a note filed against a
+  // machine has left the ones it merely fell into for the Equipment pad. Not
+  // the folder it was PUT in — see notesReduce.hiddenByPad, which is also
+  // where it is said why hiding every note that merely names a machine would
+  // empty Alerts, To Order and the Offload List, and why a note typed
+  // Equipment that has not yet named one stays put rather than falling
+  // between the two.
+  if (notesReduce.hiddenByPad(n, v.kind === 'department' ? (v.folder || null) : null)) return false;
+
   if (v.kind === 'crew') {
     if (notesReduce.isAssignedTo(n, v.owner)) return true;
     if (n.scope.level !== 'crew') return false;
@@ -1340,7 +1362,39 @@ function ntSortNotes(list, view) {
   });
 }
 
+// The last ten notes touched, newest first (§41.4f). Two reaches, drawn as two
+// rows: 'dept' is this department's own notes plus the General ones everybody
+// shares — the same reach the rest of the sidebar has — and 'vessel' is every
+// note on the boat, which is the row you open when somebody says "it's in
+// Notes" and does not say whose.
+//
+// Equipment notes are included. The pad is where they LIVE; this is a record
+// of what has just been touched, and a flurry of rounds comments against a
+// machine is exactly the thing worth seeing here.
+//
+// Deliberately not sorted by ntSortNotes: a star must not jump this queue, or
+// the list stops answering the only question it is asked.
+function ntRecentNotes(reach) {
+  var out = [];
+  for (var id in NT.notes) {
+    var n = NT.notes[id];
+    if (n.deleted || n.merged_into) continue;
+    if (n.archived && !NT.showArchived) continue;
+    if (reach !== 'vessel' && !ntRecentInReach(n)) continue;
+    out.push(n);
+  }
+  return notesReduce.byRecency(out).slice(0, notesReduce.RECENT_LIMIT);
+}
+
+// This department, plus General. Crew notes carry their department too, so a
+// personal list in this department is in reach and one in another is not.
+function ntRecentInReach(n) {
+  if (n.scope.level === 'general') return true;
+  return (n.scope.department || null) === NT.dept;
+}
+
 function ntVisibleNotes() {
+  if (NT.view.kind === 'recent') return ntRecentNotes(NT.view.owner);
   var out = [];
   for (var id in NT.notes) {
     var n = NT.notes[id];
@@ -1433,6 +1487,12 @@ function ntRenderTree() {
   h += '<div class="tree-head">Global</div>';
   h += ntTreeItem({ kind: 'general', owner: null, folder: null }, '🌐 General notes');
 
+  // Vessel-wide Recents closes the Global group, because that is its reach:
+  // everything on the boat, whoever wrote it and whichever department it
+  // belongs to. The department's own Recents is further down, under the
+  // department that scopes it.
+  h += ntTreeItem({ kind: 'recent', owner: 'vessel', folder: null }, '🕓 Recents — vessel-wide');
+
   h += '<div class="tree-head">Department</div>';
   h += '<div class="dept-tabs">' + ntDeptList().map(function (d) {
     return '<div class="dept-tab' + (d.key === NT.dept ? ' active' : '') +
@@ -1460,6 +1520,12 @@ function ntRenderTree() {
     h += ntTreeItem({ kind: 'department', owner: null, folder: NT_YARD_FOLDER }, '⚓ Shipyard notes');
   }
   h += ntTreeItem({ kind: 'department', owner: null, folder: NT_ALERT_FOLDER }, '🔔 Alerts');
+
+  // Last of the rows that are not filing: what has just been touched in this
+  // department and in General. It sits below the standing pads and above the
+  // folder band because it is read, never filed into — dropping a note on it
+  // does nothing, which is what a mirror should do.
+  h += ntTreeItem({ kind: 'recent', owner: 'dept', folder: null }, '🕓 Recents');
 
   // Groups and folders, per department. They live strictly between Department
   // notes and the Personnel heading — those are the hard stops, and every
@@ -1514,10 +1580,17 @@ function ntRenderTree() {
 }
 
 // ── The Equipment band (§41.6d) ─────────────────────────────
+// Where a note filed against a machine lives, and the only place it lives.
 // Last in the sidebar and collapsed until asked for, because most notes are
 // not about a machine and the band would otherwise be a wall of numbers above
 // nothing. Built from the codes actually in use plus their ancestors, so a
 // note filed deep is still reachable by walking down from the top.
+//
+// Deliberately WIDER than the rule that moves notes here: every note carrying
+// a code is listed, including the assignable ones that merely name the machine
+// they are about, so a machine's page is the whole of what has been said about
+// it. Only equipment-typed notes were MOVED; nothing else was taken from
+// anywhere it was.
 
 function ntEqCodesInUse() {
   var used = {};
@@ -1560,7 +1633,8 @@ function ntEquipmentBand() {
 
   if (!roots.length) {
     h += '<div class="eq-note" style="padding-left:10px">Nothing is filed against a piece of ' +
-         'equipment here yet. Open a note, set its type to <b>Equipment</b>, and it appears in this tree.</div>';
+         'equipment here yet. Open a note, set its type to <b>Equipment</b> and name the machine, and ' +
+         'it moves out of its list and appears in this tree.</div>';
     return h;
   }
   roots.forEach(function (c) { h += ntEqRow(c, kids, 0); });
@@ -1905,6 +1979,12 @@ function ntRenderList() {
     var eqName = ntAssetName(NT.view.owner);
     locTitle = NT.view.owner + (eqName ? ' — ' + eqName : '');
     locSub = 'equipment · this code and everything under it';
+  } else if (NT.view.kind === 'recent') {
+    locTitle = 'Recents';
+    locSub = NT.view.owner === 'vessel'
+      ? 'the last ' + notesReduce.RECENT_LIMIT + ' notes edited anywhere aboard — a mirror; each one still lives where it lives'
+      : 'the last ' + notesReduce.RECENT_LIMIT + ' notes edited in ' + ntDeptLabel(NT.dept) +
+        ' and General — a mirror; each one still lives where it lives';
   } else {
     var c = ntCrewById(NT.view.owner);
     locTitle = ntFullName(c) || ntShortName(NT.view.owner);
@@ -1913,6 +1993,11 @@ function ntRenderList() {
   }
   document.getElementById('loc-title').textContent = locTitle;
   document.getElementById('loc-sub').textContent = locSub;
+  // Nothing is added to a mirror. The bar is put away rather than disabled,
+  // because a note typed here would have to be filed somewhere and there is no
+  // honest answer to where.
+  var qa = document.getElementById('quick-add');
+  if (qa) qa.style.display = NT.view.kind === 'recent' ? 'none' : '';
   // The window sits in a taskbar all day, so its title says where it is and
   // how much is waiting rather than just "IDMS Notes".
   var waiting = open.filter(function (n) {
@@ -1921,7 +2006,13 @@ function ntRenderList() {
   document.title = (waiting ? '(' + waiting + ') ' : '') + locTitle + ' — IDMS Notes';
 
   var h = open.map(ntNoteRow).join('');
-  if (!open.length) h += '<div class="empty">Nothing open here.</div>';
+  if (!open.length) {
+    h += '<div class="empty">' + (NT.view.kind === 'recent'
+      ? 'Nothing has been edited here yet.'
+      : NT.view.kind === 'equipment'
+        ? 'Nothing is filed against this code.'
+        : 'Nothing open here.') + '</div>';
+  }
 
   if (done.length) {
     h += '<div class="group-head' + (NT.showCompleted ? ' open' : '') + '" onclick="NT.showCompleted=!NT.showCompleted;ntRenderList()">' +
@@ -1956,6 +2047,16 @@ function ntNoteRow(n) {
   }
   if (n.task_id) meta += '<span class="mirror">task ' + ntEsc(n.task_id) + '</span>';
   if (n.archived) meta += '<span>archived</span>';
+  // Recents pools every list on the boat into one, so a row there has to say
+  // which one it came out of — otherwise ten titles with no context is a worse
+  // answer than no list at all. Only there: everywhere else the surrounding
+  // list already says it.
+  if (NT.view.kind === 'recent') {
+    meta += '<span class="whence">' + ntEsc(ntWhereNoteLives(n)) + '</span>';
+    if (n.updated && n.updated !== n.created) {
+      meta += '<span>edited ' + ntEsc(ntWhen(n.updated)) + '</span>';
+    }
+  }
   var exp = ntExpiryLine(n);
   if (exp) meta += '<span class="expiry">' + ntEsc(exp) + '</span>';
 
@@ -1973,6 +2074,24 @@ function ntNoteRow(n) {
       '<button class="star-btn' + (n.starred ? ' on' : '') + '" title="' + (n.starred ? 'Unstar' : 'Star') +
       '" onclick="event.stopPropagation();ntToggleStar(\'' + ntAttr(n.note_id) + '\')">' + (n.starred ? '★' : '☆') + '</button>' +
     '</div></div>';
+}
+
+// Where a note would be found if you went looking for it, in one phrase. Read
+// in Recents, which is the one list that mixes departments, people, folders and
+// the Equipment pad together.
+function ntWhereNoteLives(n) {
+  // An equipment note that was filed somewhere is in TWO lists, and the folder
+  // is the one worth naming — the ⚙ chip beside this already says it is in
+  // the pad, and under which code. Unfiled, the pad is the whole answer, and
+  // the bare word is all that needs saying.
+  if (notesReduce.isFiledAgainstEquipment(n) && !n.folder) return 'Equipment';
+  if (n.scope.level === 'general') return 'General';
+  var dept = ntDeptLabel(ntDeptKey(n.scope.department) || n.scope.department) || n.scope.department || '';
+  if (n.scope.level === 'crew') {
+    var who = ntShortName(n.scope.owner_crew_id || n.scope.owner_username);
+    return dept + (who ? ' · ' + who : '');
+  }
+  return dept + (n.folder ? ' · ' + n.folder : '');
 }
 
 // "files expunge in N days" — eligibility only; the Console purges, and only
@@ -2038,8 +2157,15 @@ async function ntNoteDrop(ev, el) {
 
 function ntTreeDragOver(ev, el) {
   if (!NT.dragNoteId) return;
+  // A mirror is not a destination: there is nothing a drop on Recents could
+  // mean, so it does not light up and does not accept.
+  if (ntRowIsMirror(el)) return;
   ev.preventDefault();
   el.classList.add('drop-target');
+}
+
+function ntRowIsMirror(el) {
+  try { return JSON.parse(el.dataset.view).kind === 'recent'; } catch (e) { return false; }
 }
 
 // Dropping a note on a tree item re-files it: one note_edited carrying the new
@@ -2054,6 +2180,10 @@ async function ntTreeDrop(ev, el) {
 
   var view;
   try { view = JSON.parse(el.dataset.view); } catch (e) { return; }
+  // Belt and braces with ntTreeDragOver, which already refuses to light a
+  // mirror up. Without this a drop that arrived anyway would fall through to
+  // the department branch below and quietly re-file the note at the top level.
+  if (view.kind === 'recent') return;
   if (ntInView(n, { kind: view.kind, owner: view.owner || null, folder: view.folder || null })) return;
 
   // Dropping on a person means one of two things, and which one is settled by
@@ -2281,7 +2411,7 @@ function ntRenderDetail() {
   h += '<label class="assign-row"><input type="radio" name="assign-mode" value="equipment"' +
        (kind === 'equipment' ? ' checked' : '') +
        ' onchange="ntSetNoteType(\'' + nid + '\',\'equipment\')">' +
-       '<span><b>Equipment</b><em>Filed against one machine — shows under it in the Console</em></span></label>';
+       '<span><b>Equipment</b><em>Filed against one machine — moves out of this list into the Equipment pad below</em></span></label>';
   h += '</div>';
 
   // Equipment rides alongside every kind now: the type says WHO a note is for,
@@ -2607,6 +2737,7 @@ async function ntToggleStep(noteId, stepId) {
 // machine it is no longer about.
 async function ntSetNoteType(id, mode) {
   var n = NT.notes[id];
+  var wasHere = n && ntInView(n, NT.view);
   NT.eqQuery = '';
   try {
     if (n && n.assignees.length) await ntAppendEvent('note_unassigned', { note_id: id });
@@ -2617,6 +2748,20 @@ async function ntSetNoteType(id, mode) {
       // picker below is how it changes.
       equipment_code: mode === 'equipment' ? ((n && n.equipment_code) || null) : null
     });
+    // Equipment is the one type that MOVES a note: it leaves the list it was
+    // in for the pad. The note stays open in the detail panel, so without a
+    // word the row simply disappears from under the cursor. Said once, and
+    // only when it actually left the list being looked at.
+    if (mode === 'equipment' && wasHere) {
+      var code = (NT.notes[id] || {}).equipment_code;
+      if (code) {
+        ntEqReveal(code);
+        ntToast('Moved to Equipment — ' + code + (ntAssetName(code) ? ' — ' + ntAssetName(code) : ''));
+      } else {
+        // It has not moved yet, and saying so is the prompt to finish the job.
+        ntToast('Pick the machine below — the note moves to Equipment once it names one');
+      }
+    }
   } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
@@ -2636,7 +2781,13 @@ async function ntSetEquipment(id, code) {
     });
     ntEqReveal(code);
     ntRenderTree();
-    ntToast('Filed against ' + code + (ntAssetName(code) ? ' — ' + ntAssetName(code) : ''));
+    // Worded differently for the two cases, because they are different events.
+    // On an equipment-typed note this is the move itself — the note leaves the
+    // list it was in. On any other type it is only a tag, and the note stays
+    // exactly where it was, which is the whole point of the type being a
+    // separate question.
+    ntToast((notesReduce.isFiledAgainstEquipment(NT.notes[id]) ? 'Moved to Equipment — ' : 'Filed against ') +
+            code + (ntAssetName(code) ? ' — ' + ntAssetName(code) : ''));
   } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
 }
 
