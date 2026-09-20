@@ -1491,7 +1491,9 @@ function ntRenderTree() {
   // everything on the boat, whoever wrote it and whichever department it
   // belongs to. The department's own Recents is further down, under the
   // department that scopes it.
-  h += ntTreeItem({ kind: 'recent', owner: 'vessel', folder: null }, '🕓 Recents — vessel-wide');
+  // A scroll, not a clock: the Console's Rounds row is 🕗, and the two
+  // screens are meant to carry the same glyph for the same row.
+  h += ntTreeItem({ kind: 'recent', owner: 'vessel', folder: null }, '📜 Recents — vessel-wide');
 
   h += '<div class="tree-head">Department</div>';
   h += '<div class="dept-tabs">' + ntDeptList().map(function (d) {
@@ -1525,7 +1527,7 @@ function ntRenderTree() {
   // department and in General. It sits below the standing pads and above the
   // folder band because it is read, never filed into — dropping a note on it
   // does nothing, which is what a mirror should do.
-  h += ntTreeItem({ kind: 'recent', owner: 'dept', folder: null }, '🕓 Recents');
+  h += ntTreeItem({ kind: 'recent', owner: 'dept', folder: null }, '📜 Recents');
 
   // Groups and folders, per department. They live strictly between Department
   // notes and the Personnel heading — those are the hard stops, and every
