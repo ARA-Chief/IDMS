@@ -119,6 +119,10 @@ check('the Console loads it before the Crew List that uses it', (() => {
 })());
 check('no inline event handlers on the Crew List',
   (fs.readFileSync(CON + '/src/renderer/js/crew.js', 'utf8').match(inlineRe) || []).length === 0);
+// The Gear order sheet is the other screen those sizes reach, and it is all
+// selects and checkboxes — exactly the shape an inline handler gets written in.
+check('no inline event handlers on the Gear order sheet',
+  (fs.readFileSync(CON + '/src/renderer/js/gear-order.js', 'utf8').match(inlineRe) || []).length === 0);
 check('no inline event handlers on Tank Levels & Transfers',
   (fs.readFileSync(CON + '/src/renderer/js/fuel.js', 'utf8').match(inlineRe) || []).length === 0);
 // Inventory › Stock's search (§42.7a): what a search of the ship finds, and the
