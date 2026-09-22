@@ -34,6 +34,11 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
   already filled in, with the year of the order in the note — check them and
   fix anything that has changed. The Console's Crew List shows and edits the
   same sizes.
+- **Say which jacket.** Each gear row now has a box for which product it is —
+  the garments on the engineers’ annual order form — so two jackets in two
+  sizes are two rows and an order can ask for the right one. Type anything the
+  form does not carry; the size box follows the product where it has its own
+  sizes.
 - **Procurement is now called Inventory**, the name the Console gives it. Same
   tile, same people can open it. Inside, the register is **Items** and Stock
   Location is **Stock**, as on the Console.
