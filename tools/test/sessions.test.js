@@ -14,6 +14,7 @@ const { REDUCER, REPO, counter } = require('./_paths');
 const fs = require('fs');
 const path = require('path');
 const R = require(REDUCER);
+const SS = require(path.join(REPO, 'utils', 'stock-search.js'));
 const T = counter(), check = T.check;
 
 // ── A tiny ship: two bins under a room under a deck ─────────────────────────
@@ -245,6 +246,7 @@ if (start !== -1 && end > start) {
   // honest. The reducer is the real one.
   const sandbox = {
     procurementReduce: R,
+    stockSearch: SS,
     PC: { state: R.reduce(sweep, cat), catalogue: cat, loc: null },
     pcLocations: () => sandbox.PC.catalogue.locations,
     pcDecks: () => Object.keys(sandbox.PC.catalogue.locations)
@@ -265,6 +267,8 @@ if (start !== -1 && end > start) {
     localStorage: { getItem: () => '{}', setItem: () => {}, removeItem: () => {} },
     confirm: () => true,
     document: { getElementById: () => ({ set innerHTML(_v) {} }) },
+    pcMoveForm: (itemId, kind, from) => { sandbox.moved.push({ itemId, kind, from }); },
+    moved: [],
     window: { scrollTo: () => {} },
     setTimeout: setTimeout, clearTimeout: clearTimeout
   };
@@ -273,7 +277,9 @@ if (start !== -1 && end > start) {
   const load = new Function(...names,
     block + '\nreturn { slocSheetHtml, slocSheetBlock, slocViewRoot, slocSession, slocState,'
           + ' slocLabel, slocTrail, slocDetailHtml, slocPick, slocUnplacedCount, slocStart,'
-          + ' SLOC_SHEET_CAP, SLOC_UNPLACED };');
+          + ' slocSheet, slocRowsInScope, slocRootList, slocTyped, slocCount, slocConfirm,'
+          + ' slocReceive, slocMove, SLOC_SHEET_CAP, SLOC_UNPLACED, SLOC_DISCONTINUED,'
+          + ' resetScope: function () { _slocScope = null; } };');
   const api = load(...names.map(k => sandbox[k]));
 
   sandbox.PC.loc = api.slocState();
@@ -418,7 +424,8 @@ if (start !== -1 && end > start) {
   sandbox.PC.loc = api.slocState();
   sandbox.PC.loc.at = 'LOC-0009';
 
-  const bigRows = R.locationSheet(sandbox.PC.state, bigCat, 'LOC-0009', { scope: 'here' });
+  api.resetScope();
+  const bigRows = api.slocSheet('LOC-0009', 'here');
   check('the whole shelf is on the sheet', bigRows.length, 500);
   const sheetBlock = api.slocSheetBlock(bigRows, null);
   check('but only the cap is laid out',
@@ -440,6 +447,145 @@ if (start !== -1 && end > start) {
   sandbox.PC.loc.sheetQ = '';
   check('a shelf you can see the end of is given no filter at all',
     api.slocSheetBlock(bigRows.slice(0, 10), null).indexOf('id="sloc-sq"') === -1, true);
+  // ── Searching the ship, and counting from what it finds ──────────────────────
+// The Console's Stock screen searches every item aboard in the register's
+// grammar and hands back one line per item per space, each with a count box.
+// The phone runs the same file (utils/stock-search.js), so these are checked
+// against the phone's own render and count functions — the same words must
+// find the same lines, and a count typed against a found line must land in the
+// space the line is under.
+T.head('searching the ship from the phone');
+  {
+  const shipCat = {
+    baseline_at: null,
+    locations: {
+      'LOC-0001': { location_id: 'LOC-0001', path: 'Maindeck', deck: 'Maindeck', depth: 1,
+                    parent_id: null, items_here: 0, items_deep: 3, sublocations: 2 },
+      'LOC-0002': { location_id: 'LOC-0002', path: 'Maindeck\\Fwd Shop', deck: 'Maindeck', depth: 2,
+                    parent_id: 'LOC-0001', items_here: 2, items_deep: 2, sublocations: 0 },
+      'LOC-0003': { location_id: 'LOC-0003', path: 'Maindeck\\Belting Section', deck: 'Maindeck', depth: 2,
+                    parent_id: 'LOC-0001', items_here: 1, items_deep: 1, sublocations: 0 }
+    },
+    items: {
+      'ITM-00011': { name: 'Hose, Hydraulic 1/2"', unit: 'ea', location_id: 'LOC-0002', in_stock: 6,
+                     maker: 'Parker', makers_part_no: '451TC-8', supplier: 'Motion Industries',
+                     suppliers_ref: 'MI-99812', consumption: {} },
+      'ITM-00012': { name: 'Belt, Roughtop, Green, 20" Wide', unit: 'ft', location_id: 'LOC-0003',
+                     in_stock: 40, maker: 'Fenner', makers_part_no: 'RT-20G', consumption: {} },
+      'ITM-00013': { name: 'Fitting, JIC 1/2"', unit: 'ea', location_id: 'LOC-0002', in_stock: 12,
+                     maker: 'Parker', makers_part_no: '8-8 F5OX-S', consumption: {} }
+    }
+  };
+  // Two of the hoses were moved to the belting section, so one item is on two shelves.
+  sandbox.PC.catalogue = shipCat;
+  sandbox.PC.state = R.reduce([
+    ev('stock_movement', '2026-09-20T08:00:00.000Z',
+       { movement_id: 'mv-h', item_id: 'ITM-00011', kind: 'transfer', location_id: 'LOC-0002',
+         to_location_id: 'LOC-0003', qty: 2 })
+  ], shipCat);
+  sandbox.PC.loc = null;
+  const s = api.slocState();
+  sandbox.PC.loc = s;
+  s.at = null;
+  api.resetScope();
+
+  const ship = api.slocRowsInScope();
+  check('one line per item per space', ship.length, 4);
+  check('the hose is a line on each of its two shelves',
+    ship.filter(r => r.item_id === 'ITM-00011').map(r => r.count_location_id).sort(), ['LOC-0002', 'LOC-0003']);
+  check('each line knows its own figure',
+    ship.filter(r => r.item_id === 'ITM-00011').map(r => r.book_qty).sort(), [2, 4]);
+  check('and is keyed by item AND space, so two boxes never share a number',
+    ship.filter(r => r.item_id === 'ITM-00011').map(r => r.key).sort(),
+    ['ITM-00011@LOC-0002', 'ITM-00011@LOC-0003']);
+
+  const find = q => SS.filter(ship, q).shown.map(r => r.item_id + '@' + r.count_location_id).sort();
+  check('a maker finds everything they make', find('maker:parker'),
+    ['ITM-00011@LOC-0002', 'ITM-00011@LOC-0003', 'ITM-00013@LOC-0002']);
+  check("pn: reads either part number — the maker's", find('pn:451tc-8'),
+    ['ITM-00011@LOC-0002', 'ITM-00011@LOC-0003']);
+  check("or the supplier's", find('pn:MI-99812'), ['ITM-00011@LOC-0002', 'ITM-00011@LOC-0003']);
+  check('words are ANDed, and -word takes away', find('parker -fitting'),
+    ['ITM-00011@LOC-0002', 'ITM-00011@LOC-0003']);
+  check('space: narrows to a shelf', find('parker space:belting'), ['ITM-00011@LOC-0003']);
+  check('a trailing inch mark is read as text, not a broken query', find('20"'), ['ITM-00012@LOC-0003']);
+
+  // The completions come off what is in scope.
+  const sug = SS.suggest('park', SS.vocab(ship), { inSpace: false });
+  check('a maker is offered as maker:…', sug.length > 0 && sug[0].full, 'maker:Parker ');
+
+  // The screen: rows under a heading per space, each with its own box and ✓.
+  s.sheetQ = 'maker:parker';
+  const out = api.slocRootList();
+  check('the phone draws a line per found row', (out.match(/class="ci-line/g) || []).length, 3);
+  check('under a heading for each space', (out.match(/class="sloc-grp"/g) || []).length, 2);
+  check('each found line has its own count box',
+    (out.match(/onchange="slocCount\(&quot;ITM-000\d\d@LOC-000\d&quot;\)"/g) || []).length, 3);
+  check('and a ✓ that files the book figure as a count',
+    (out.match(/onclick="slocConfirm\(/g) || []).length, 3);
+  check('the maker and part number are on the line', out.indexOf('P/N 451TC-8') !== -1, true);
+
+  // Plain words also look for a space of that name — "fwd shop" is a place.
+  s.sheetQ = 'belting';
+  check('plain words also find a space by name', api.slocRootList().indexOf('space by that name') !== -1, true);
+  s.sheetQ = 'maker:belting';
+  check('but a field search is about items only', api.slocRootList().indexOf('by that name') === -1, true);
+
+  // A count typed against the hose in the belting section lands there, and
+  // only there.
+  s.sheetQ = 'maker:parker';
+  sandbox.appended.length = 0;
+  api.slocTyped('ITM-00011@LOC-0003', '3');
+  api.slocCount('ITM-00011@LOC-0003').catch(() => {});
+  const c1 = sandbox.appended[0] && sandbox.appended[0].payload;
+  check("a count from a search is filed against the line's own space",
+    c1 && [c1.kind, c1.item_id, c1.location_id, c1.counted_qty], ['count', 'ITM-00011', 'LOC-0003', 3]);
+  check('and carries no session when nobody is walking it', c1 && c1.session_id, undefined);
+
+  // ✓ on a found line is a count that agrees with the book.
+  sandbox.appended.length = 0;
+  s.busy = {};
+  api.slocConfirm('ITM-00013@LOC-0002');
+  const c2 = sandbox.appended[0] && sandbox.appended[0].payload;
+  check('✓ files the book figure as the count', c2 && [c2.location_id, c2.counted_qty], ['LOC-0002', 12]);
+
+  // Somebody walking the Fwd Shop: a count typed from a search into that space
+  // is part of their walk.
+  sandbox.PC.state = R.reduce([
+    ev('stock_movement', '2026-09-20T08:00:00.000Z',
+       { movement_id: 'mv-h', item_id: 'ITM-00011', kind: 'transfer', location_id: 'LOC-0002',
+         to_location_id: 'LOC-0003', qty: 2 }),
+    ev('count_session_opened', '2026-09-21T08:00:00.000Z',
+       { session_id: 'S-FWD', location_id: 'LOC-0002', scope: 'here', expected_items: 2 })
+  ], shipCat);
+  api.resetScope();
+  s.busy = {};
+  sandbox.appended.length = 0;
+  api.slocTyped('ITM-00013@LOC-0002', '11');
+  api.slocCount('ITM-00013@LOC-0002').catch(() => {});
+  const c3 = sandbox.appended[0] && sandbox.appended[0].payload;
+  check('joins the audit open on that space', c3 && c3.session_id, 'S-FWD');
+
+  // The detail under a found line acts on the space the line is in.
+  s.busy = {};
+  api.slocPick('ITM-00011', 'LOC-0003');
+  const shipRow = api.slocRowsInScope().find(r => r.key === 'ITM-00011@LOC-0003');
+  const det = api.slocDetailHtml(shipRow);
+  check('the detail offers a receipt into that shelf', det.indexOf('Receive into Belting Section') !== -1, true);
+  check('a move out of it', det.indexOf('Move stock from Belting Section') !== -1, true);
+  check('and the whole shelf it is on', det.indexOf('slocFindOpen(&quot;LOC-0003&quot;') !== -1, true);
+  check("it names the maker's part number", det.indexOf('451TC-8') !== -1, true);
+  sandbox.moved.length = 0;
+  api.slocReceive('ITM-00011');
+  check('Receive opens the ordinary receipt, pointed at that space',
+    sandbox.moved[0], { itemId: 'ITM-00011', kind: 'receipt', from: 'LOC-0003' });
+
+  // An audit is one space walked end to end; the discontinued sheet is the whole ship.
+  s.at = api.SLOC_DISCONTINUED;
+  sandbox.appended.length = 0;
+  api.slocStart().catch(() => {});
+  check('no audit can be opened on Discontinued Stock', sandbox.appended.length, 0);
+  }
 }
 
 // ── The two doors ──────────────────────────────────────────────────────────
@@ -450,8 +596,8 @@ if (start !== -1 && end > start) {
 T.head('the hub opens the screen the tile names');
 check('the ?view= gate reads VIEWS rather than a list of its own',
   html.indexOf('VIEWS.some(function (x) { return x.id === v; })') !== -1, true);
-check('and Stock Location is one of them',
-  html.indexOf("{ id: 'location',   label: 'Stock Location' }") !== -1, true);
+check('and Stock is one of them, named as the Console names it',
+  html.indexOf("{ id: 'location',   label: 'Stock' }") !== -1, true);
 check('the hub carries a tile for it',
   fs.readFileSync(path.join(REPO, 'index.html'), 'utf8')
     .indexOf("openProcurement('location')") !== -1, true);

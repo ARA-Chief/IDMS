@@ -1285,7 +1285,7 @@
         <div class="user-avatar" id="pr-home-avatar" onclick="togglePrUserMenu()" style="cursor:pointer">PR</div>
         <div class="user-info" onclick="togglePrUserMenu()" style="cursor:pointer">
           <span class="user-name" id="pr-home-username">—</span>
-          <span class="user-role" id="pr-home-role">Procurement · F/T Araho</span>
+          <span class="user-role" id="pr-home-role">Inventory · F/T Araho</span>
         </div>
         <div id="pr-user-menu" style="display:none;position:absolute;top:44px;left:0;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-md);min-width:200px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
           <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
@@ -1307,7 +1307,7 @@
         </div>
       </div>
     </header>
-    <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Procurement</div>
+    <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Inventory</div>
     <div class="er-hub-grid">
       <button class="er-hub-tile" onclick="openProcurement('register')">
         <div class="er-hub-tile-icon">
@@ -1315,7 +1315,7 @@
             <path d="M4 9h20v14H4z"/><path d="M4 9l2.5-4h15L24 9"/><path d="M11 14h6"/>
           </svg>
         </div>
-        <div class="er-hub-tile-label">Inventory</div>
+        <div class="er-hub-tile-label">Items</div>
         <div class="er-hub-tile-sub">What we hold, and where</div>
       </button>
       <button class="er-hub-tile" onclick="openProcurement('location')">
@@ -1324,8 +1324,8 @@
             <path d="M4 4h20v20H4z"/><path d="M4 11h20"/><path d="M4 18h20"/><path d="M14 4v20"/>
           </svg>
         </div>
-        <div class="er-hub-tile-label">Stock Location</div>
-        <div class="er-hub-tile-sub">Walk a space and count it</div>
+        <div class="er-hub-tile-label">Stock</div>
+        <div class="er-hub-tile-sub">Find it, count it, walk a space</div>
       </button>
       <button class="er-hub-tile" onclick="openProcurement('checkin')">
         <div class="er-hub-tile-icon">
@@ -2950,7 +2950,7 @@ function showDeptPicker() {
       'font-size:18px', 'font-weight:700', 'letter-spacing:0.04em',
       'text-transform:uppercase', 'cursor:pointer', 'position:relative', 'text-align:center'
     ].join(';');
-    btn.textContent = dept;
+    btn.textContent = deptLabel(dept);
 
     if (!isActive) {
       var tag = document.createElement('div');
@@ -3056,6 +3056,15 @@ function loadDeptConfig(dept) {
       // Signal to enterDepartment whether we used cached config
       return { deptConfig: DEPT_CONFIG, shellConfig: SHELL_CONFIG, fromCache: usedCache };
     });
+}
+
+// What a department is called on screen, where that differs from the key the
+// crew records and the config carry. 'Procurement' is still the key — it is on
+// crew records and it is what grants access (userIsProcurement, pcHasAccess) —
+// but the module has been called Inventory since 2026-09-22, the name the
+// Console's menu gives the stores register and the stock beside it.
+function deptLabel(dept) {
+  return dept === 'Procurement' ? 'Inventory' : dept;
 }
 
 function deptHomeScreen(dept) {
@@ -11302,7 +11311,7 @@ function addOilOpenConfirm() {
     msg += oilAttach.issuesStock(f.item)
       ? '\n\n' + f.qty.toFixed(2) + ' ' + (f.item.unit || '') + ' will be issued out of stores.'
       : '\n\nThis item is counted in "' + (f.item.unit || '?') + '", not gallons, so nothing is taken ' +
-        'off its stock. Issue the drum or pail in Procurement when it is empty.';
+        'off its stock. Issue the drum or pail in Inventory when it is empty.';
   }
   var used = f.oilFields.attachment_override || [];
   if (used.length) msg += '\n\nRecorded as an attachment override: ' + addOilOverrideWords(used) + '.';
@@ -11634,7 +11643,7 @@ async function addOilCommit() {
       catch (e) {
         console.error('[addOil] stores issue failed', e);
         alert('The oil was logged, but taking it out of stores failed (' + (e && e.message) + '). ' +
-              'Record an Issue against ' + f.item.item_id + ' in Procurement.');
+              'Record an Issue against ' + f.item.item_id + ' in Inventory.');
       }
     }
 
