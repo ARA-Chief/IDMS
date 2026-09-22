@@ -27,6 +27,12 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
   each showing the last ten notes anybody edited — most recent first, with a
   line saying which list each one came out of. Open, edit or delete them from
   there like any other note. Nothing is filed into a Recents row.
+- **Gear sizes on My Profile.** A new Gear Sizes section lists what you wear —
+  gloves, boots, trousers, jacket, shirt and the rest — with a size and a note
+  for each. Add a row for anything missing, remove any you don't need, and tap
+  save. If you were on the 2021 engine room gear order, your sizes from it are
+  already filled in; check them before you save. The Console's Crew List shows
+  and edits the same sizes.
 
 ## 1.30 — 2026-09-18
 
