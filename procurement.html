@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>IDMS Procurement</title>
+<title>IDMS Inventory</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -194,6 +194,38 @@
   .sloc-crumb a { color: var(--accent); text-decoration: none; }
   .sloc-crumb a:active { text-decoration: underline; }
 
+  /* The search box, and what it offers under it. The completions are a row of
+     chips in the flow, not a dropdown: on a phone a dropdown covers the very
+     lines it is narrowing, and a chip is a thumb-sized target. */
+  .sloc-find { margin-bottom: 12px; }
+  .sloc-find .field { margin-bottom: 0; font-size: 16px; }
+  .sloc-sug { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .sloc-sug[hidden] { display: none; }
+  .sloc-sug-row { display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%;
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px;
+    color: var(--text-secondary); font-family: inherit; font-size: 13px; padding: 6px 11px;
+    cursor: pointer; min-height: 32px; }
+  .sloc-sug-row .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sloc-sug-row .v b { color: var(--text-primary); }
+  .sloc-sug-row .k { font-size: 10px; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--text-muted); white-space: nowrap; }
+  .sloc-sug-row.on { border-color: var(--border-accent); background: var(--accent-glow); }
+  .sloc-find-note { font-size: 12px; color: var(--text-muted); margin-top: 6px; min-height: 0; }
+  .sloc-find-note:empty { display: none; }
+  .sloc-find-note .warn { color: var(--warning); }
+
+  /* A heading per space, on any sheet that spans more than one — a search of
+     the ship, a deep sheet, the discontinued sheet. Where one shelf ends and
+     the next begins is the question a walk asks most. */
+  .sloc-grp { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+    padding: 9px 14px; background: var(--bg-2); border-bottom: 1px solid var(--border); }
+  .sloc-grp:not(:first-child) { border-top: 1px solid var(--border); }
+  .sloc-grp .nm { font-weight: 600; font-size: 13.5px; }
+  .sloc-grp .pt { font-size: 11.5px; color: var(--text-muted); flex: 1 1 160px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sloc-grp .n { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; }
+  .sloc-act { display: flex; flex-wrap: wrap; gap: 8px; }
+
   /* ── Contacts ─────────────────────────────────────────── */
   /* A number on a supplier's card should dial and an address should compose.
      This is the surface somebody is holding when they need to make the call. */
@@ -333,8 +365,8 @@
 <!-- ── Microsoft sign-in ── -->
 <div class="screen active" id="screen-msauth">
   <div class="center-card">
-    <h1>IDMS Procurement</h1>
-    <div class="sub">Stores, requisitions and orders</div>
+    <h1>IDMS Inventory</h1>
+    <div class="sub">Items, stock, requisitions and orders</div>
     <button class="btn" onclick="pcMsSignIn()">Sign in with Microsoft</button>
     <div class="err" id="auth-err"></div>
     <div class="hint">Uses the same Microsoft account and OneDrive folder as the rest of IDMS.</div>
@@ -360,7 +392,7 @@
 <div class="screen" id="screen-noaccess">
   <div class="center-card">
     <h1>Not your department</h1>
-    <div class="sub" id="noaccess-msg">Procurement is limited to the crew who hold stores.</div>
+    <div class="sub" id="noaccess-msg">Inventory is limited to the crew who hold stores.</div>
     <button class="btn ghost" onclick="location.href='index.html'">Back to IDMS</button>
   </div>
 </div>
@@ -369,7 +401,7 @@
 <div class="screen" id="screen-app">
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <b>Procurement</b><span id="brand-ver">§42</span>
+      <b>Inventory</b><span id="brand-ver">§42</span>
       <span class="sync-pill" id="sync-pill" title="Sync status"></span>
     </div>
     <nav class="nav" id="nav"></nav>
@@ -393,7 +425,7 @@
     <div class="main-head">
       <button class="icon-btn menu-btn" onclick="pcToggleSidebar()" aria-label="Menu">☰</button>
       <div>
-        <h2 id="head-title">Inventory</h2>
+        <h2 id="head-title">Items</h2>
         <div class="loc" id="head-sub">—</div>
       </div>
       <div class="spacer"></div>
@@ -408,10 +440,17 @@
 
 <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
 <script src="utils/procurement-reduce.js"></script>
+<!-- The register's search grammar and what Stock's search finds — both shared with the
+     Console (IDMS-Console/src/renderer/js/), byte-identical, so a search finds the same lines on both. -->
+<script src="utils/proc-query.js"></script>
+<script src="utils/stock-search.js"></script>
 <script src="utils/contacts-reduce.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════
-// IDMS Procurement — standalone page, schema §42.
+// IDMS Inventory — standalone page, schema §42. Called Procurement until
+// 2026-09-22, and still procurement.html: the file name is in bookmarks and
+// home-screen icons, and 'Procurement' is still the department key on the crew
+// record that grants access. Only what the crew read was renamed.
 // Same origin, MSAL registration and Graph conventions as index.html and
 // notes.html. Storage contract: append-only events under
 //   Documents/IDMS/data/procurement/events/{YYYY}/{iso-compact}-{event_id}.json
@@ -450,7 +489,9 @@ var PC = {
   catalogue: null,         // hydrated: { baseline_at, items, locations, counts }
   catStatus: 'none',       // none | cached | fresh | stale | failed
   catBuiltAt: null,
-  detail: null,            // catalogue-detail.json, fetched on first item opened
+  detail: null,            // catalogue-detail.json — the makers; fetched behind the catalogue
+  catalogueDoc: null,      // the raw catalogue, kept so the makers can be folded in when detail lands
+  catWithDetail: false,    // whether PC.catalogue was hydrated with them
 
   // §42.16 — the contact book. Its baseline is a second file, fetched on first
   // use rather than at sign-in: a megabyte nobody has asked for yet.
@@ -687,7 +728,7 @@ async function pcEnterApp() {
     var depts = pcAccessDepartments(PC.cfg);
     document.getElementById('noaccess-msg').textContent =
       (PC.user.name || PC.user.username) + ' is signed in as ' + (PC.user.role || 'crew') +
-      '. Procurement is open to admins, to ' +
+      '. Inventory is open to admins, to ' +
       ((PC.cfg.settings.approver_roles || []).join(' and ') || 'approvers') +
       (depts.length ? ', to anyone in ' + depts.join(' or ') : '') +
       ', and to anyone carrying Procurement on their crew record.';
@@ -763,11 +804,40 @@ async function pcCatEtag(path) {
   return meta.eTag || meta.lastModifiedDateTime || null;
 }
 
+// The catalogue, hydrated with the maker of every item when the detail file is
+// in hand. The maker and the maker's type live only in catalogue-detail.json;
+// hydrating without it gives a whole register with no makers on it, which is
+// what the phone did until 2026-09-22 — and it meant `maker:parker` on the
+// Stock search found nothing here while finding forty lines on the Console,
+// which hydrates with it (sync-procurement.js). Same file, same function, so
+// the two agree about what a search of the ship can see.
+function pcHydrate(doc) {
+  PC.catalogueDoc = doc;
+  PC.catWithDetail = !!PC.detail;
+  return procurementReduce.hydrateCatalogue(doc, PC.detail || null);
+}
+
+// Once the detail arrives, fold the makers in. Fetched in the background after
+// the catalogue rather than on the critical path: it is 2 MB, eTag-cached in
+// IndexedDB so it comes down once per export, and a register without makers is
+// still a register. The redraw waits if somebody is typing, so a half-typed
+// count or search is never pulled out from under them — the next draw has it.
+function pcFoldDetail() {
+  return pcEnsureDetail().then(function (d) {
+    if (!d || !PC.catalogueDoc || PC.catWithDetail) return;
+    PC.catalogue = pcHydrate(PC.catalogueDoc);
+    pcReduce();
+    var a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+    pcRenderAll();
+  }).catch(function () {});
+}
+
 async function pcLoadCatalogue() {
   var cached = null;
   try { cached = await pcIdbGet('catalogue'); } catch (e) {}
   if (cached && cached.doc) {
-    PC.catalogue = procurementReduce.hydrateCatalogue(cached.doc);
+    PC.catalogue = pcHydrate(cached.doc);
     PC.catBuiltAt = cached.doc.built_at || null;
     PC.catStatus = 'cached';
     pcReduce();
@@ -781,18 +851,20 @@ async function pcLoadCatalogue() {
   // says so rather than pretending there is no stock aboard.
   if (etag === null) {
     PC.catStatus = cached ? 'stale' : 'failed';
+    if (cached) pcFoldDetail();
     return;
   }
-  if (cached && cached.etag === etag) { PC.catStatus = 'fresh'; return; }
+  if (cached && cached.etag === etag) { PC.catStatus = 'fresh'; pcFoldDetail(); return; }
 
   try {
     var doc = await pcGetJson(pcCatPath());
     if (!doc) { PC.catStatus = cached ? 'stale' : 'failed'; return; }
-    PC.catalogue = procurementReduce.hydrateCatalogue(doc);
+    PC.catalogue = pcHydrate(doc);
     PC.catBuiltAt = doc.built_at || null;
     PC.catStatus = 'fresh';
     pcReduce();
     try { await pcIdbPut('catalogue', { etag: etag, doc: doc }); } catch (e) {}
+    pcFoldDetail();
   } catch (e) {
     PC.catStatus = cached ? 'stale' : 'failed';
   }
@@ -1225,10 +1297,10 @@ function pcLocOptions(sel) {
 // ── Render ──────────────────────────────────────────────────
 
 var VIEWS = [
-  { id: 'register',   label: 'Inventory' },
+  { id: 'register',   label: 'Items' },
   // The same 14,487 items entered from the ship rather than the search box:
   // pick a space, see what is stowed there, correct it standing in front of it.
-  { id: 'location',   label: 'Stock Location' },
+  { id: 'location',   label: 'Stock' },
   { id: 'low',        label: 'Low stock' },
   { id: 'checkin',    label: 'Check in' },
   { id: 'reqs',       label: 'Requisitions' },
@@ -1287,7 +1359,7 @@ function pcRenderNav() {
   };
   var cls = { low: 'alert', exceptions: 'bad', reqs: 'alert' };
   document.getElementById('nav').innerHTML =
-    '<div class="nav-head">Stores</div>' +
+    '<div class="nav-head">Inventory</div>' +
     VIEWS.map(function (v) {
       return '<div class="nav-item' + (PC.view === v.id ? ' active' : '') +
         '" onclick="pcGo(\'' + v.id + '\')">' + pcEsc(v.label) +
@@ -1319,7 +1391,7 @@ function pcHead(title, sub, actions) {
 function pcViewRegister() {
   if (PC.sel && PC.state.items[PC.sel]) return pcViewItem(PC.state.items[PC.sel]);
 
-  pcHead('Inventory', pcRegisterSubtitle(),
+  pcHead('Items', pcRegisterSubtitle(),
     '<button class="icon-btn" onclick="pcItemForm(null)">+ New item</button>');
 
   var flagOpts = [
@@ -1331,7 +1403,8 @@ function pcViewRegister() {
     ['unplaced', 'No stowage recorded'],
     ['nomin', 'No minimum set'],
     ['blocked', 'Blocked in TM Master'],
-    ['local', 'Added in IDMS']
+    ['local', 'Added in IDMS'],
+    ['proposals', 'Has a proposed correction']
   ].map(function (o) {
     return '<option value="' + o[0] + '"' + (PC.filterFlag === o[0] ? ' selected' : '') +
       '>' + o[1] + '</option>';
@@ -1345,7 +1418,7 @@ function pcViewRegister() {
 
   document.getElementById('body').innerHTML =
     '<div class="toolbar">' +
-      '<input class="field" id="reg-q" placeholder="Search name, part number, stock tag, ITM number…" ' +
+      '<input class="field" id="reg-q" type="search" placeholder="Search name, part number, maker, supplier, SFI code, ITM number…" ' +
         'value="' + pcEsc(PC.q) + '" oninput="pcRegSearch(this.value)">' +
       (pcDecks().length
         ? '<select class="field" onchange="PC.filterDeck=this.value;PC.filterLoc=&quot;&quot;;pcRenderAll()">' +
@@ -1407,9 +1480,18 @@ function pcRegisterMatches() {
     if (flag === 'nomin' && procurementReduce.effective(i, 'min_qty')) continue;
     if (flag === 'blocked' && !i.blocked) continue;
     if (flag === 'local' && i.source !== 'local') continue;
+    if (flag === 'proposals' && !(i.proposals && i.proposals.length)) continue;
 
+    // Every word has to appear somewhere, over the same columns the Console's
+    // Items search reads (getProcurementItems in its main.js): the maker, the
+    // supplier and both their part numbers as well as the name. Somebody holding
+    // a box with a Parker number on it must find it here as they would at the
+    // desk. Stock tag and TM item no. are the phone's own extras, kept.
     if (terms.length) {
+      var sup0 = (i.suppliers && i.suppliers[0]) || {};
       var hay = (i.item_id + ' ' + i.name + ' ' + (i.part_number || '') + ' ' +
+                 (i.makers_part_no || '') + ' ' + (i.suppliers_ref || sup0.supplier_part_number || '') + ' ' +
+                 (i.maker || '') + ' ' + (i.makers_type || '') + ' ' + (sup0.supplier_id || '') + ' ' +
                  (i.stock_tag || '') + ' ' + (i.tm_item_no || '') + ' ' +
                  procurementReduce.sfiCodes(i).join(' ')).toLowerCase();
       var miss = false;
@@ -1562,12 +1644,16 @@ function pcViewItem(item) {
   if (item.item_type) sub.push(item.item_type);
 
   pcHead(item.name || '(unnamed)', sub.join('  ·  '),
-    '<button class="icon-btn" onclick="PC.sel=null;pcRenderAll()">← Register</button>');
+    '<button class="icon-btn" onclick="PC.sel=null;pcRenderAll()">← Items</button>');
 
   var low = procurementReduce.isLow(item);
   var minEff = procurementReduce.effective(item, 'min_qty');
   var maxEff = procurementReduce.effective(item, 'max_qty');
   var minIsPolicy = item.policy && item.policy.min_qty !== undefined && item.policy.min_qty !== null;
+  var annual = (item.policy && item.policy.annual_consumption !== undefined &&
+                item.policy.annual_consumption !== null && item.policy.annual_consumption !== '')
+    ? Number(item.policy.annual_consumption) : null;
+  if (annual !== null && !isFinite(annual)) annual = null;
   var maxIsPolicy = item.policy && item.policy.max_qty !== undefined && item.policy.max_qty !== null;
 
   var onHand = item.stock_unknown
@@ -1588,6 +1674,12 @@ function pcViewItem(item) {
         (minIsPolicy ? '<span class="policy-chip">IDMS</span>' : '') + ' / ' +
         (maxEff === null || maxEff === undefined ? '—' : pcFmtQty(maxEff, item.unit)) +
         (maxIsPolicy ? '<span class="policy-chip">IDMS</span>' : '') + '</div></div>' +
+      // A baseline somebody states, not TM's usage figures (those are the
+      // Consumption line below). Null means nobody has established one, and is
+      // shown as a dash — never as a zero, which would read as "never used".
+      '<div><div class="sub">Annual use</div><div class="qty">' +
+        (annual === null ? '—' : pcFmtQty(annual, item.unit)) + '</div>' +
+        '<div class="sub muted nowrap">' + (annual === null ? 'no baseline yet' : 'per year') + '</div></div>' +
       '<div class="grow"></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="btn sm" onclick="pcMoveForm(&quot;' + item.item_id + '&quot;,&quot;receipt&quot;)">Receive</button>' +
@@ -1624,10 +1716,14 @@ function pcViewItem(item) {
     : '<span class="muted">none recorded</span>');
   row('Unit of measure', pcEsc(item.unit));
   row('Item category', pcEsc(item.item_category));
+  // Read off the item, with the detail file behind it for a register older
+  // than the columns — the same order the Console's item card uses.
+  row('Maker', pcEsc(item.maker || det.maker));
+  row("Maker's type", pcEsc(item.makers_type || det.makers_type));
+  row("Maker's part no", pcEsc(item.makers_part_no));
   row('Supplier', pcEsc((item.suppliers[0] && item.suppliers[0].supplier_id) || ''));
-  row("Supplier's ref", pcEsc((item.suppliers[0] && item.suppliers[0].supplier_part_number) || ''));
-  row('Maker', pcEsc(det.maker));
-  row("Maker's type", pcEsc(det.makers_type));
+  row("Supplier's ref", pcEsc(item.suppliers_ref ||
+    (item.suppliers[0] && item.suppliers[0].supplier_part_number) || ''));
   row('Stock tag', pcEsc(item.stock_tag));
   row('TM item no.', pcEsc(item.tm_item_no));
   row('Est. delivery', item.est_delivery_days ? item.est_delivery_days + ' days' : '');
@@ -1766,7 +1862,16 @@ function pcPolicyForm(itemId) {
         '</label><input class="field" id="pol-max" type="number" step="any" value="' + pcEsc(v('max_qty')) + '"></div>' +
       '<div><label class="lbl">Reorder qty</label>' +
         '<input class="field" id="pol-reorder" type="number" step="any" value="' + pcEsc(v('reorder_qty')) + '"></div>' +
+      '<div><label class="lbl">Annual consumption</label>' +
+        '<input class="field" id="pol-annual" type="number" step="any" min="0" inputmode="decimal" value="' +
+        pcEsc(v('annual_consumption')) + '"></div>' +
     '</div>' +
+    // The same field, and the same warning, as the Console's form. A stated
+    // baseline, not TM's usage figures; blank is "nobody knows yet", not zero.
+    '<div class="sheet-sub" style="margin:0 0 10px">Annual consumption is how many of these we ' +
+      'actually get through in a year — the baseline a minimum is argued from. <b>Leave it blank ' +
+      'until it is known.</b> Blank reads as “nobody has established one yet”, which is the truth ' +
+      'for nearly every item and is not the same as zero.</div>' +
     '<div class="fieldrow">' +
       '<div><label class="lbl">SFI codes</label>' +
         '<input class="field" id="pol-sfi" placeholder="601.001.075, 233.075.01" value="' +
@@ -1796,6 +1901,12 @@ async function pcPolicySave(itemId) {
   payload.min_qty     = pcNum('pol-min');
   payload.max_qty     = pcNum('pol-max');
   payload.reorder_qty = pcNum('pol-reorder');
+  // Sent like the rest, so blank clears it — and a stated zero stays a zero.
+  payload.annual_consumption = pcNum('pol-annual');
+  if (payload.annual_consumption !== null && payload.annual_consumption < 0) {
+    document.getElementById('pol-err').textContent = 'Annual consumption cannot be negative.';
+    return;
+  }
   // One code or many. The first stays in sfi_code for every reader that only
   // knows one; the whole list goes in sfi_codes (procurementReduce.sfiCodes).
   var codes = pcVal('pol-sfi').split(/[,;s]+/).map(function (c) { return c.trim(); })
@@ -2075,23 +2186,35 @@ async function pcMoveSave(itemId, kind) {
 }
 
 // ── View: Stock Location ────────────────────────────────────
-// TM Master's own stowage tree, walked the way a person walks the ship: pick a
-// deck, pick a space, and see what the book says is in front of you. The point
-// of the screen is the last column — a box you type the real number into while
-// standing there, which is the whole reason this half lives on the phone.
+// Inventory › Stock. TM Master's own stowage tree, walked the way a person
+// walks the ship: pick a deck, pick a space, and see what the book says is in
+// front of you — or search for the thing in your hand and be told every shelf
+// it is on. Either way the point is the box at the end of each line, which you
+// type the real number into while standing there. That is the whole reason
+// this half lives on the phone.
 //
 // This is the same screen as the Console's stocklocation.js, and the pair are
-// meant to stay recognisably one screen. The sheet is literally the same
-// function — procurementReduce.locationSheet — because a sheet that differs by
-// device is a sheet nobody can sign.
+// meant to stay recognisably one screen. Two things make sure of it rather
+// than hoping:
 //
-// Two things differ, both deliberately:
+//   * The sheet is literally the same function — procurementReduce
+//     .locationSheet — because a sheet that differs by device is a sheet
+//     nobody can sign.
+//   * The search is literally the same code — utils/stock-search.js, mirrored
+//     byte-identical to the Console, over proc-query.js, the register's own
+//     grammar. `maker:parker`, `pn:`, `belt* -green`, "a phrase" find the same
+//     lines on both, and a search of the ship gives one line per item per
+//     space, each with its own count box, on both.
+//
+// What differs is only how the three panes are stacked, which is what a phone
+// is allowed to differ about:
 //
 //   * The Console keeps a **tree pane** open beside the sheet. A persistent
 //     tree on a 375px screen is a tree pane and no sheet, so the phone drills
 //     down instead: pick a deck, pick a space, tap a line to open its detail
-//     under the row. The same three questions — where am I, what is here, what
-//     is this thing — stacked rather than set side by side.
+//     under the row.
+//   * The Console's sheet is a grid of maker and part-number columns. The
+//     phone puts them on the line under the name — same facts, one column.
 //   * **Print sheet** is Console-only. A phone is where you type a count, not
 //     where you print one.
 //
@@ -2116,38 +2239,39 @@ var SLOC_TICKS_KEY = 'idms.sloc.ticks';
 
 // The reserved location the reducer parks stock with no address at — TM Master
 // calls it Unlocalized Stock and so does this.
-var SLOC_UNPLACED = 'unassigned';
+var SLOC_UNPLACED = stockSearch.UNPLACED;
 
 // The other reserved space. Anything whose NAME carries *BLOCK* is gathered
 // here by the reducer and taken off every shelf sheet — procurementReduce
-// .isDiscontinued is the rule, and it is the same rule the Console reads,
-// because a sheet that differs by device is a sheet nobody can sign. The phone
-// gets its own tile onto it for the same reason Unlocalized Stock has one:
-// 66 items reachable from every screen except the one about stowage is not
-// reachable.
-var SLOC_DISCONTINUED = 'discontinued';
+// .isDiscontinued is the rule, and it is the same rule the Console reads. The
+// phone gets its own tile onto it for the same reason Unlocalized Stock has
+// one: 66 items reachable from every screen except the one about stowage is
+// not reachable.
+var SLOC_DISCONTINUED = stockSearch.DISCONTINUED;
 
 // A big space is a real space: Fwd Shop holds 583 items and Unlocalized Stock
 // holds 2,864. The sheet is filtered and capped rather than silently truncated,
 // and the cap is well above any shelf a person actually walks — it is here so
-// that asking a phone for Unlocalized Stock does not lay out thousands of rows,
-// each carrying a number input, before it draws anything at all.
-var SLOC_SHEET_CAP = 400;
+// that asking a phone for Unlocalized Stock, or searching the ship for "bolt",
+// does not lay out thousands of rows, each carrying a number input, before it
+// draws anything at all.
+var SLOC_SHEET_CAP = stockSearch.SHEET_CAP;
 
 function slocState() {
   if (!PC.loc) {
     PC.loc = {
-      at: null,          // location_id being walked; null is the deck tiles
+      at: null,          // location_id being walked; null is the deck tiles and the ship search
       scope: 'here',     // 'here' = this space only, 'deep' = it and everything under
       session: null,     // the open session id, when auditing
-      entered: {},       // item_id -> typed but not yet filed
+      entered: {},       // row key -> typed but not yet filed
       ticks: {},         // item_id -> true, seen and correct, held until close
       expected: 0,       // how many rows the sheet held when the audit opened
-      q: '',             // space search on the deck view
-      sheetQ: '',        // filter within the open sheet
+      sheetQ: '',        // the search typed over the open sheet, or over the whole ship
+      sug: { open: false, i: -1, list: [] },   // the completions under that box
       sel: null,         // item_id whose detail is open under its row
-      focusNext: null,   // item_id whose count box to focus after the next render
-      busy: {}
+      selAt: null,       // …and, from a search of the ship, which space's row of it
+      focusNext: null,   // row key whose count box to focus after the next render
+      busy: {}           // row key -> true while its count is in flight
     };
   }
   return PC.loc;
@@ -2201,20 +2325,43 @@ function slocChildren(id) {
   return out.sort(function (a, b) { return String(a.path).localeCompare(String(b.path)); });
 }
 
-// The last segment — the bin, not the four decks above it.
+// The last segment — the bin, not the four decks above it. The two reserved
+// spaces have no node in the tree and so no path; they are named instead of
+// rendering blank.
 function slocLabel(l) {
   if (!l) return '';
-  // Unlocalized Stock has no node in the stowage tree, so it has no path to
-  // take a last segment from — it is named here rather than rendering blank.
-  if (l.location_id === SLOC_UNPLACED) return 'Unlocalized Stock';
-  if (l.location_id === SLOC_DISCONTINUED) return 'Discontinued Stock';
+  if (stockSearch.reservedName(l.location_id)) return stockSearch.reservedName(l.location_id);
   var parts = String(l.path || '').split('\\');
   return parts[parts.length - 1] || l.path || l.location_id || '';
 }
 
+// A space's sheet, with who makes and sells each line joined on — the same
+// join the Console makes, from the same file.
 function slocSheet(locationId, scope) {
-  return procurementReduce.locationSheet(
-    PC.state, PC.catalogue, locationId, { scope: scope || 'here' });
+  return stockSearch.enrich(procurementReduce.locationSheet(
+    PC.state, PC.catalogue, locationId, { scope: scope || 'here' }), PC.state, pcLocations() || {});
+}
+
+// The rows the search box is looking through: the open sheet, or the ship.
+// Held between keystrokes — fourteen thousand items re-derived per character is
+// a box that lags behind the typing — and dropped on every full draw, which is
+// what follows anything that could have changed them.
+var _slocScope = null;
+function slocRowsInScope() {
+  var s = slocState();
+  var key = (s.at || '*') + '|' + s.scope;
+  if (_slocScope && _slocScope.key === key) return _slocScope.rows;
+  var rows = s.at ? slocSheet(s.at, s.scope) : stockSearch.shipSheet(PC.state, pcLocations() || {});
+  if (rows) _slocScope = { key: key, rows: rows, vocab: null };
+  return rows;
+}
+
+function slocVocab() {
+  var rows = slocRowsInScope() || [];
+  if (_slocScope && _slocScope.vocab) return _slocScope.vocab;
+  var v = stockSearch.vocab(rows);
+  if (_slocScope) _slocScope.vocab = v;
+  return v;
 }
 
 function slocVerified() { return procurementReduce.lastVerified(PC.state); }
@@ -2233,18 +2380,11 @@ function slocDays(iso) {
 // the phone locking and this page being evicted.
 function slocSession() {
   var s = slocState();
+  var live = null;
   var all = (PC.state && PC.state.count_sessions) || {};
-  var live = s.session ? all[s.session] : null;
-  if (!live || live.status !== 'open' || live.location_id !== s.at) {
-    live = null;
-    Object.keys(all).forEach(function (sid) {
-      var c = all[sid];
-      if (c.status !== 'open' || c.location_id !== s.at) return;
-      // Two open sessions on one space is a mistake somebody will make. The
-      // later one is the walk actually happening.
-      if (!live || String(c.opened_at || '') > String(live.opened_at || '')) live = c;
-    });
-  }
+  if (s.session && all[s.session] && all[s.session].status === 'open' &&
+      all[s.session].location_id === s.at) live = all[s.session];
+  if (!live && s.at) live = stockSearch.openSessionAt(PC.state, s.at);
   if (!live) { s.session = null; return null; }
   if (s.session !== live.session_id) {
     s.session = live.session_id;
@@ -2259,16 +2399,83 @@ function slocSession() {
 
 function pcViewLocation() {
   var s = slocState();
+  _slocScope = null;       // anything that led to a full draw may have moved stock
   if (!pcLocations()) {
-    pcHead('Stock Location', 'No TM Master catalogue loaded', '');
+    pcHead('Stock', 'No TM Master catalogue loaded', '');
     document.getElementById('body').innerHTML =
       '<div class="empty"><b>No stowage tree yet</b>' +
       'The spaces come from the TM Master stock export, which has not reached ' +
       'this phone. Settings has the reload.</div>';
     return;
   }
-  return s.at ? slocViewSpace() : slocViewRoot();
+  if (s.at) slocViewSpace(); else slocViewRoot();
+
+  // Where the walk moved on to after the last count was filed. The next line
+  // down is where the eye already is.
+  if (s.focusNext) {
+    var box = document.getElementById('sloc-in-' + s.focusNext);
+    s.focusNext = null;
+    if (box && box.focus) { box.focus(); if (box.select) box.select(); }
+  }
 }
+
+// ── The search box ──────────────────────────────────────────
+// On the ship's own page it searches every item aboard; on a space it searches
+// that sheet. Same box, same grammar, same completions — and on a phone the
+// completions sit under it as a row of chips rather than a dropdown, so they
+// never cover the lines they are narrowing.
+
+function slocSearchBox(n) {
+  var s = slocState();
+  var ship = !s.at;
+  return '<div class="sloc-find">' +
+    '<input class="field" id="sloc-sq" type="search" autocomplete="off" autocapitalize="none" ' +
+      'spellcheck="false" enterkeyhint="search" ' +
+      'placeholder="' + (ship ? 'Search every item on the ship…'
+        : 'Search these ' + n.toLocaleString() + ' item' + (n === 1 ? '' : 's') + '…') + '" ' +
+      'value="' + pcEsc(s.sheetQ) + '" title="' + pcEsc(stockSearch.HELP) + '" ' +
+      'oninput="slocSheetSearch(this.value)" onkeydown="slocSheetKey(event)">' +
+    '<div class="sloc-sug" id="sloc-sq-sug"' + (slocSugHtml() ? '' : ' hidden') + '>' + slocSugHtml() + '</div>' +
+    '<div class="sloc-find-note" id="sloc-sq-note">' + slocFindNote() + '</div>' +
+  '</div>';
+}
+
+// What the search came to, under the box: how many, or why it was read as text.
+function slocFindNote() {
+  var s = slocState();
+  var q = s.sheetQ.trim();
+  if (!q) return '';
+  var rows = slocRowsInScope() || [];
+  var f = stockSearch.filter(rows, q);
+  var n = f.shown.length.toLocaleString() + ' of ' + rows.length.toLocaleString();
+  return f.error
+    ? '<span class="warn" title="' + pcEsc(f.error) + '">' + n + ' — read as plain text</span>'
+    : n;
+}
+
+function slocSugHtml() {
+  var sg = slocState().sug;
+  if (!sg.open || !sg.list.length) return '';
+  return sg.list.map(function (o, i) {
+    var low = o.show.toLowerCase(), at = o.kind === 'field' ? -1 : low.indexOf(String(o.frag).toLowerCase());
+    var shown = at === -1 ? pcEsc(o.show)
+      : pcEsc(o.show.slice(0, at)) + '<b>' + pcEsc(o.show.slice(at, at + o.frag.length)) + '</b>' +
+        pcEsc(o.show.slice(at + o.frag.length));
+    return '<button class="sloc-sug-row' + (i === sg.i ? ' on' : '') + '" tabindex="-1" ' +
+      'onmousedown="event.preventDefault()" onclick="slocSugPick(' + i + ')">' +
+      '<span class="v">' + shown + '</span><span class="k">' + pcEsc(o.label) + '</span></button>';
+  }).join('');
+}
+
+function slocSugPaint() {
+  var el = document.getElementById('sloc-sq-sug');
+  if (!el) return;
+  var html = slocSugHtml();
+  el.innerHTML = html;
+  el.hidden = !html;
+}
+
+// ── The ship: the deck tiles, or whatever the search found ──
 
 function slocViewRoot() {
   var s = slocState();
@@ -2279,46 +2486,32 @@ function slocViewRoot() {
   var verified = slocVerified();
   var swept = holding.filter(function (l) { return verified[l.location_id]; }).length;
 
-  pcHead('Stock Location',
+  pcHead('Stock',
     all.length.toLocaleString() + ' spaces across ' + decks.length + ' decks · ' +
     swept + ' of ' + holding.length + ' holding stock counted', '');
 
   document.getElementById('body').innerHTML =
-    '<div class="toolbar"><input class="field" id="sloc-q" ' +
-      'placeholder="Find a space — shop, locker, shelf, bin…" value="' + pcEsc(s.q) + '" ' +
-      'oninput="slocSearch(this.value)"></div>' +
-    '<div id="sloc-root-list"></div>';
-
-  slocRenderRootList();
+    slocSearchBox(0) + '<div id="sloc-sheet-rows">' + slocRootList() + '</div>';
 }
 
 // Everything below the search box, redrawn on its own. Rebuilding the box along
 // with it would take the caret out of the field mid-word, which is the one
 // thing a search box may not do.
-function slocRenderRootList() {
+function slocRootList() {
   var s = slocState();
-  var el = document.getElementById('sloc-root-list');
-  if (!el) return;
+  var q = s.sheetQ.trim();
+  return q ? slocShipResults(q) : slocOverview();
+}
 
+// Nothing typed is the question asked before picking a space: how much of the
+// ship has been walked, and where has nobody been?
+function slocOverview() {
   var locs = pcLocations();
   var verified = slocVerified();
   var all = Object.keys(locs).map(function (k) { return locs[k]; });
   var decks = pcDecks();
   var holding = all.filter(function (l) { return (l.items_here || 0) > 0; });
   var swept = holding.filter(function (l) { return verified[l.location_id]; }).length;
-
-  var q = s.q.trim().toLowerCase();
-  if (q) {
-    var hits = all.filter(function (l) {
-        return String(l.path).toLowerCase().indexOf(q) !== -1;
-      }).sort(function (a, b) { return String(a.path).localeCompare(String(b.path)); }).slice(0, 60);
-    el.innerHTML = hits.length
-      ? '<div class="reg-count">' + hits.length + ' space' + (hits.length === 1 ? '' : 's') + ' matching.</div>' +
-        hits.map(function (l) { return slocSpaceRow(l, verified[l.location_id]); }).join('')
-      : '<div class="empty"><b>No space by that name</b>' +
-        'The tree is TM Master&#39;s, spelled its way — try one word rather than the whole path.</div>';
-    return;
-  }
 
   // Spaces that actually hold something, least recently swept first. A room
   // with nothing in it is not overdue a count, it is empty.
@@ -2329,9 +2522,9 @@ function slocRenderRootList() {
       return ka < kb ? -1 : 1;        // never counted ('') sorts first
     }).slice(0, 12);
 
-  el.innerHTML =
-    '<div class="reg-count">Pick a deck, then walk down to the shelf. The number you type ' +
-      'goes in as a count against that space, not against the ship.</div>' +
+  return '<div class="reg-count">Search for the thing in your hand — a name, a maker, a part ' +
+      'number — and type what you count against the shelf it is on. Or pick a deck and walk ' +
+      'down to the shelf.</div>' +
     // How much of the ship has been walked. That is the question asked before
     // picking a space, so it is answered above the tiles rather than below them.
     '<div class="card"><div class="row">' +
@@ -2362,6 +2555,48 @@ function slocRenderRootList() {
     due.map(function (d) { return slocSpaceRow(d.loc, d.v); }).join('');
 }
 
+// A search of the ship. The spaces whose name matches come first, when what was
+// typed is plain words — `fwd shop` is as likely a place as a part — and then
+// every line found, each under the space it is stowed in, each with a box.
+function slocShipResults(q) {
+  var rows = slocRowsInScope();
+  if (!rows) {
+    return '<div class="empty"><b>Quantities are still loading</b>' +
+      'The ledger has not been derived yet, so there is nothing to search. A moment.</div>';
+  }
+
+  var spaces = '';
+  if (stockSearch.isPlain(q)) {
+    var locs = pcLocations(), verified = slocVerified();
+    var terms = q.toLowerCase().split(/\s+/);
+    var hits = Object.keys(locs).map(function (k) { return locs[k]; }).filter(function (l) {
+      var p = String(l.path).toLowerCase();
+      return terms.every(function (t) { return p.indexOf(t) !== -1; });
+    }).sort(function (a, b) { return String(a.path).localeCompare(String(b.path)); });
+    if (hits.length) {
+      spaces = '<div class="sloc-head">' + hits.length + ' space' + (hits.length === 1 ? '' : 's') +
+        ' by that name</div>' +
+        hits.slice(0, 6).map(function (l) { return slocSpaceRow(l, verified[l.location_id]); }).join('') +
+        (hits.length > 6 ? '<div class="reg-count">…and ' + (hits.length - 6) + ' more — add a word ' +
+          'to narrow them.</div>' : '');
+    }
+  }
+
+  var shown = stockSearch.filter(rows, q).shown;
+  var capped = shown.length > SLOC_SHEET_CAP;
+  var lines = shown.length
+    ? '<div class="sloc-head">' + shown.length.toLocaleString() + ' line' +
+        (shown.length === 1 ? '' : 's') + ' found across the ship</div>' +
+      '<div class="reg-count">Each under the space it is stowed in — a thing kept in two spaces ' +
+        'is a line in each. Type a number to correct it <i>in that space</i>, or ✓ it as seen and ' +
+        'right. An audit is of one space walked end to end; open the space to start one.</div>' +
+      slocSheetHtml(shown.slice(0, SLOC_SHEET_CAP), null) +
+      (capped ? '<div class="reg-count" style="margin-top:12px">Showing the first ' + SLOC_SHEET_CAP +
+        ' of ' + shown.length.toLocaleString() + ' — narrow the search to reach the rest.</div>' : '')
+    : (spaces ? '' : slocSheetHtml([], null));
+  return spaces + lines;
+}
+
 function slocUnplacedCount() {
   var n = 0;
   Object.keys(PC.state.items).forEach(function (id) {
@@ -2379,6 +2614,24 @@ function slocDiscontinuedCount() {
   Object.keys(PC.state.items).forEach(function (id) {
     var it = PC.state.items[id];
     if (!it.archived && procurementReduce.isDiscontinued(it.name)) n++;
+  });
+  return n;
+}
+
+// The lines a space would have carried before the discontinued were gathered
+// out of it. Counted the way locationSheet counts, so the two agree.
+function slocDiscontinuedHere(locationId, scope) {
+  var R = procurementReduce;
+  var wanted = {};
+  (scope === 'deep' ? R.locationsUnder(PC.catalogue, locationId) : [locationId])
+    .forEach(function (id) { wanted[id] = true; });
+  var n = 0;
+  Object.keys(PC.state.items).forEach(function (id) {
+    var it = PC.state.items[id];
+    if (it.archived || !R.isDiscontinued(it.name)) return;
+    var home = it.default_location_id || SLOC_UNPLACED;
+    if (wanted[home]) { n++; return; }
+    if (Object.keys(it.by_location || {}).some(function (k) { return wanted[k]; })) n++;
   });
   return n;
 }
@@ -2401,6 +2654,8 @@ function slocSpaceRow(l, v) {
     '</div></div></div>';
 }
 
+// ── One space ───────────────────────────────────────────────
+
 function slocViewSpace() {
   var s = slocState();
   var loc = slocLoc(s.at);
@@ -2418,7 +2673,7 @@ function slocViewSpace() {
   var trail = slocTrail(s.at);
   var kids = slocChildren(s.at);
   var session = slocSession();
-  var rows = slocSheet(s.at, s.scope);
+  var rows = slocRowsInScope() || [];
 
   pcHead(slocLabel(loc), loc.path,
     '<button class="icon-btn" onclick="slocUp()">← ' +
@@ -2444,67 +2699,74 @@ function slocViewSpace() {
   document.getElementById('body').innerHTML =
     crumb + kidTiles + slocAuditBar(session, rows) +
     '<div id="sloc-sheet">' + slocSheetBlock(rows, session) + '</div>';
-
-  // Where the walk moved on to after the last count was filed. The next line
-  // down is where the eye already is.
-  if (s.focusNext) {
-    var box = document.getElementById('sloc-in-' + s.focusNext);
-    s.focusNext = null;
-    if (box && box.focus) { box.focus(); if (box.select) box.select(); }
-  }
 }
 
-// The filter, the cap, and then the rows.
+// Whether the sheet on screen spans more than one space, and so is drawn
+// under a heading per space.
+function slocGrouped() {
+  var s = slocState();
+  return !s.at || s.at === SLOC_DISCONTINUED || s.scope === 'deep';
+}
+
+// The search box, the cap, and then the rows.
 //
 // A space can hold hundreds — Fwd Shop holds 583 and Unlocalized Stock 2,864 —
-// so a long sheet gets a filter box and the render stops at SLOC_SHEET_CAP.
+// so a long sheet gets a search box and the render stops at SLOC_SHEET_CAP.
 // Truncating silently would be worse than either: a sheet that says it is the
 // whole space and is not is a sheet somebody signs for stock they never saw.
 // The audit bar above still counts against the WHOLE sheet, because coverage is
 // a claim about the space, not about what is currently on screen.
 function slocSheetBlock(rows, session) {
   var s = slocState();
-  var q = s.sheetQ.trim().toLowerCase();
-  var shown = q ? rows.filter(function (r) {
-      return (r.item_id + ' ' + r.name + ' ' + (r.part_number || ''))
-        .toLowerCase().indexOf(q) !== -1;
-    }) : rows;
-  var capped = shown.length > SLOC_SHEET_CAP;
+  var q = s.sheetQ.trim();
+  return (rows.length > 25 || q ? slocSearchBox(rows.length) : '') +
+    '<div id="sloc-sheet-rows">' + slocSheetRows(rows, session) + '</div>';
+}
 
-  return (rows.length > 25 || q
-      ? '<div class="toolbar"><input class="field" id="sloc-sq" ' +
-          'placeholder="Filter these ' + rows.length.toLocaleString() + ' items…" ' +
-          'value="' + pcEsc(s.sheetQ) + '" oninput="slocSheetSearch(this.value)">' +
-        (q ? '<span class="sub nowrap">' + shown.length + ' of ' + rows.length + '</span>' : '') +
-        '</div>'
-      : '') +
-    slocSheetHtml(shown.slice(0, SLOC_SHEET_CAP), session) +
+function slocSheetRows(rows, session) {
+  var s = slocState();
+  var shown = stockSearch.filter(rows, s.sheetQ).shown;
+  var capped = shown.length > SLOC_SHEET_CAP;
+  return slocSheetHtml(shown.slice(0, SLOC_SHEET_CAP), session) +
     (capped
       ? '<div class="reg-count" style="margin-top:12px">Showing the first ' + SLOC_SHEET_CAP +
-        ' of ' + shown.length.toLocaleString() + ' — filter above to reach the rest.</div>'
+        ' of ' + shown.length.toLocaleString() + ' — search above to reach the rest.</div>'
       : '');
 }
 
 function slocAuditBar(session, rows) {
   var s = slocState();
+  var dead = s.at === SLOC_DISCONTINUED;
   var scopeBtn = slocChildren(s.at).length
     ? '<button class="icon-btn" onclick="slocScope()"' +
       (session ? ' disabled title="The audit fixed this when it was opened"' : '') + '>' +
       (s.scope === 'deep' ? 'Including sublocations' : 'This space only') + '</button>'
     : '';
 
+  // How many lines this space is NOT being asked about, because their names say
+  // they are finished with. An item that silently vanished off a sheet somebody
+  // has walked for years is a bug report waiting to be filed.
+  var hidden = (!dead && s.at) ? slocDiscontinuedHere(s.at, s.scope) : 0;
+  var hiddenNote = hidden
+    ? ' · <a href="#" onclick="event.preventDefault();slocGo(&quot;' + SLOC_DISCONTINUED + '&quot;)">' +
+      hidden + ' discontinued</a> not asked about'
+    : '';
+
   if (!session) {
     var v = slocVerified()[s.at];
     return '<div class="card"><div class="row" style="flex-wrap:wrap;gap:10px">' +
       '<div class="grow"><div class="ttl">' + rows.length + ' item' + (rows.length === 1 ? '' : 's') +
-        ' on the sheet</div><div class="sub">' + (v
+        ' on the sheet</div><div class="sub sloc-crumb">' + (dead
+        ? 'Named with *BLOCK*, so they are off every shelf sheet. Take the word out of a name ' +
+          'and it goes back on its own.'
+        : v
         ? 'Last swept ' + pcDate(v.closed_at) + ' by ' + pcEsc(v.closed_by || 'someone') +
           ' — ' + v.items_seen + ' seen, ' + v.variance_count + ' corrected'
         : 'Never swept. Type a number against any line to correct it on its own, or start an ' +
-          'audit to record the whole space as walked.') + '</div></div>' +
+          'audit to record the whole space as walked.') + hiddenNote + '</div></div>' +
       scopeBtn +
-      '<button class="btn sm" onclick="slocStart()"' + (rows.length ? '' : ' disabled') +
-        '>Start audit</button>' +
+      (dead ? '' : '<button class="btn sm" onclick="slocStart()"' + (rows.length ? '' : ' disabled') +
+        '>Start audit</button>') +
       '</div></div>';
   }
 
@@ -2519,9 +2781,10 @@ function slocAuditBar(session, rows) {
     '<div class="row" style="flex-wrap:wrap;gap:10px">' +
       '<div class="grow"><div class="ttl">Audit in progress ' +
         '<span class="tag accent">' + pct + '%</span></div>' +
-        '<div class="sub">' + done + ' of ' + rows.length + ' seen — ' +
+        '<div class="sub sloc-crumb">' + done + ' of ' + rows.length + ' seen — ' +
           session.items_counted + ' corrected, ' + ticks + ' confirmed as right. Opened ' +
-          pcDate(session.opened_at) + ' by ' + pcEsc(session.opened_by || 'you') + '.</div></div>' +
+          pcDate(session.opened_at) + ' by ' + pcEsc(session.opened_by || 'you') + '.' +
+          hiddenNote + '</div></div>' +
       scopeBtn +
       '<button class="icon-btn" onclick="slocTickRest()">Tick the rest</button>' +
       '<button class="icon-btn" onclick="slocAbandon()">Abandon</button>' +
@@ -2537,8 +2800,17 @@ function slocSheetHtml(rows, session) {
   var s = slocState();
   if (!rows.length) {
     return s.sheetQ.trim()
-      ? '<div class="empty"><b>Nothing on this sheet matches</b>' +
-        'Clear the filter to see the whole space again.</div>'
+      ? (s.at
+        ? '<div class="empty"><b>Nothing on this sheet matches</b>' +
+          'Clear the search to see the whole space again — or go back to the decks and search ' +
+          'the ship, if it may be stowed somewhere else.</div>'
+        : '<div class="empty"><b>Nothing aboard matches</b>' +
+          'Not in any space, not in Unlocalized Stock, not among the discontinued. A part that ' +
+          'has never been aboard is an ordinary answer.</div>')
+      : s.at === SLOC_DISCONTINUED
+      ? '<div class="empty"><b>Nothing has been discontinued</b>' +
+        'No item name carries *BLOCK*. Put it in a name — here or in TM Master — and the item ' +
+        'lands on this sheet and comes off its own shelf&#39;s.</div>'
       : '<div class="empty"><b>Nothing stowed here</b>' +
         'No item names this space as its home and the book holds no stock in it. If there is ' +
         'something on the shelf, find it in the register and move it here.</div>';
@@ -2547,83 +2819,115 @@ function slocSheetHtml(rows, session) {
   var countedIds = {};
   (session ? session.counts : []).forEach(function (m) { countedIds[m.item_id] = m; });
 
-  return '<div class="card" style="padding:0">' + rows.map(function (r) {
-    var typed = s.entered[r.item_id];
-    var mv = countedIds[r.item_id];
-    // Only while an audit is open. Ticks are staged per space and cleared on
-    // close, so an id left over from the last shelf must not read as
-    // 'confirmed' on this one.
-    var ticked = !!session && !!s.ticks[r.item_id];
-    var busy = !!s.busy[r.item_id];
-
-    var book = r.stock_unknown
-      ? '<span class="muted" title="The export carries no stock figure for this item">—</span>'
-      : pcFmtQty(r.book_qty, r.unit);
-
-    var tags = [];
-    if (r.critical) tags.push('<span class="tag bad">critical</span>');
-    if (!r.is_home) tags.push('<span class="tag">moved in</span>');
-    else if (r.book_qty === 0 && r.elsewhere > 0)
-      tags.push('<span class="tag warn">' + pcFmtQty(r.elsewhere, r.unit) + ' stowed elsewhere</span>');
-    if (r.stock_unknown) tags.push('<span class="tag warn">never counted</span>');
-    if (mv) tags.push('<span class="tag ' + (mv.variance ? 'accent' : 'good') + '">counted ' +
-      pcFmtQty(mv.counted_qty, r.unit) +
-      (mv.variance ? ' (' + (mv.variance > 0 ? '+' : '') + pcFmtQty(mv.variance, r.unit) + ')' : '') +
-      '</span>');
-    else if (ticked) tags.push('<span class="tag good">confirmed</span>');
-    // Outside an audit the only feedback a spot correction leaves is the book
-    // figure changing, which does not say when or whether anyone checked.
-    else if (r.last_verified_at)
-      tags.push('<span class="tag">checked ' + pcDate(r.last_verified_at) + '</span>');
-
-    // The detail opens **under** the row rather than on its own screen: losing
-    // your place on a forty-line sheet to look up a part number is how a walk
-    // stops being a walk.
-    var open_ = s.sel === r.item_id;
-    return '<div class="ci-wrap' + (open_ ? ' open' : '') + '">' +
-      '<div class="ci-line' + ((mv || ticked) ? ' sloc-done' : '') + '">' +
-      '<div class="ci-name sloc-tap" onclick="slocPick(&quot;' + pcEsc(r.item_id) + '&quot;)">' +
-        '<b>' + pcEsc(r.name) + '</b> ' + tags.join(' ') +
-        '<div class="sub">' + pcEsc(r.item_id) +
-        (r.part_number ? ' · P/N ' + pcEsc(r.part_number) : '') +
-        ' · <span class="sloc-what">' + (open_ ? 'hide' : 'what is it?') + '</span></div></div>' +
-      '<div class="ci-nums"><div class="ci-num"><span class="k">Book</span>' +
-        '<span class="v">' + book + ' ' + pcEsc(r.unit) + '</span></div></div>' +
-      '<div class="ci-in">' + (r.count_location_id
-        ? '<span class="k">Counted</span>' +
-          '<input class="field" id="sloc-in-' + pcEsc(r.item_id) + '" type="number" step="any" ' +
-            'min="0" inputmode="decimal" value="' + (typed === undefined ? '' : pcEsc(typed)) + '" ' +
-            (busy ? 'disabled ' : '') +
-            // A word, not the book figure: that number is in the column immediately
-          // left of it, and repeating it inside an empty box makes the box look
-          // filled in.
-          'placeholder="' + (r.stock_unknown ? 'count it' : 'count') + '" ' +
-            'oninput="slocTyped(&quot;' + pcEsc(r.item_id) + '&quot;,this.value)" ' +
-            'onchange="slocCount(&quot;' + pcEsc(r.item_id) + '&quot;)" ' +
-            'onkeydown="if(event.key===&quot;Enter&quot;){event.preventDefault();slocCount(&quot;' +
-              pcEsc(r.item_id) + '&quot;);}">'
-        : '<span class="k">Split</span><button class="icon-btn" onclick="pcOpenItem(&quot;' +
-          pcEsc(r.item_id) + '&quot;)" title="Its stock sits in more than one of these spaces — ' +
-          'count each bin on its own">where?</button>') +
-      '</div>' +
-      (session ? '<button class="icon-btn sloc-tick' + (ticked ? ' on' : '') + '" onclick="slocTick(&quot;' +
-        pcEsc(r.item_id) + '&quot;)" title="Seen, and the book is right">✓</button>' : '') +
-    '</div>' +
-    (open_ ? slocDetailHtml(r) : '') +
-    '</div>';
+  var groups = stockSearch.groups(rows, slocGrouped(), pcLocations() || {}, slocLabel);
+  return '<div class="card" style="padding:0">' + groups.map(function (g) {
+    return (g.label
+      ? '<div class="sloc-grp"><span class="nm">' + pcEsc(g.label) + '</span>' +
+          (g.path && g.path !== g.label ? '<span class="pt">' + pcEsc(g.path) + '</span>' : '') +
+          '<span class="n">' + g.rows.length + ' item' + (g.rows.length === 1 ? '' : 's') + '</span></div>'
+      : '') +
+      g.rows.map(function (r) { return slocSheetLine(r, session, session ? countedIds[r.item_id] : null); }).join('');
   }).join('') + '</div>';
 }
 
+function slocSheetLine(r, session, mv) {
+  var s = slocState();
+  var key = r.key || r.item_id;
+  var typed = s.entered[key];
+  // Only while an audit is open. Ticks are staged per space and cleared on
+  // close, so an id left over from the last shelf must not read as
+  // 'confirmed' on this one.
+  var ticked = !!session && !!s.ticks[r.item_id];
+  var busy = !!s.busy[key];
+  var jsKey = pcEsc(key);
+
+  var book = r.stock_unknown
+    ? '<span class="muted" title="The export carries no stock figure for this item">—</span>'
+    : pcFmtQty(r.book_qty, r.unit);
+
+  var tags = [];
+  if (r.blocked) tags.push('<span class="tag warn">blocked</span>');
+  if (r.critical) tags.push('<span class="tag bad">critical</span>');
+  if (r.ship && r.discontinued) tags.push('<span class="tag warn">discontinued</span>');
+  if (!r.is_home) tags.push('<span class="tag">moved in</span>');
+  else if (r.book_qty === 0 && r.elsewhere > 0)
+    tags.push('<span class="tag warn">' + pcFmtQty(r.elsewhere, r.unit) + ' stowed elsewhere</span>');
+  if (r.stock_unknown) tags.push('<span class="tag warn">never counted</span>');
+  if (mv) tags.push('<span class="tag ' + (mv.variance ? 'accent' : 'good') + '">counted ' +
+    pcFmtQty(mv.counted_qty, r.unit) +
+    (mv.variance ? ' (' + (mv.variance > 0 ? '+' : '') + pcFmtQty(mv.variance, r.unit) + ')' : '') +
+    '</span>');
+  else if (ticked) tags.push('<span class="tag good">confirmed</span>');
+  // Outside an audit the only feedback a spot correction leaves is the book
+  // figure changing, which does not say when or whether anyone checked.
+  else if (r.last_verified_at)
+    tags.push('<span class="tag">checked ' + pcDate(r.last_verified_at) + '</span>');
+
+  // Who makes it and who sells it, and what each calls it — the Console's four
+  // columns, on the line under the name. Whichever number is on the box in
+  // somebody's hand, it is here to be matched.
+  var ids = [pcEsc(r.item_id)];
+  if (r.maker) ids.push(pcEsc(r.maker));
+  if (r.makers_part_no) ids.push('P/N ' + pcEsc(r.makers_part_no));
+  if (r.supplier) ids.push(pcEsc(r.supplier));
+  if (r.suppliers_ref) ids.push('ref ' + pcEsc(r.suppliers_ref));
+  if (!r.makers_part_no && !r.suppliers_ref && r.part_number) ids.push('P/N ' + pcEsc(r.part_number));
+
+  // A line found by searching the ship has no audit to hold a tick until, so
+  // its ✓ files what it is: a count that agrees with the book.
+  var tick = session
+    ? '<button class="icon-btn sloc-tick' + (ticked ? ' on' : '') + '" onclick="slocTick(&quot;' +
+        pcEsc(r.item_id) + '&quot;)" title="Seen, and the book is right">✓</button>'
+    : r.ship
+    ? '<button class="icon-btn sloc-tick" onclick="slocConfirm(&quot;' + jsKey + '&quot;)"' +
+        ((r.stock_unknown || busy) ? ' disabled' : '') +
+        ' title="' + (r.stock_unknown ? 'The book has no figure to agree with — count it'
+          : 'Seen, and the book is right — filed as a count of ' + pcEsc(pcFmtQty(r.book_qty, r.unit))) +
+        '">✓</button>'
+    : '';
+
+  // The detail opens **under** the row rather than on its own screen: losing
+  // your place on a forty-line sheet to look up a part number is how a walk
+  // stops being a walk.
+  var open_ = s.sel === r.item_id && (!r.ship || !s.selAt || s.selAt === r.at);
+  return '<div class="ci-wrap' + (open_ ? ' open' : '') + '">' +
+    '<div class="ci-line' + ((mv || ticked) ? ' sloc-done' : '') + '">' +
+    '<div class="ci-name sloc-tap" onclick="slocPick(&quot;' + pcEsc(r.item_id) + '&quot;,&quot;' +
+      (r.ship ? pcEsc(r.at || '') : '') + '&quot;)">' +
+      '<b>' + pcEsc(r.name) + '</b> ' + tags.join(' ') +
+      '<div class="sub">' + ids.join(' · ') +
+      ' · <span class="sloc-what">' + (open_ ? 'hide' : 'what is it?') + '</span></div></div>' +
+    '<div class="ci-nums"><div class="ci-num"><span class="k">Book</span>' +
+      '<span class="v">' + book + ' ' + pcEsc(r.unit) + '</span></div></div>' +
+    '<div class="ci-in">' + (r.count_location_id
+      ? '<span class="k">Counted</span>' +
+        '<input class="field" id="sloc-in-' + jsKey + '" type="number" step="any" ' +
+          'min="0" inputmode="decimal" value="' + (typed === undefined ? '' : pcEsc(typed)) + '" ' +
+          (busy ? 'disabled ' : '') +
+          // A word, not the book figure: that number is immediately left of the
+          // box, and repeating it inside an empty box makes it look filled in.
+          'placeholder="' + (r.stock_unknown ? 'count it' : 'count') + '" ' +
+          'oninput="slocTyped(&quot;' + jsKey + '&quot;,this.value)" ' +
+          'onchange="slocCount(&quot;' + jsKey + '&quot;)" ' +
+          'onkeydown="if(event.key===&quot;Enter&quot;){event.preventDefault();slocCount(&quot;' +
+            jsKey + '&quot;);}">'
+      : '<span class="k">Split</span><button class="icon-btn" onclick="slocPick(&quot;' +
+        pcEsc(r.item_id) + '&quot;,&quot;&quot;)" title="Its stock sits in more than one of these spaces — ' +
+        'count each bin on its own">where?</button>') +
+    '</div>' + tick +
+  '</div>' +
+  (open_ ? slocDetailHtml(r) : '') +
+  '</div>';
+}
 
 // What the thing actually is — the phone's half of the Console's third pane.
 //
 // A count sheet that only gives a name asks somebody to confirm a number for an
 // object they cannot identify. This is the answer to "is this the one in my
-// hand": maker, maker's type, part number, what it cost, every space the book
-// has any of it in, and when anybody last looked.
-//
-// It opens under the row rather than on its own screen. Losing your place on a
-// forty-line sheet to look up a part number is how a walk stops being a walk.
+// hand": maker, maker's type, part numbers, what it cost, every space the book
+// has any of it in, and when anybody last looked. The same facts, in the same
+// order, as the Console's pane; and the same three things to do from it —
+// receive into this space, move out of it, or open the whole shelf it is on.
 function slocDetailHtml(r) {
   var it = PC.state.items[r.item_id];
   if (!it) return '';
@@ -2633,22 +2937,33 @@ function slocDetailHtml(r) {
   var max = procurementReduce.effective(it, 'max_qty');
   var dash = '—';
 
+  // The space the buttons act on: the one being walked, or — from a search of
+  // the ship — the one this line is stowed in.
+  var s = slocState();
+  var here = s.at || (r.ship ? r.at : null) || s.selAt || null;
+  var hereName = slocLabel(slocLoc(here) || { location_id: here });
+
   // The state of the thing, before its particulars. An item that is blocked in
   // TM Master or has no stock figure at all changes what a count of it means.
   var tags = [];
   if (it.critical) tags.push('<span class="tag bad">critical occurrences</span>');
+  if (procurementReduce.isDiscontinued(it.name))
+    tags.push('<span class="tag warn" title="Its name carries *BLOCK*, so it is gathered into ' +
+      'Discontinued Stock and left off every shelf sheet">discontinued</span>');
   if (it.blocked) tags.push('<span class="tag warn">blocked in TM Master</span>');
   if (it.source === 'local') tags.push('<span class="tag accent">added in IDMS</span>');
   if (it.stock_unknown) tags.push('<span class="tag warn">no stock figure in the export</span>');
 
+  var sup = (it.suppliers && it.suppliers[0]) || {};
   var kv = [];
   function row(k, v) { if (v !== null && v !== undefined && v !== '') kv.push([k, v]); }
-  row('Maker', pcEsc(det.maker));
-  row("Maker's type", pcEsc(det.makers_type));
-  row('Part number', pcEsc(it.part_number));
+  row('Maker', pcEsc(it.maker || det.maker));
+  row("Maker's type", pcEsc(it.makers_type || det.makers_type));
+  row("Maker's part no.", pcEsc(it.makers_part_no));
   row('Item type', pcEsc(it.item_type));
   row('Category', pcEsc(it.item_category));
-  row('Supplier', pcEsc((it.suppliers && it.suppliers[0] && it.suppliers[0].supplier_id) || ''));
+  row('Supplier', pcEsc(sup.supplier_id || ''));
+  row("Supplier's part no.", pcEsc(it.suppliers_ref || sup.supplier_part_number || ''));
   // TM Master's own vocabulary, as written: 138 distinct units, with Each, EA,
   // PCE and pcs all meaning the same thing and none of them normalised.
   row('Unit of measure', pcEsc(it.unit));
@@ -2668,16 +2983,35 @@ function slocDetailHtml(r) {
 
   // Every space the book has any of it in. When a count does not match, the
   // answer is usually on this list.
-  var here = slocState().at;
   var where = Object.keys(it.by_location || {}).filter(function (k) {
     return procurementReduce._q(it.by_location[k]) !== 0 || k === here;
   }).sort(function (a, b) { return Math.abs(it.by_location[b]) - Math.abs(it.by_location[a]); });
+
+  // Counting corrects the number on a shelf; these correct the shelf — stock
+  // arriving without an order, and stock that is somewhere else. Both are found
+  // out the same way, standing in front of it, so both are offered here rather
+  // than sending somebody back to the register to search the item out again.
+  // Not from the discontinued sheet: it is not a space anything is stowed in.
+  var acts = (!here || here === SLOC_DISCONTINUED) ? '' :
+    '<button class="btn sm ghost" onclick="slocReceive(&quot;' + pcEsc(r.item_id) + '&quot;)" ' +
+      'title="Stock arriving without an order behind it — added to what the book holds here">' +
+      'Receive into ' + pcEsc(hereName) + '</button>' +
+    '<button class="btn sm ghost" onclick="slocMove(&quot;' + pcEsc(r.item_id) + '&quot;)" ' +
+      'title="Same stock, a different space — recorded as one movement">' +
+      // slocLabel is this screen's own way of naming a space — the bin, not the
+      // four decks above it — and it already knows what to call the space that
+      // has no node in the tree.
+      'Move stock from ' + pcEsc(hereName) + '</button>' +
+    (s.at ? '' : '<button class="btn sm ghost" onclick="slocFindOpen(&quot;' + pcEsc(here) +
+      '&quot;,&quot;' + pcEsc(r.item_id) + '&quot;)" title="The whole shelf this is on">Open ' +
+      pcEsc(hereName) + '</button>');
 
   return '<div class="sloc-detail">' +
     (tags.length ? '<div style="margin-bottom:6px">' + tags.join(' ') + '</div>' : '') +
     '<div class="sub" style="margin-bottom:8px">' + pcFmtQty(it.on_hand, it.unit) + ' ' +
       pcEsc(it.unit || '') + ' on hand across the ship' +
       (it.on_order > 0 ? ' · ' + pcFmtQty(it.on_order, it.unit) + ' on order' : '') + '</div>' +
+    (acts ? '<div class="sloc-act">' + acts + '</div>' : '') +
     '<div class="sloc-kv">' + kv.map(function (kvp) {
       return '<div><span class="k">' + kvp[0] + '</span><span class="v">' + kvp[1] + '</span></div>';
     }).join('') + '</div>' +
@@ -2686,18 +3020,11 @@ function slocDetailHtml(r) {
     (det.unit_specific_remarks
       ? '<div class="sub" style="margin-top:5px"><b>Note</b> ' + pcEsc(det.unit_specific_remarks) + '</div>' : '') +
     '<div class="sloc-head">Where the book has it</div>' +
-    '<div class="sloc-act">' +
-      '<button class="btn sm ghost" onclick="slocMove(&quot;' + pcEsc(r.item_id) + '&quot;)">' +
-        // slocLabel is this screen's own way of naming a space — the bin, not the
-        // four decks above it — and it already knows what to call the space that
-        // has no node in the tree.
-        'Move stock from ' + pcEsc(slocLabel(slocLoc(here) || { location_id: here })) + '</button>' +
-    '</div>' +
     (where.length
       ? where.map(function (k) {
           return '<div class="sloc-where' + (k === here ? ' here' : '') + '">' +
             '<button class="nm" onclick="slocGo(&quot;' + pcEsc(k) + '&quot;)">' +
-              pcEsc(k === SLOC_UNPLACED ? 'Unlocalized Stock' : (locs[k] ? locs[k].path : k)) + '</button>' +
+              pcEsc(stockSearch.reservedName(k) || (locs[k] ? locs[k].path : k)) + '</button>' +
             '<span class="q">' + pcFmtQty(it.by_location[k], it.unit) + ' ' + pcEsc(it.unit || '') + '</span>' +
           '</div>';
         }).join('')
@@ -2721,26 +3048,41 @@ function slocDetailHtml(r) {
   '</div>';
 }
 
-// One row's detail at a time. A sheet with six accordions open is a sheet you
-// cannot walk.
-// Counting corrects the number on a shelf; this corrects which shelf. Both are
-// discovered the same way — standing in front of it — so both belong on this
-// screen. It is the ordinary transfer (§42.7), pointed at the space being
-// walked: one event carrying both halves, so it cannot half-fail.
+// The space a picked line's buttons are about.
+function slocHere() {
+  var s = slocState();
+  return s.at || s.selAt || null;
+}
+
+// It is the ordinary transfer (§42.7), pointed at the space being walked: one
+// event carrying both halves, so it cannot half-fail.
 //
 // Deliberately not tied to an open audit. `expected_items` is frozen when a
 // session opens so that stock arriving later cannot retrospectively turn a
 // complete walk into a partial one, and a transfer is exactly such an arrival
 // at the other end. Moving something is not a claim about having verified it.
 function slocMove(itemId) {
-  var s = slocState();
-  if (!s.at) return;
-  pcMoveForm(itemId, 'transfer', s.at);
+  var here = slocHere();
+  if (!here || !itemId) return;
+  pcMoveForm(itemId, 'transfer', here);
 }
 
-function slocPick(itemId) {
+// Restocking the shelf you are standing at, or a line a search found: the same
+// receipt the item card files, with the space already filled in.
+function slocReceive(itemId) {
+  var here = slocHere();
+  if (!here || !itemId) return;
+  pcMoveForm(itemId, 'receipt', here);
+}
+
+// One row's detail at a time. A sheet with six accordions open is a sheet you
+// cannot walk. `at` names which space's line it is, when a search of the ship
+// shows the same item under two.
+function slocPick(itemId, at) {
   var s = slocState();
-  s.sel = (s.sel === itemId) ? null : itemId;
+  var same = s.sel === itemId && (s.selAt || null) === (at || null);
+  s.sel = same ? null : itemId;
+  s.selAt = same ? null : (at || null);
   // Maker and specification live in a second file, fetched once, on the first
   // item anybody opens.
   if (s.sel && !PC.detail) {
@@ -2755,11 +3097,13 @@ function slocGo(locationId) {
   var s = slocState();
   var next = locationId || null;
   // Only on an actual move. A crumb tapped on the space you are already in
-  // would otherwise throw away a half-typed count and the sheet filter.
+  // would otherwise throw away a half-typed count and the search.
   if (next !== s.at) {
     s.entered = {};
     s.sheetQ = '';
+    s.sug = { open: false, i: -1, list: [] };
     s.sel = null;
+    s.selAt = null;
     // Scope resets on every move: 'including sublocations' is a claim about the
     // space you are standing in, and carrying it into the next one silently
     // widens a sheet somebody is about to sign.
@@ -2768,6 +3112,25 @@ function slocGo(locationId) {
   s.at = next;
   pcRenderAll();
   window.scrollTo(0, 0);
+}
+
+// From a search of the ship to the shelf the thing is on, with it open.
+function slocFindOpen(locationId, itemId) {
+  slocGo(locationId);
+  var s = slocState();
+  s.sel = itemId;
+  s.selAt = null;
+  // A shelf longer than the sheet's cap may not have drawn the row at all, and
+  // then the only way to land on it is to ask for it by number.
+  var rows = slocRowsInScope() || [];
+  var at = -1;
+  rows.forEach(function (r, i) { if (at === -1 && r.item_id === itemId) at = i; });
+  if (at >= SLOC_SHEET_CAP) s.sheetQ = 'no:' + itemId;
+  pcRenderAll();
+  setTimeout(function () {
+    var box = document.getElementById('sloc-in-' + itemId);
+    if (box && box.scrollIntoView) box.scrollIntoView({ block: 'center' });
+  }, 0);
 }
 
 function slocUp() {
@@ -2785,59 +3148,100 @@ function slocScope() {
   pcRenderAll();
 }
 
-// A redraw that rebuilds the field takes the caret with it, so a filter cannot
-// be typed without losing focus mid-word. Both boxes redraw only their own list
-// and then put the caret back at the end of what was typed.
-function slocRefocus(id) {
-  var box = document.getElementById(id);
-  if (box && box.focus) {
-    box.focus();
-    if (box.setSelectionRange) box.setSelectionRange(box.value.length, box.value.length);
-  }
-}
-
-var _slocQTimer = null;
-function slocSearch(v) {
-  slocState().q = v;
-  clearTimeout(_slocQTimer);
-  _slocQTimer = setTimeout(function () { slocRenderRootList(); slocRefocus('sloc-q'); }, 160);
-}
-
+// Typing in the search box redraws the rows, the line under the box and the
+// completions — never the box itself, which would take the caret out of it
+// mid-word.
 var _slocSQTimer = null;
 function slocSheetSearch(v) {
-  slocState().sheetQ = v;
+  var s = slocState();
+  s.sheetQ = v;
+  s.sug = { open: true, i: -1, list: [] };
   clearTimeout(_slocSQTimer);
-  _slocSQTimer = setTimeout(function () {
-    var s = slocState();
-    var el = document.getElementById('sloc-sheet');
-    if (!el) { pcRenderAll(); return; }
-    el.innerHTML = slocSheetBlock(slocSheet(s.at, s.scope), slocSession());
-    slocRefocus('sloc-sq');
-  }, 160);
+  _slocSQTimer = setTimeout(slocSheetApply, 160);
+}
+
+function slocSheetApply() {
+  var s = slocState();
+  var el = document.getElementById('sloc-sheet-rows');
+  if (!el) { pcRenderAll(); return; }
+  el.innerHTML = s.at ? slocSheetRows(slocRowsInScope() || [], slocSession()) : slocRootList();
+  var note = document.getElementById('sloc-sq-note');
+  if (note) note.innerHTML = slocFindNote();
+  s.sug.list = s.sug.open && s.sheetQ.trim()
+    ? stockSearch.suggest(s.sheetQ, slocVocab(), { inSpace: !!s.at }) : [];
+  slocSugPaint();
+}
+
+function slocSugPick(i) {
+  var s = slocState();
+  var o = s.sug.list[i];
+  if (!o) return;
+  s.sheetQ = o.full;
+  // A field name is half a term: keep offering, now inside that column.
+  s.sug = { open: !!o.more, i: -1, list: [] };
+  var box = document.getElementById('sloc-sq');
+  if (box) {
+    box.value = o.full;
+    box.focus();
+    if (box.setSelectionRange) box.setSelectionRange(o.full.length, o.full.length);
+  }
+  clearTimeout(_slocSQTimer);
+  slocSheetApply();
+}
+
+// Arrows walk the completions and Enter or Tab takes the lit one, for a phone
+// with a keyboard on it. With none lit, Enter puts the keyboard away: the list
+// is already filtered, and what somebody wants next is to see it.
+function slocSheetKey(e) {
+  var sg = slocState().sug;
+  var n = sg.open ? sg.list.length : 0;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!n) return;
+    e.preventDefault();
+    sg.i = e.key === 'ArrowDown' ? (sg.i + 1) % n : (sg.i <= 0 ? n - 1 : sg.i - 1);
+    slocSugPaint();
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    if (n && (sg.i >= 0 || e.key === 'Tab')) {
+      e.preventDefault();
+      slocSugPick(sg.i < 0 ? 0 : sg.i);
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      slocState().sug = { open: false, i: -1, list: [] };
+      slocSugPaint();
+      if (e.target && e.target.blur) e.target.blur();
+    }
+  } else if (e.key === 'Escape') {
+    if (n) { e.preventDefault(); slocState().sug = { open: false, i: -1, list: [] }; slocSugPaint(); }
+  }
 }
 
 // Held, not filed. Every keystroke would be a count, and a re-render would
 // otherwise wipe a half-typed number.
-function slocTyped(itemId, v) { slocState().entered[itemId] = v; }
+function slocTyped(key, v) { slocState().entered[key] = v; }
 
 // The count itself. Filed immediately — session or not — because a phone in a
 // hold is not a safe place to hold forty pending corrections.
-async function slocCount(itemId) {
+async function slocCount(key) {
   var s = slocState();
   // Enter reaches here twice — once from the keydown, once from the `change`
   // the browser fires for the same keystroke. The typed value is cleared only
   // after the append resolves, so without this the second call files it again.
-  if (s.busy[itemId]) return;
-  var raw = s.entered[itemId];
+  if (s.busy[key]) return;
+  var raw = s.entered[key];
   if (raw === undefined || String(raw).trim() === '') return;
 
   var qty = Number(raw);
   if (!isFinite(qty) || qty < 0) { pcToast('That is not a quantity.'); return; }
 
-  var rows = slocSheet(s.at, s.scope);
-  var row = null, at = -1;
-  rows.forEach(function (r, i) { if (r.item_id === itemId) { row = r; at = i; } });
+  // The rows on screen, whichever sheet made them — a space's own, or a search
+  // of the ship, where the key names the space as well as the item.
+  var rows = slocRowsInScope() || [];
+  var row = null;
+  rows.forEach(function (r) { if ((r.key || r.item_id) === key) row = r; });
   if (!row) return;
+  var itemId = row.item_id;
 
   // A count corrects one space, not a sheet. Where the row's book figure is a
   // sum across several bins there is no honest single space to file against,
@@ -2851,20 +3255,31 @@ async function slocCount(itemId) {
     movement_id: pcUuid(), item_id: itemId, kind: 'count',
     location_id: row.count_location_id, qty: qty, counted_qty: qty
   };
-  var session = slocSession();
+  // A count typed from a search of the ship, into a space somebody is walking,
+  // is part of their walk.
+  var session = s.at ? slocSession() : stockSearch.openSessionAt(PC.state, row.count_location_id);
   if (session) payload.session_id = session.session_id;
 
-  s.busy[itemId] = true;
+  s.busy[key] = true;
   try {
     await pcAppendEvent('stock_movement', payload);
-    delete s.entered[itemId];
+    delete s.entered[key];
     // A counted item is a seen item; leaving the tick on would claim it was
     // confirmed rather than corrected.
-    delete s.ticks[itemId];
-    if (session) slocSaveTicks(session.session_id, s.ticks);
-    // Move the walk on. The next line down is where the eye already is, and on
-    // a phone it saves a tap that is easy to make on the wrong row.
-    if (rows[at + 1]) s.focusNext = rows[at + 1].item_id;
+    if (s.at) {
+      delete s.ticks[itemId];
+      if (session) slocSaveTicks(session.session_id, s.ticks);
+    }
+    // Move the walk on. The next line down is where the eye already is — the
+    // next line of what is SHOWN, which under a search is not the next row of
+    // the sheet, and is drawn a space at a time when the sheet is grouped.
+    var shown = [];
+    stockSearch.groups(stockSearch.filter(rows, s.sheetQ).shown.slice(0, SLOC_SHEET_CAP),
+      slocGrouped(), pcLocations() || {}, slocLabel)
+      .forEach(function (g) { g.rows.forEach(function (r) { shown.push(r); }); });
+    var at = -1;
+    shown.forEach(function (r, i) { if ((r.key || r.item_id) === key) at = i; });
+    if (shown[at + 1]) s.focusNext = shown[at + 1].key || shown[at + 1].item_id;
     var varied = row.stock_unknown ? null : Math.round((qty - row.book_qty) * 1e6) / 1e6;
     pcToast(varied === null ? 'Counted — it had no figure before.'
           : varied === 0 ? 'Counted, and the book was right.'
@@ -2872,9 +3287,22 @@ async function slocCount(itemId) {
   } catch (e) {
     pcToast('Could not file that count: ' + e.message);
   } finally {
-    delete s.busy[itemId];
+    delete s.busy[key];
     pcRenderAll();
   }
+}
+
+// ✓ on a line a search of the ship found. There is no audit for it to be held
+// until the close of, so it is filed as what it is: a count that agrees with
+// the book — the same movement as typing the book's own figure into the box,
+// and what stamps the item as checked.
+function slocConfirm(key) {
+  var s = slocState();
+  var row = null;
+  (slocRowsInScope() || []).forEach(function (r) { if (r.key === key) row = r; });
+  if (!row || row.stock_unknown) return;
+  s.entered[key] = String(row.book_qty);
+  slocCount(key);
 }
 
 function slocTick(itemId) {
@@ -2908,6 +3336,13 @@ function slocTickRest() {
 
 async function slocStart() {
   var s = slocState();
+  // An audit is one space walked end to end. The discontinued sheet is drawn
+  // from the whole ship, so there is no space for the session to be about and
+  // no shelf anybody could walk to close it.
+  if (s.at === SLOC_DISCONTINUED) {
+    pcToast('Discontinued Stock is not a space — audit the shelf the item is on.');
+    return;
+  }
   var rows = slocSheet(s.at, s.scope);
   // Unlocalized Stock has no node in the stowage tree and is still a space
   // somebody walks — 2,864 items, and the obvious place to work through when

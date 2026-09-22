@@ -314,8 +314,22 @@
   //
   // `fluid` puts the item on Add Oil's contents list. A tank link implies it;
   // the flag is for oil that is kept in drums and pails and has no tank.
-  var POLICY_FIELDS = ['min_qty', 'max_qty', 'reorder_qty', 'sfi_code', 'sfi_codes',
-                       'barcode', 'notes', 'tank_id', 'fluid'];
+  // `annual_consumption` is what the item actually gets through in a year, as
+  // somebody states it — NOT the figure min-analysis.js derives from TM's
+  // c2024/c2025/c2026 columns. Both exist on purpose. The derived one is
+  // evidence: it moves every time the catalogue is re-pulled, and it is only
+  // as good as whether TM saw the movement. This one is a standing baseline
+  // that stays put until a person changes it, which is what a minimum can be
+  // argued from.
+  //
+  // Null is a real and expected reading, not a gap to be filled. It means
+  // nobody has established a baseline for this item yet, which is true of
+  // almost all 14,487 of them, so NOTHING may read a missing value as zero
+  // consumption. It is left unset rather than seeded from a spreadsheet
+  // because a seeded number is stale the moment the next trip lands and
+  // nobody can tell it apart from one somebody stood behind.
+  var POLICY_FIELDS = ['min_qty', 'max_qty', 'reorder_qty', 'annual_consumption',
+                       'sfi_code', 'sfi_codes', 'barcode', 'notes', 'tank_id', 'fluid'];
 
   // Trimmed, de-duplicated, order kept. Anything that is not a list of strings
   // reads as no list rather than as a list of garbage.

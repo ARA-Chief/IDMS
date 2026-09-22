@@ -1285,7 +1285,7 @@
         <div class="user-avatar" id="pr-home-avatar" onclick="togglePrUserMenu()" style="cursor:pointer">PR</div>
         <div class="user-info" onclick="togglePrUserMenu()" style="cursor:pointer">
           <span class="user-name" id="pr-home-username">—</span>
-          <span class="user-role" id="pr-home-role">Procurement · F/T Araho</span>
+          <span class="user-role" id="pr-home-role">Inventory · F/T Araho</span>
         </div>
         <div id="pr-user-menu" style="display:none;position:absolute;top:44px;left:0;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-md);min-width:200px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
           <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
@@ -1307,7 +1307,7 @@
         </div>
       </div>
     </header>
-    <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Procurement</div>
+    <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Inventory</div>
     <div class="er-hub-grid">
       <button class="er-hub-tile" onclick="openProcurement('register')">
         <div class="er-hub-tile-icon">
@@ -1315,7 +1315,7 @@
             <path d="M4 9h20v14H4z"/><path d="M4 9l2.5-4h15L24 9"/><path d="M11 14h6"/>
           </svg>
         </div>
-        <div class="er-hub-tile-label">Inventory</div>
+        <div class="er-hub-tile-label">Items</div>
         <div class="er-hub-tile-sub">What we hold, and where</div>
       </button>
       <button class="er-hub-tile" onclick="openProcurement('location')">
@@ -1324,8 +1324,8 @@
             <path d="M4 4h20v20H4z"/><path d="M4 11h20"/><path d="M4 18h20"/><path d="M14 4v20"/>
           </svg>
         </div>
-        <div class="er-hub-tile-label">Stock Location</div>
-        <div class="er-hub-tile-sub">Walk a space and count it</div>
+        <div class="er-hub-tile-label">Stock</div>
+        <div class="er-hub-tile-sub">Find it, count it, walk a space</div>
       </button>
       <button class="er-hub-tile" onclick="openProcurement('checkin')">
         <div class="er-hub-tile-icon">
@@ -2950,7 +2950,7 @@ function showDeptPicker() {
       'font-size:18px', 'font-weight:700', 'letter-spacing:0.04em',
       'text-transform:uppercase', 'cursor:pointer', 'position:relative', 'text-align:center'
     ].join(';');
-    btn.textContent = dept;
+    btn.textContent = deptLabel(dept);
 
     if (!isActive) {
       var tag = document.createElement('div');
@@ -3056,6 +3056,15 @@ function loadDeptConfig(dept) {
       // Signal to enterDepartment whether we used cached config
       return { deptConfig: DEPT_CONFIG, shellConfig: SHELL_CONFIG, fromCache: usedCache };
     });
+}
+
+// What a department is called on screen, where that differs from the key the
+// crew records and the config carry. 'Procurement' is still the key — it is on
+// crew records and it is what grants access (userIsProcurement, pcHasAccess) —
+// but the module has been called Inventory since 2026-09-22, the name the
+// Console's menu gives the stores register and the stock beside it.
+function deptLabel(dept) {
+  return dept === 'Procurement' ? 'Inventory' : dept;
 }
 
 function deptHomeScreen(dept) {
@@ -11302,7 +11311,7 @@ function addOilOpenConfirm() {
     msg += oilAttach.issuesStock(f.item)
       ? '\n\n' + f.qty.toFixed(2) + ' ' + (f.item.unit || '') + ' will be issued out of stores.'
       : '\n\nThis item is counted in "' + (f.item.unit || '?') + '", not gallons, so nothing is taken ' +
-        'off its stock. Issue the drum or pail in Procurement when it is empty.';
+        'off its stock. Issue the drum or pail in Inventory when it is empty.';
   }
   var used = f.oilFields.attachment_override || [];
   if (used.length) msg += '\n\nRecorded as an attachment override: ' + addOilOverrideWords(used) + '.';
@@ -11634,7 +11643,7 @@ async function addOilCommit() {
       catch (e) {
         console.error('[addOil] stores issue failed', e);
         alert('The oil was logged, but taking it out of stores failed (' + (e && e.message) + '). ' +
-              'Record an Issue against ' + f.item.item_id + ' in Procurement.');
+              'Record an Issue against ' + f.item.item_id + ' in Inventory.');
       }
     }
 
@@ -11822,7 +11831,10 @@ function ntaAlertWhy(n) {
   return sev + ' — ' + (a.rule_name || a.rule_id || 'department alert');
 }
 
-function ntaCacheKey(year) { return 'nt_events_cache_' + year; }
+// One cache for every year, shared with notes.html (NT_CACHE_KEY there) — see
+// the note on ntEventYears in notes.html for why the year cannot be the key.
+var NTA_CACHE_KEY = 'nt_events_cache_all';
+function ntaCacheKey(year) { return 'nt_events_cache_' + year; }   // the old per-year key, read once
 
 function ntaEsc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -11831,10 +11843,10 @@ function ntaEsc(s) {
 }
 
 async function ntaLoadEvents() {
-  var year = String(new Date().getFullYear());
   if (!NTA.events.length) {
     try {
-      var cached = JSON.parse(localStorage.getItem(ntaCacheKey(year)) || 'null');
+      var cached = JSON.parse(localStorage.getItem(NTA_CACHE_KEY) ||
+                              localStorage.getItem(ntaCacheKey(new Date().getFullYear())) || 'null');
       if (cached && cached.events) {
         NTA.events = cached.events;
         NTA.events.forEach(function (ev) { if (ev._fn) NTA.loadedNames[ev._fn] = true; });
@@ -11842,32 +11854,50 @@ async function ntaLoadEvents() {
     } catch (e) {}
   }
   await refreshToken();
-  var folder = 'Documents/IDMS/data/notes/events/' + year;
-  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-            encodeURIComponent(folder).replace(/%2F/g, '/') + ':/children?$select=name&$top=200';
-  var names = [];
+  var auth = { headers: { Authorization: 'Bearer ' + graphToken } };
+  var base = 'Documents/IDMS/data/notes/events';
+  var gurl = function (p, tail) {
+    return 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+           encodeURIComponent(p).replace(/%2F/g, '/') + tail;
+  };
+  // Every year folder, as notes.html and the Console read them.
+  var years = [];
+  var url = gurl(base, ':/children?$select=name,folder&$top=200');
   while (url) {
-    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
-    if (resp.status === 404) return;   // no notes events yet this year
-    if (!resp.ok) throw new Error('Notes event list: ' + resp.status);
-    var page = await resp.json();
-    (page.value || []).forEach(function (it) { if (/\.json$/i.test(it.name)) names.push(it.name); });
-    url = page['@odata.nextLink'] || null;
+    var yr = await fetch(url, auth);
+    if (yr.status === 404) return;   // no notes events at all yet
+    if (!yr.ok) throw new Error('Notes event years: ' + yr.status);
+    var yp = await yr.json();
+    (yp.value || []).forEach(function (it) { if (it.folder && /^\d{4}$/.test(it.name)) years.push(it.name); });
+    url = yp['@odata.nextLink'] || null;
   }
-  names.sort();
-  var fresh = names.filter(function (n) { return !NTA.loadedNames[n]; });
+  years.sort();
+  var fresh = [];
+  for (var y = 0; y < years.length; y++) {
+    var folder = base + '/' + years[y];
+    url = gurl(folder, ':/children?$select=name&$top=200');
+    while (url) {
+      var resp = await fetch(url, auth);
+      if (resp.status === 404) break;
+      if (!resp.ok) throw new Error('Notes event list: ' + resp.status);
+      var page = await resp.json();
+      (page.value || []).forEach(function (it) {
+        if (/\.json$/i.test(it.name) && !NTA.loadedNames[it.name]) fresh.push({ folder: folder, name: it.name });
+      });
+      url = page['@odata.nextLink'] || null;
+    }
+  }
+  fresh.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
   for (var i = 0; i < fresh.length; i++) {
-    var evUrl = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-                encodeURIComponent(folder + '/' + fresh[i]).replace(/%2F/g, '/') + ':/content';
-    var r = await fetch(evUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
+    var r = await fetch(gurl(fresh[i].folder + '/' + fresh[i].name, ':/content'), auth);
     if (!r.ok) continue;
     var ev = await r.json();
-    if (ev && ev.event_id) { ev._fn = fresh[i]; NTA.events.push(ev); NTA.loadedNames[fresh[i]] = true; }
+    if (ev && ev.event_id) { ev._fn = fresh[i].name; NTA.events.push(ev); NTA.loadedNames[fresh[i].name] = true; }
   }
   if (fresh.length) {
     try {
       var raw = JSON.stringify({ events: NTA.events });
-      if (raw.length <= 3500000) localStorage.setItem(ntaCacheKey(year), raw);
+      if (raw.length <= 3500000) localStorage.setItem(NTA_CACHE_KEY, raw);
     } catch (e) {}
   }
 }
