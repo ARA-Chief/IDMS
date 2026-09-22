@@ -1156,12 +1156,20 @@ function ntCodeCmp(a, b) {
 
 // ── Event sync (replay + poll) ──────────────────────────────
 
-function ntCacheKey(year) { return 'nt_events_cache_' + year; }
+// Every year, not this one. Events live in one folder per year (§41.3) and a
+// note opened in December is edited in January — in the next folder. Reading
+// only the current year made every open note vanish from this page on 1
+// January while the Console, which reads them all (sync-notes.js), kept it;
+// and a 2027 edit to a 2026 note was dropped, its note never having loaded.
+// The cache is one key for the same reason: a year-keyed cache emptied itself
+// at midnight on New Year's Eve. index.html's alert reader shares this key.
+var NT_CACHE_KEY = 'nt_events_cache_all';
+function ntCacheKey(year) { return 'nt_events_cache_' + year; }   // the old per-year key, read once
 
 function ntLoadCache() {
-  var year = String(new Date().getFullYear());
   try {
-    var raw = localStorage.getItem(ntCacheKey(year));
+    var raw = localStorage.getItem(NT_CACHE_KEY) ||
+              localStorage.getItem(ntCacheKey(new Date().getFullYear()));
     if (!raw) return;
     var cached = JSON.parse(raw);
     NT.events = cached.events || [];
@@ -1171,12 +1179,32 @@ function ntLoadCache() {
 }
 
 function ntSaveCache() {
-  var year = String(new Date().getFullYear());
   try {
     var raw = JSON.stringify({ events: NT.events });
     if (raw.length > 3500000) return;   // near the localStorage ceiling — replay stays authoritative
-    localStorage.setItem(ntCacheKey(year), raw);
+    localStorage.setItem(NT_CACHE_KEY, raw);
   } catch (e) {}
+}
+
+// The year folders under events/, oldest first. One listing per sync; a year
+// that has closed costs a second listing and no downloads, because everything
+// in it is already in loadedNames.
+async function ntEventYears() {
+  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+            encodeURIComponent(ONEDRIVE_BASE + '/data/notes/events').replace(/%2F/g, '/') +
+            ':/children?$select=name,folder&$top=200';
+  var years = [];
+  while (url) {
+    var resp = await ntFetch(url, { method: 'GET' });
+    if (resp.status === 404) return [];   // no notes have ever been written
+    if (!resp.ok) throw new Error('Event years → ' + resp.status);
+    var page = await resp.json();
+    (page.value || []).forEach(function (it) {
+      if (it.folder && /^\d{4}$/.test(it.name)) years.push(it.name);
+    });
+    url = page['@odata.nextLink'] || null;
+  }
+  return years.sort();
 }
 
 async function ntSyncNow() {
@@ -1184,25 +1212,30 @@ async function ntSyncNow() {
   NT._syncing = true;
   ntSetPill('busy');
   try {
-    var year = String(new Date().getFullYear());
-    var folder = ONEDRIVE_BASE + '/data/notes/events/' + year;
-    var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-              encodeURIComponent(folder).replace(/%2F/g, '/') +
-              ':/children?$select=name&$top=200';
-    var names = [];
-    while (url) {
-      var resp = await ntFetch(url, { method: 'GET' });
-      if (resp.status === 404) break;   // no events yet this year
-      if (!resp.ok) throw new Error('Event list → ' + resp.status);
-      var page = await resp.json();
-      (page.value || []).forEach(function (it) { if (/\.json$/i.test(it.name)) names.push(it.name); });
-      url = page['@odata.nextLink'] || null;
+    var years = await ntEventYears();
+    var fresh = [];
+    for (var y = 0; y < years.length; y++) {
+      var folder = ONEDRIVE_BASE + '/data/notes/events/' + years[y];
+      var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+                encodeURIComponent(folder).replace(/%2F/g, '/') +
+                ':/children?$select=name&$top=200';
+      while (url) {
+        var resp = await ntFetch(url, { method: 'GET' });
+        if (resp.status === 404) break;
+        if (!resp.ok) throw new Error('Event list → ' + resp.status);
+        var page = await resp.json();
+        (page.value || []).forEach(function (it) {
+          if (/\.json$/i.test(it.name) && !NT.loadedNames[it.name]) fresh.push({ folder: folder, name: it.name });
+        });
+        url = page['@odata.nextLink'] || null;
+      }
     }
-    names.sort();
-    var fresh = names.filter(function (n) { return !NT.loadedNames[n]; });
+    // A file is named from the timestamp inside it, so the name orders the
+    // events across years as well as within one.
+    fresh.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
     for (var i = 0; i < fresh.length; i++) {
-      var ev = await ntGetJson(folder + '/' + fresh[i]);
-      if (ev && ev.event_id) { ev._fn = fresh[i]; NT.events.push(ev); NT.loadedNames[fresh[i]] = true; }
+      var ev = await ntGetJson(fresh[i].folder + '/' + fresh[i].name);
+      if (ev && ev.event_id) { ev._fn = fresh[i].name; NT.events.push(ev); NT.loadedNames[fresh[i].name] = true; }
     }
     if (fresh.length) {
       NT.events.sort(function (a, b) { return (a._fn || '') < (b._fn || '') ? -1 : 1; });

@@ -58,6 +58,11 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
   does, and an item shows its maker's part number and its annual use. The
   Minimum & policy form has the Annual consumption box the Console has — leave
   it blank until somebody knows the figure.
+- **Notes from last year stay put on New Year's Day.** Notes and the alerts on
+  the home screen only read this year's notes, so on 1 January every note
+  still open from December would have disappeared here while the Console kept
+  it — and anything written on one in January would have been lost. They read
+  every year now, the way the Console does.
 
 ## 1.30 — 2026-09-18
 

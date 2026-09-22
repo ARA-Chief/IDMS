@@ -11831,7 +11831,10 @@ function ntaAlertWhy(n) {
   return sev + ' — ' + (a.rule_name || a.rule_id || 'department alert');
 }
 
-function ntaCacheKey(year) { return 'nt_events_cache_' + year; }
+// One cache for every year, shared with notes.html (NT_CACHE_KEY there) — see
+// the note on ntEventYears in notes.html for why the year cannot be the key.
+var NTA_CACHE_KEY = 'nt_events_cache_all';
+function ntaCacheKey(year) { return 'nt_events_cache_' + year; }   // the old per-year key, read once
 
 function ntaEsc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -11840,10 +11843,10 @@ function ntaEsc(s) {
 }
 
 async function ntaLoadEvents() {
-  var year = String(new Date().getFullYear());
   if (!NTA.events.length) {
     try {
-      var cached = JSON.parse(localStorage.getItem(ntaCacheKey(year)) || 'null');
+      var cached = JSON.parse(localStorage.getItem(NTA_CACHE_KEY) ||
+                              localStorage.getItem(ntaCacheKey(new Date().getFullYear())) || 'null');
       if (cached && cached.events) {
         NTA.events = cached.events;
         NTA.events.forEach(function (ev) { if (ev._fn) NTA.loadedNames[ev._fn] = true; });
@@ -11851,32 +11854,50 @@ async function ntaLoadEvents() {
     } catch (e) {}
   }
   await refreshToken();
-  var folder = 'Documents/IDMS/data/notes/events/' + year;
-  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-            encodeURIComponent(folder).replace(/%2F/g, '/') + ':/children?$select=name&$top=200';
-  var names = [];
+  var auth = { headers: { Authorization: 'Bearer ' + graphToken } };
+  var base = 'Documents/IDMS/data/notes/events';
+  var gurl = function (p, tail) {
+    return 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+           encodeURIComponent(p).replace(/%2F/g, '/') + tail;
+  };
+  // Every year folder, as notes.html and the Console read them.
+  var years = [];
+  var url = gurl(base, ':/children?$select=name,folder&$top=200');
   while (url) {
-    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
-    if (resp.status === 404) return;   // no notes events yet this year
-    if (!resp.ok) throw new Error('Notes event list: ' + resp.status);
-    var page = await resp.json();
-    (page.value || []).forEach(function (it) { if (/\.json$/i.test(it.name)) names.push(it.name); });
-    url = page['@odata.nextLink'] || null;
+    var yr = await fetch(url, auth);
+    if (yr.status === 404) return;   // no notes events at all yet
+    if (!yr.ok) throw new Error('Notes event years: ' + yr.status);
+    var yp = await yr.json();
+    (yp.value || []).forEach(function (it) { if (it.folder && /^\d{4}$/.test(it.name)) years.push(it.name); });
+    url = yp['@odata.nextLink'] || null;
   }
-  names.sort();
-  var fresh = names.filter(function (n) { return !NTA.loadedNames[n]; });
+  years.sort();
+  var fresh = [];
+  for (var y = 0; y < years.length; y++) {
+    var folder = base + '/' + years[y];
+    url = gurl(folder, ':/children?$select=name&$top=200');
+    while (url) {
+      var resp = await fetch(url, auth);
+      if (resp.status === 404) break;
+      if (!resp.ok) throw new Error('Notes event list: ' + resp.status);
+      var page = await resp.json();
+      (page.value || []).forEach(function (it) {
+        if (/\.json$/i.test(it.name) && !NTA.loadedNames[it.name]) fresh.push({ folder: folder, name: it.name });
+      });
+      url = page['@odata.nextLink'] || null;
+    }
+  }
+  fresh.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
   for (var i = 0; i < fresh.length; i++) {
-    var evUrl = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-                encodeURIComponent(folder + '/' + fresh[i]).replace(/%2F/g, '/') + ':/content';
-    var r = await fetch(evUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
+    var r = await fetch(gurl(fresh[i].folder + '/' + fresh[i].name, ':/content'), auth);
     if (!r.ok) continue;
     var ev = await r.json();
-    if (ev && ev.event_id) { ev._fn = fresh[i]; NTA.events.push(ev); NTA.loadedNames[fresh[i]] = true; }
+    if (ev && ev.event_id) { ev._fn = fresh[i].name; NTA.events.push(ev); NTA.loadedNames[fresh[i].name] = true; }
   }
   if (fresh.length) {
     try {
       var raw = JSON.stringify({ events: NTA.events });
-      if (raw.length <= 3500000) localStorage.setItem(ntaCacheKey(year), raw);
+      if (raw.length <= 3500000) localStorage.setItem(NTA_CACHE_KEY, raw);
     } catch (e) {}
   }
 }
