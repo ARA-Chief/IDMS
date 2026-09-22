@@ -4797,6 +4797,7 @@ The crew registry for vessel personnel. Distinct from `userconfig.json` (which g
 | `vessel`     | string   | no       | The vessel this crew member is currently assigned to. One of the validated vessel values (see below). `null` if unassigned. Drives the Schedule crew picker — only crew with `vessel = 'F/T ARAHO'` appear in the first two optgroups. |
 | `contact`    | object   | yes      | Contact block. All sub-fields may be empty string. |
 | `certificates` | object[] | yes   | Array of certificate objects. May be empty. Schema defined by the Training Matrix module. |
+| `gear_sizes` | object[] | no    | What the member wears: ordered rows `{ item, size, note }`, all free text (`item` required, capped 40 / 24 / 120 chars). Edited in the Console Crew List and the PWA's My Profile through the one mirrored module `utils/gear-sizes.js`. **Absent is not empty:** a record with no key is shown the default items (Gloves, Boots, Trousers, Jacket, Shirt, Sweatshirt, Coveralls, Rain Gear, Hat), blank; `[]` means every row was removed and is shown as such. The engine room's 18 records were filled on 2026-09-21 from the gear order forms, 2018–2026, newest order per item (`IDMS-Console/tools/gear-sizes`, which only ever fills a record with no key). |
 
 ### Valid `vessel` values
 

@@ -107,6 +107,18 @@ check('the Console loads it after the reducer it reads sfiCodes from', (() => {
   const a = html.indexOf('js/procurement-reduce.js'), b = html.indexOf('js/oil-attach.js');
   return a !== -1 && b !== -1 && a < b;
 })());
+// Gear sizes: My Profile and the Console's Crew List edit one field, and the
+// 2021 order seeds it on both — one file, so they cannot seed it differently.
+check('the gear sizes module is byte-identical too',
+  fs.readFileSync(IDMS + '/utils/gear-sizes.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/gear-sizes.js')));
+check('the Console loads it before the Crew List that uses it', (() => {
+  const html = fs.readFileSync(CON + '/src/renderer/index.html', 'utf8');
+  const a = html.indexOf('js/gear-sizes.js'), b = html.indexOf('js/crew.js');
+  return a !== -1 && b !== -1 && a < b;
+})());
+check('no inline event handlers on the Crew List',
+  (fs.readFileSync(CON + '/src/renderer/js/crew.js', 'utf8').match(inlineRe) || []).length === 0);
 check('no inline event handlers on Tank Levels & Transfers',
   (fs.readFileSync(CON + '/src/renderer/js/fuel.js', 'utf8').match(inlineRe) || []).length === 0);
 // §43: the phone and the Console must never compute two different plans from

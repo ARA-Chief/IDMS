@@ -22,6 +22,8 @@
        (mirrors at IDMS-Console/src/renderer/js/procurement-reduce.js and oil-attach.js) -->
   <script src="utils/procurement-reduce.js"></script>
   <script src="utils/oil-attach.js"></script>
+  <!-- Gear sizes on My Profile (mirror at IDMS-Console/src/renderer/js/gear-sizes.js) -->
+  <script src="utils/gear-sizes.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -7011,6 +7013,61 @@ function erRemoveDroRow(btn) {
   if (row) row.remove();
 }
 
+// ── Gear sizes (utils/gear-sizes.js) ──
+// One row per item: item and size on a line, a note under them. Rows are
+// added and removed freely; what is on screen at save is what is stored.
+function erGearRowHtml(r) {
+  var L = gearSizes.LIMITS;
+  return '<div class="er-gear-row" style="padding:4px 16px 8px;border-bottom:1px solid var(--border)">'
+    + '<div style="display:flex;align-items:center;gap:8px">'
+    +   '<input type="text" class="er-gear-item er-profile-field-input" list="er-gear-items" maxlength="' + L.item + '" value="' + erEscapeAttr(r.item) + '" placeholder="Item" style="flex:1.3;min-width:0">'
+    +   '<input type="text" class="er-gear-size er-profile-field-input" list="er-gear-sizes" maxlength="' + L.size + '" value="' + erEscapeAttr(r.size) + '" placeholder="Size" style="flex:1;min-width:0">'
+    +   '<button class="er-profile-cert-delete" onclick="erRemoveGearRow(this)" title="Remove">✕</button>'
+    + '</div>'
+    + '<input type="text" class="er-gear-note er-profile-field-input" maxlength="' + L.note + '" value="' + erEscapeAttr(r.note) + '" placeholder="Note — model, colour, fit (optional)" style="margin-top:6px;font-size:12px;padding:7px 10px">'
+    + '</div>';
+}
+
+function erGearSectionHtml(m) {
+  var g = gearSizes.gearSizesFor(m);
+  var opts = function(list) {
+    return list.map(function(v) { return '<option value="' + erEscapeAttr(v) + '">'; }).join('');
+  };
+  var hint = g.seeded ? 'No sizes on file yet — fill in what you know and tap save.' : '';
+  return '<div class="er-profile-section-label">Gear Sizes</div>'
+    + (hint ? '<div style="padding:0 16px 8px;font-size:12px;color:var(--text-muted);line-height:1.5">' + hint + '</div>' : '')
+    + '<datalist id="er-gear-items">' + opts(gearSizes.DEFAULT_ITEMS) + '</datalist>'
+    + '<datalist id="er-gear-sizes">' + opts(gearSizes.SIZE_SUGGESTIONS) + '</datalist>'
+    + '<div id="er-gear-rows">' + g.rows.map(erGearRowHtml).join('') + '</div>'
+    + '<button class="er-profile-add-cert-btn" onclick="erAddGearRow()" style="margin-bottom:4px">+ Add Item</button>';
+}
+
+function erAddGearRow() {
+  var container = document.getElementById('er-gear-rows');
+  if (!container) return;
+  var tmp = document.createElement('div');
+  tmp.innerHTML = erGearRowHtml({ item: '', size: '', note: '' });
+  container.appendChild(tmp.firstChild);
+  var input = container.lastChild.querySelector('.er-gear-item');
+  if (input) input.focus();
+}
+
+function erRemoveGearRow(btn) {
+  var row = btn.closest ? btn.closest('.er-gear-row') : null;
+  if (row) row.remove();
+}
+
+function erCollectGearRows() {
+  return gearSizes.cleanGearSizes(Array.prototype.slice.call(document.querySelectorAll('#er-gear-rows .er-gear-row'))
+    .map(function(row) {
+      return {
+        item: (row.querySelector('.er-gear-item') || {}).value,
+        size: (row.querySelector('.er-gear-size') || {}).value,
+        note: (row.querySelector('.er-gear-note') || {}).value
+      };
+    }));
+}
+
 function erRenderProfile(el, m) {
   var contact = m.contact || {};
   var initials = (m.name || '?').split(/\s+/).filter(Boolean)
@@ -7113,6 +7170,8 @@ function erRenderProfile(el, m) {
     + '<div class="er-profile-section-label">Requested Time Off</div>'
     + '<div id="er-dro-rows">' + droRows + '</div>'
     + '<button class="er-profile-add-cert-btn" onclick="erAddDroRow()" style="margin-bottom:4px">+ Add Date Range</button>'
+
+    + erGearSectionHtml(m)
 
     + '<div class="er-profile-section-label">Certificates</div>';
 
@@ -7230,6 +7289,7 @@ async function saveErProfile() {
         };
       })
       .filter(function(d) { return d.from && (d.to || d.from) >= _todayIso; });
+    var gear_sizes = erCollectGearRows();
 
     // Optional: upload staged profile pic first (so the path lands in the same write)
     if (ER_PROFILE_STATE.pendingPicFile) {
@@ -7249,6 +7309,7 @@ async function saveErProfile() {
     if (favorite_color)  m.favorite_color      = favorite_color;
     m.linked_relief       = linked_relief;
     m.dates_requested_off = dates_requested_off;
+    m.gear_sizes          = gear_sizes;
 
     // Persist back. We re-fetch first to merge with any concurrent admin edits.
     await erSaveCrewConfigForUser(m.username, function(fileMember) {
@@ -7262,6 +7323,7 @@ async function saveErProfile() {
       if (favorite_color) fileMember.favorite_color      = favorite_color;
       fileMember.linked_relief       = linked_relief;
       fileMember.dates_requested_off = dates_requested_off;
+      fileMember.gear_sizes          = gear_sizes;
       if (m.profile_picture) fileMember.profile_picture = m.profile_picture;
     });
 
