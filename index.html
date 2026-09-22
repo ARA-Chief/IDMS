@@ -7033,9 +7033,7 @@ function erGearSectionHtml(m) {
   var opts = function(list) {
     return list.map(function(v) { return '<option value="' + erEscapeAttr(v) + '">'; }).join('');
   };
-  var hint = g.source
-    ? 'Filled in from the ' + erEscapeHtml(g.source) + ' — check them and tap save.'
-    : (g.seeded ? 'No sizes on file yet — fill in what you know and tap save.' : '');
+  var hint = g.seeded ? 'No sizes on file yet — fill in what you know and tap save.' : '';
   return '<div class="er-profile-section-label">Gear Sizes</div>'
     + (hint ? '<div style="padding:0 16px 8px;font-size:12px;color:var(--text-muted);line-height:1.5">' + hint + '</div>' : '')
     + '<datalist id="er-gear-items">' + opts(gearSizes.DEFAULT_ITEMS) + '</datalist>'

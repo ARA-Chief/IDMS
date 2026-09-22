@@ -30,9 +30,10 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 - **Gear sizes on My Profile.** A new Gear Sizes section lists what you wear —
   gloves, boots, trousers, jacket, shirt and the rest — with a size and a note
   for each. Add a row for anything missing, remove any you don't need, and tap
-  save. If you were on the 2021 engine room gear order, your sizes from it are
-  already filled in; check them before you save. The Console's Crew List shows
-  and edits the same sizes.
+  save. Engine room crew: your sizes from your most recent gear order are
+  already filled in, with the year of the order in the note — check them and
+  fix anything that has changed. The Console's Crew List shows and edits the
+  same sizes.
 
 ## 1.30 — 2026-09-18
 

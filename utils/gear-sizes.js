@@ -8,7 +8,8 @@
 // The phone's My Profile and the Console's Crew List edit the same field,
 // `crewconfig.crew[].gear_sizes`, an ordered list of rows:
 //
-//   { item: 'Trousers', size: '34x32', note: 'Fristads 100293 FAS, EU 52' }
+//   { item: 'Trousers', size: 'C50',
+//     note: 'Fristads 100293 FAS · waist x length 32x32 · 2026 order' }
 //
 // Rows are free text on purpose. A glove is M/L/XL, a boot is 11, trousers
 // are waist x length AND a European size, and the warehouse orders gloves by
@@ -16,16 +17,12 @@
 // suggestions, never a gate.
 //
 // ABSENT IS NOT EMPTY. A member with no `gear_sizes` key has never been
-// asked: they are shown the default rows, filled from the order history when
-// there is one. A member whose `gear_sizes` is [] removed every row on
-// purpose, and that is what they see. So a removed row stays removed, and the
-// seed below only ever speaks for someone who has not saved a size yet.
+// asked and is shown the default rows, blank. A member whose `gear_sizes` is
+// [] removed every row on purpose, and that is what they see.
 //
-// THE SEED IS HERE, NOT IN crewconfig. The Console holds crewconfig in memory
-// and writes the whole file back, so sizes written into the live file by a
-// script are silently undone by the next Console save. Applied at read time
-// instead, the history becomes stored data the first time either app saves
-// the member, and needs no write at all until then.
+// The engine room's sizes were filled into crewconfig from the gear order
+// forms by IDMS-Console/tools/gear-sizes (newest order per item; see
+// IDMS-Console/docs/gear-sizes.md). Nothing here seeds anyone.
 
 (function (root) {
   // The rows a member starts with. Order is display order.
@@ -38,46 +35,6 @@
   var SIZE_SUGGESTIONS = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'Liners'];
 
   var LIMITS = { item: 40, size: 24, note: 120 };
-
-  // ── Order history ──────────────────────────────────────────────────────────
-  // "Gear Order 2021.xlsx" (S:\...\Shipyard\Shipyard 2021\Gear), the engine
-  // room's workwear order: eight people by first name only, matched to the
-  // roster by name within the Engine department. "Johnny", 1st Assistant, is
-  // John MacDonald (1st Engineer) — not John "Jack" Campbell, an Oiler.
-  //
-  // Read off the sheet, with three calls made:
-  //   - Long- and short-sleeve T sizes agree for every person, so one Shirt.
-  //   - Taylor's shirt tabs carry a second one-shirt row in S; the M row is
-  //     the person's own (four and five shirts against one), the S a spare.
-  //   - The jacket tab lists "Sam", Oiler, M: Sam Potchik, the Oiler on every
-  //     other tab. "Sam K" is listed separately in L.
-  // Gloves and boots were never on it; warehouse request forms order gloves
-  // by the case, not by the person.
-  var HISTORY_SOURCE = '2021 engine room gear order';
-  var FAS   = 'Fristads 100293 FAS trousers, waist x length';
-  var SHELL = 'Fristads 4906 GTT Airtech shell jacket';
-  var TEE   = 'Hanes Beefy-T';
-  var HOOD  = 'Carhartt Rain Defender quarter-zip';
-  var CAP   = 'Carhartt 103056 cap';
-  function order(trousers, eu, jacket, shirt, sweat) {
-    return [
-      { item: 'Trousers',   size: trousers,   note: FAS + ', EU ' + eu },
-      { item: 'Jacket',     size: jacket,     note: SHELL },
-      { item: 'Shirt',      size: shirt,      note: TEE },
-      { item: 'Sweatshirt', size: sweat,      note: HOOD },
-      { item: 'Hat',        size: 'Snapback', note: CAP }
-    ];
-  }
-  var ORDER_HISTORY = {
-    '4f9794de-1f86-4f96-b856-76743a435960': order('34x32', '52',  'XL',  'XL',  '2XL'), // Connor Stevens
-    'ebe96985-441f-4904-9bea-650d66743211': order('32x32', '50',  'L',   'L',   'L'),   // Jeff Troberg
-    'bbc7c12d-c8e3-483a-9faa-673206a7c92f': order('40x32', '56',  '2XL', '2XL', '2XL'), // John MacDonald
-    '5f36b323-7680-40cb-b0d9-4b5d7b78c2a7': order('33x32', '52',  'L',   'L',   'L'),   // Logan Fogg
-    '36ae745f-5b6e-4f8a-a2dd-44805e02a52c': order('32x30', 'D92', 'M',   'M',   'M'),   // Rolando Garcia
-    '54f43271-926f-4fcb-a35f-4647e49aa04b': order('33x30', '52',  'L',   'L',   'L'),   // Sam Kulikowski
-    'bb092596-1f7d-46f3-83d2-ea024a13287e': order('30x30', '46',  'M',   'M',   'S'),   // Sam Potchik
-    '2fb9eb13-d02c-40f4-ab5d-a8077402a99f': order('32x32', '50',  'M',   'M',   'L')    // Taylor Ploch
-  };
 
   function clip(v, n) {
     var s = (v == null ? '' : String(v)).replace(/\s+/g, ' ').trim();
@@ -99,33 +56,20 @@
   }
 
   // What a screen shows. `seeded` is true when nothing is stored yet and the
-  // rows came from the defaults (and the history, when `source` is set).
+  // rows are the blank defaults.
   function gearSizesFor(member) {
     var m = member || {};
     if (Array.isArray(m.gear_sizes)) {
-      return { rows: cleanGearSizes(m.gear_sizes), seeded: false, source: null };
+      return { rows: cleanGearSizes(m.gear_sizes), seeded: false };
     }
-    var history = (m.crew_id && ORDER_HISTORY[m.crew_id]) || null;
     var rows = DEFAULT_ITEMS.map(function (item) { return { item: item, size: '', note: '' }; });
-    if (history) {
-      history.forEach(function (h) {
-        var hit = null;
-        for (var i = 0; i < rows.length; i++) {
-          if (rows[i].item.toLowerCase() === h.item.toLowerCase()) { hit = rows[i]; break; }
-        }
-        if (hit) { hit.size = h.size; hit.note = h.note; }
-        else rows.push({ item: h.item, size: h.size, note: h.note });
-      });
-    }
-    return { rows: rows, seeded: true, source: history ? HISTORY_SOURCE : null };
+    return { rows: rows, seeded: true };
   }
 
   var api = {
     DEFAULT_ITEMS: DEFAULT_ITEMS,
     SIZE_SUGGESTIONS: SIZE_SUGGESTIONS,
     LIMITS: LIMITS,
-    HISTORY_SOURCE: HISTORY_SOURCE,
-    ORDER_HISTORY: ORDER_HISTORY,
     cleanGearSizes: cleanGearSizes,
     gearSizesFor: gearSizesFor
   };
