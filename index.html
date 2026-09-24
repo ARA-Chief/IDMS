@@ -22,6 +22,8 @@
        (mirrors at IDMS-Console/src/renderer/js/procurement-reduce.js and oil-attach.js) -->
   <script src="utils/procurement-reduce.js"></script>
   <script src="utils/oil-attach.js"></script>
+  <!-- Gear sizes on My Profile (mirror at IDMS-Console/src/renderer/js/gear-sizes.js) -->
+  <script src="utils/gear-sizes.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1283,7 +1285,7 @@
         <div class="user-avatar" id="pr-home-avatar" onclick="togglePrUserMenu()" style="cursor:pointer">PR</div>
         <div class="user-info" onclick="togglePrUserMenu()" style="cursor:pointer">
           <span class="user-name" id="pr-home-username">—</span>
-          <span class="user-role" id="pr-home-role">Procurement · F/T Araho</span>
+          <span class="user-role" id="pr-home-role">Inventory · F/T Araho</span>
         </div>
         <div id="pr-user-menu" style="display:none;position:absolute;top:44px;left:0;background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius-md);min-width:200px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
           <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
@@ -1305,7 +1307,7 @@
         </div>
       </div>
     </header>
-    <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Procurement</div>
+    <div style="padding:16px 12px 8px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted)">Inventory</div>
     <div class="er-hub-grid">
       <button class="er-hub-tile" onclick="openProcurement('register')">
         <div class="er-hub-tile-icon">
@@ -1313,7 +1315,7 @@
             <path d="M4 9h20v14H4z"/><path d="M4 9l2.5-4h15L24 9"/><path d="M11 14h6"/>
           </svg>
         </div>
-        <div class="er-hub-tile-label">Inventory</div>
+        <div class="er-hub-tile-label">Items</div>
         <div class="er-hub-tile-sub">What we hold, and where</div>
       </button>
       <button class="er-hub-tile" onclick="openProcurement('location')">
@@ -1322,8 +1324,8 @@
             <path d="M4 4h20v20H4z"/><path d="M4 11h20"/><path d="M4 18h20"/><path d="M14 4v20"/>
           </svg>
         </div>
-        <div class="er-hub-tile-label">Stock Location</div>
-        <div class="er-hub-tile-sub">Walk a space and count it</div>
+        <div class="er-hub-tile-label">Stock</div>
+        <div class="er-hub-tile-sub">Find it, count it, walk a space</div>
       </button>
       <button class="er-hub-tile" onclick="openProcurement('checkin')">
         <div class="er-hub-tile-icon">
@@ -2948,7 +2950,7 @@ function showDeptPicker() {
       'font-size:18px', 'font-weight:700', 'letter-spacing:0.04em',
       'text-transform:uppercase', 'cursor:pointer', 'position:relative', 'text-align:center'
     ].join(';');
-    btn.textContent = dept;
+    btn.textContent = deptLabel(dept);
 
     if (!isActive) {
       var tag = document.createElement('div');
@@ -2963,7 +2965,35 @@ function showDeptPicker() {
     grid.appendChild(btn);
   });
 
+  // Navipedia is not a department — it is the vessel's reference, the same
+  // for everybody and read-only here — so it sits under the departments as a
+  // tile of its own, open to every crew member. It is deliberately NOT in
+  // reachableDepartments(): a single-department user still goes straight to
+  // their module, and reaches this screen (and Navipedia) by Switch Department.
+  var navi = document.createElement('button');
+  navi.style.cssText = [
+    'width:100%', 'padding:14px 16px', 'border-radius:var(--radius-lg)', 'margin-top:8px',
+    'border:1px dashed var(--border-accent)', 'background:transparent', 'color:var(--text-primary)',
+    'cursor:pointer', 'display:flex', 'align-items:center', 'gap:12px', 'text-align:left'
+  ].join(';');
+  navi.innerHTML = '<span style="flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;' +
+    'background:var(--accent-glow);color:var(--accent);font-size:17px">&#9875;</span>' +
+    '<span style="flex:1"><span style="display:block;font-size:16px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">Navipedia</span>' +
+    '<span style="display:block;font-size:12px;color:var(--text-secondary);margin-top:2px">Maps, SOPs, JSAs, electrical, diagnostics — read-only</span></span>';
+  navi.onclick = openNavipedia;
+  grid.appendChild(navi);
+
   showScreen('screen-dept');
+}
+
+// navipedia.html reads who is signed in from fw_session, which is otherwise
+// only written on entering a department — so somebody who signed in without
+// "Remember me" and went straight to Navipedia from this screen would be asked
+// to sign in again there. The session is written here first; routeAfterLogin
+// reads only its user, so coming back lands on this screen as before.
+function openNavipedia() {
+  try { localStorage.setItem('fw_session', JSON.stringify({ user: currentUser, department: currentDepartment || null })); } catch (e) {}
+  window.location.href = 'navipedia.html';
 }
 
 // ── LOAD DEPARTMENT CONFIG ───────────────
@@ -3054,6 +3084,15 @@ function loadDeptConfig(dept) {
       // Signal to enterDepartment whether we used cached config
       return { deptConfig: DEPT_CONFIG, shellConfig: SHELL_CONFIG, fromCache: usedCache };
     });
+}
+
+// What a department is called on screen, where that differs from the key the
+// crew records and the config carry. 'Procurement' is still the key — it is on
+// crew records and it is what grants access (userIsProcurement, pcHasAccess) —
+// but the module has been called Inventory since 2026-09-22, the name the
+// Console's menu gives the stores register and the stock beside it.
+function deptLabel(dept) {
+  return dept === 'Procurement' ? 'Inventory' : dept;
 }
 
 function deptHomeScreen(dept) {
@@ -7011,6 +7050,74 @@ function erRemoveDroRow(btn) {
   if (row) row.remove();
 }
 
+// ── Gear sizes (utils/gear-sizes.js) ──
+// One row per item: item and size on a line, a note under them. Rows are
+// added and removed freely; what is on screen at save is what is stored.
+// One row per garment, with the size in both systems the ship buys in: a
+// Fristads jacket is ordered as C50, the same jacket is L on an American
+// label, and neither can be worked out from the other.
+function erGearRowHtml(r, idx) {
+  var L = gearSizes.LIMITS;
+  return '<div class="er-gear-row" style="padding:6px 16px 10px;border-bottom:1px solid var(--border)">'
+    + '<div style="display:flex;align-items:center;gap:8px">'
+    +   '<input type="text" class="er-gear-item er-profile-field-input" list="er-gear-items" maxlength="' + L.item + '" value="' + erEscapeAttr(r.item) + '" placeholder="Item" style="flex:1.2;min-width:0">'
+    +   '<div style="flex:1;min-width:0">'
+    +     '<div class="er-profile-field-label" style="margin-bottom:2px">US</div>'
+    +     '<input type="text" class="er-gear-us er-profile-field-input" list="er-gear-us-sizes" maxlength="' + L.size + '" value="' + erEscapeAttr(r.size_us) + '" placeholder="—" style="width:100%">'
+    +   '</div>'
+    +   '<div style="flex:1;min-width:0">'
+    +     '<div class="er-profile-field-label" style="margin-bottom:2px">EU</div>'
+    +     '<input type="text" class="er-gear-eu er-profile-field-input" list="er-gear-eu-sizes" maxlength="' + L.size + '" value="' + erEscapeAttr(r.size_eu) + '" placeholder="—" style="width:100%">'
+    +   '</div>'
+    +   '<button class="er-profile-cert-delete" onclick="erRemoveGearRow(this)" title="Remove">✕</button>'
+    + '</div>'
+    + '<input type="text" class="er-gear-note er-profile-field-input" maxlength="' + L.note + '" value="' + erEscapeAttr(r.note) + '" placeholder="Note — colour, fit, which order it came from" style="margin-top:6px;font-size:12px;padding:7px 10px">'
+    + '</div>';
+}
+
+function erGearSectionHtml(m) {
+  var g = gearSizes.gearSizesFor(m);
+  var opts = function(list) {
+    return list.map(function(v) { return '<option value="' + erEscapeAttr(v) + '">'; }).join('');
+  };
+  var hint = g.seeded ? 'No sizes on file yet — fill in what you know and tap save.' : '';
+  return '<div class="er-profile-section-label">Gear Sizes</div>'
+    + (hint ? '<div style="padding:0 16px 8px;font-size:12px;color:var(--text-muted);line-height:1.5">' + hint + '</div>' : '')
+    + '<datalist id="er-gear-items">' + opts(gearSizes.DEFAULT_ITEMS) + '</datalist>'
+    + '<datalist id="er-gear-us-sizes">' + opts(gearSizes.SIZE_SUGGESTIONS) + '</datalist>'
+    + '<datalist id="er-gear-eu-sizes">' + opts(gearSizes.SIZE_SUGGESTIONS_EU) + '</datalist>'
+    + '<div id="er-gear-rows">' + g.rows.map(function(row, n) { return erGearRowHtml(row, n); }).join('') + '</div>'
+    + '<button class="er-profile-add-cert-btn" onclick="erAddGearRow()" style="margin-bottom:4px">+ Add Item</button>';
+}
+
+function erAddGearRow() {
+  var container = document.getElementById('er-gear-rows');
+  if (!container) return;
+  var tmp = document.createElement('div');
+  tmp.innerHTML = erGearRowHtml({ item: '', size_us: '', size_eu: '', note: '' },
+    container.querySelectorAll('.er-gear-row').length);
+  container.appendChild(tmp.firstChild);
+  var input = container.lastChild.querySelector('.er-gear-item');
+  if (input) input.focus();
+}
+
+function erRemoveGearRow(btn) {
+  var row = btn.closest ? btn.closest('.er-gear-row') : null;
+  if (row) row.remove();
+}
+
+function erCollectGearRows() {
+  return gearSizes.cleanGearSizes(Array.prototype.slice.call(document.querySelectorAll('#er-gear-rows .er-gear-row'))
+    .map(function(row) {
+      return {
+        item: (row.querySelector('.er-gear-item') || {}).value,
+        size_us: (row.querySelector('.er-gear-us') || {}).value,
+        size_eu: (row.querySelector('.er-gear-eu') || {}).value,
+        note: (row.querySelector('.er-gear-note') || {}).value
+      };
+    }));
+}
+
 function erRenderProfile(el, m) {
   var contact = m.contact || {};
   var initials = (m.name || '?').split(/\s+/).filter(Boolean)
@@ -7113,6 +7220,8 @@ function erRenderProfile(el, m) {
     + '<div class="er-profile-section-label">Requested Time Off</div>'
     + '<div id="er-dro-rows">' + droRows + '</div>'
     + '<button class="er-profile-add-cert-btn" onclick="erAddDroRow()" style="margin-bottom:4px">+ Add Date Range</button>'
+
+    + erGearSectionHtml(m)
 
     + '<div class="er-profile-section-label">Certificates</div>';
 
@@ -7230,6 +7339,7 @@ async function saveErProfile() {
         };
       })
       .filter(function(d) { return d.from && (d.to || d.from) >= _todayIso; });
+    var gear_sizes = erCollectGearRows();
 
     // Optional: upload staged profile pic first (so the path lands in the same write)
     if (ER_PROFILE_STATE.pendingPicFile) {
@@ -7249,6 +7359,7 @@ async function saveErProfile() {
     if (favorite_color)  m.favorite_color      = favorite_color;
     m.linked_relief       = linked_relief;
     m.dates_requested_off = dates_requested_off;
+    m.gear_sizes          = gear_sizes;
 
     // Persist back. We re-fetch first to merge with any concurrent admin edits.
     await erSaveCrewConfigForUser(m.username, function(fileMember) {
@@ -7262,6 +7373,7 @@ async function saveErProfile() {
       if (favorite_color) fileMember.favorite_color      = favorite_color;
       fileMember.linked_relief       = linked_relief;
       fileMember.dates_requested_off = dates_requested_off;
+      fileMember.gear_sizes          = gear_sizes;
       if (m.profile_picture) fileMember.profile_picture = m.profile_picture;
     });
 
@@ -11240,7 +11352,7 @@ function addOilOpenConfirm() {
     msg += oilAttach.issuesStock(f.item)
       ? '\n\n' + f.qty.toFixed(2) + ' ' + (f.item.unit || '') + ' will be issued out of stores.'
       : '\n\nThis item is counted in "' + (f.item.unit || '?') + '", not gallons, so nothing is taken ' +
-        'off its stock. Issue the drum or pail in Procurement when it is empty.';
+        'off its stock. Issue the drum or pail in Inventory when it is empty.';
   }
   var used = f.oilFields.attachment_override || [];
   if (used.length) msg += '\n\nRecorded as an attachment override: ' + addOilOverrideWords(used) + '.';
@@ -11572,7 +11684,7 @@ async function addOilCommit() {
       catch (e) {
         console.error('[addOil] stores issue failed', e);
         alert('The oil was logged, but taking it out of stores failed (' + (e && e.message) + '). ' +
-              'Record an Issue against ' + f.item.item_id + ' in Procurement.');
+              'Record an Issue against ' + f.item.item_id + ' in Inventory.');
       }
     }
 
@@ -11607,7 +11719,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.30';
+var PWA_VERSION  = '1.31';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {
@@ -11760,7 +11872,10 @@ function ntaAlertWhy(n) {
   return sev + ' — ' + (a.rule_name || a.rule_id || 'department alert');
 }
 
-function ntaCacheKey(year) { return 'nt_events_cache_' + year; }
+// One cache for every year, shared with notes.html (NT_CACHE_KEY there) — see
+// the note on ntEventYears in notes.html for why the year cannot be the key.
+var NTA_CACHE_KEY = 'nt_events_cache_all';
+function ntaCacheKey(year) { return 'nt_events_cache_' + year; }   // the old per-year key, read once
 
 function ntaEsc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -11769,10 +11884,10 @@ function ntaEsc(s) {
 }
 
 async function ntaLoadEvents() {
-  var year = String(new Date().getFullYear());
   if (!NTA.events.length) {
     try {
-      var cached = JSON.parse(localStorage.getItem(ntaCacheKey(year)) || 'null');
+      var cached = JSON.parse(localStorage.getItem(NTA_CACHE_KEY) ||
+                              localStorage.getItem(ntaCacheKey(new Date().getFullYear())) || 'null');
       if (cached && cached.events) {
         NTA.events = cached.events;
         NTA.events.forEach(function (ev) { if (ev._fn) NTA.loadedNames[ev._fn] = true; });
@@ -11780,32 +11895,50 @@ async function ntaLoadEvents() {
     } catch (e) {}
   }
   await refreshToken();
-  var folder = 'Documents/IDMS/data/notes/events/' + year;
-  var url = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-            encodeURIComponent(folder).replace(/%2F/g, '/') + ':/children?$select=name&$top=200';
-  var names = [];
+  var auth = { headers: { Authorization: 'Bearer ' + graphToken } };
+  var base = 'Documents/IDMS/data/notes/events';
+  var gurl = function (p, tail) {
+    return 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+           encodeURIComponent(p).replace(/%2F/g, '/') + tail;
+  };
+  // Every year folder, as notes.html and the Console read them.
+  var years = [];
+  var url = gurl(base, ':/children?$select=name,folder&$top=200');
   while (url) {
-    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
-    if (resp.status === 404) return;   // no notes events yet this year
-    if (!resp.ok) throw new Error('Notes event list: ' + resp.status);
-    var page = await resp.json();
-    (page.value || []).forEach(function (it) { if (/\.json$/i.test(it.name)) names.push(it.name); });
-    url = page['@odata.nextLink'] || null;
+    var yr = await fetch(url, auth);
+    if (yr.status === 404) return;   // no notes events at all yet
+    if (!yr.ok) throw new Error('Notes event years: ' + yr.status);
+    var yp = await yr.json();
+    (yp.value || []).forEach(function (it) { if (it.folder && /^\d{4}$/.test(it.name)) years.push(it.name); });
+    url = yp['@odata.nextLink'] || null;
   }
-  names.sort();
-  var fresh = names.filter(function (n) { return !NTA.loadedNames[n]; });
+  years.sort();
+  var fresh = [];
+  for (var y = 0; y < years.length; y++) {
+    var folder = base + '/' + years[y];
+    url = gurl(folder, ':/children?$select=name&$top=200');
+    while (url) {
+      var resp = await fetch(url, auth);
+      if (resp.status === 404) break;
+      if (!resp.ok) throw new Error('Notes event list: ' + resp.status);
+      var page = await resp.json();
+      (page.value || []).forEach(function (it) {
+        if (/\.json$/i.test(it.name) && !NTA.loadedNames[it.name]) fresh.push({ folder: folder, name: it.name });
+      });
+      url = page['@odata.nextLink'] || null;
+    }
+  }
+  fresh.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
   for (var i = 0; i < fresh.length; i++) {
-    var evUrl = 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
-                encodeURIComponent(folder + '/' + fresh[i]).replace(/%2F/g, '/') + ':/content';
-    var r = await fetch(evUrl, { headers: { Authorization: 'Bearer ' + graphToken } });
+    var r = await fetch(gurl(fresh[i].folder + '/' + fresh[i].name, ':/content'), auth);
     if (!r.ok) continue;
     var ev = await r.json();
-    if (ev && ev.event_id) { ev._fn = fresh[i]; NTA.events.push(ev); NTA.loadedNames[fresh[i]] = true; }
+    if (ev && ev.event_id) { ev._fn = fresh[i].name; NTA.events.push(ev); NTA.loadedNames[fresh[i].name] = true; }
   }
   if (fresh.length) {
     try {
       var raw = JSON.stringify({ events: NTA.events });
-      if (raw.length <= 3500000) localStorage.setItem(ntaCacheKey(year), raw);
+      if (raw.length <= 3500000) localStorage.setItem(NTA_CACHE_KEY, raw);
     } catch (e) {}
   }
 }

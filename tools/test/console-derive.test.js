@@ -107,8 +107,54 @@ check('the Console loads it after the reducer it reads sfiCodes from', (() => {
   const a = html.indexOf('js/procurement-reduce.js'), b = html.indexOf('js/oil-attach.js');
   return a !== -1 && b !== -1 && a < b;
 })());
+// Gear sizes: My Profile and the Console's Crew List edit one field, and the
+// 2021 order seeds it on both — one file, so they cannot seed it differently.
+check('the gear sizes module is byte-identical too',
+  fs.readFileSync(IDMS + '/utils/gear-sizes.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/gear-sizes.js')));
+check('the Console loads it before the Crew List that uses it', (() => {
+  const html = fs.readFileSync(CON + '/src/renderer/index.html', 'utf8');
+  const a = html.indexOf('js/gear-sizes.js'), b = html.indexOf('js/crew.js');
+  return a !== -1 && b !== -1 && a < b;
+})());
+check('no inline event handlers on the Crew List',
+  (fs.readFileSync(CON + '/src/renderer/js/crew.js', 'utf8').match(inlineRe) || []).length === 0);
+// The Gear order sheet is the other screen those sizes reach, and it is all
+// selects and checkboxes — exactly the shape an inline handler gets written in.
+check('no inline event handlers on the Gear order sheet',
+  (fs.readFileSync(CON + '/src/renderer/js/gear-order.js', 'utf8').match(inlineRe) || []).length === 0);
 check('no inline event handlers on Tank Levels & Transfers',
   (fs.readFileSync(CON + '/src/renderer/js/fuel.js', 'utf8').match(inlineRe) || []).length === 0);
+// Inventory › Stock's search (§42.7a): what a search of the ship finds, and the
+// grammar it is written in. Both screens call the same two files, because a
+// search that finds different lines on different devices makes "we have none"
+// mean something different on each. proc-query.js was born in the Console,
+// where main.js also compiles it to SQL and its own tests run; stock-search.js
+// was born here. Either way, one file, two copies, byte for byte.
+check('the register grammar is byte-identical',
+  fs.readFileSync(IDMS + '/utils/proc-query.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/proc-query.js')));
+check('the stock search is byte-identical too',
+  fs.readFileSync(IDMS + '/utils/stock-search.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/stock-search.js')));
+check('the Console loads it after the grammar and reducer, before the Stock screen', (() => {
+  const html = fs.readFileSync(CON + '/src/renderer/index.html', 'utf8');
+  const q = html.indexOf('js/proc-query.js'), r = html.indexOf('js/procurement-reduce.js');
+  const a = html.indexOf('js/stock-search.js'), b = html.indexOf('js/stocklocation.js');
+  return q !== -1 && r !== -1 && a > q && a > r && b > a;
+})());
+check('and so does the phone', (() => {
+  const html = fs.readFileSync(IDMS + '/procurement.html', 'utf8');
+  const q = html.indexOf('utils/proc-query.js'), r = html.indexOf('utils/procurement-reduce.js');
+  const a = html.indexOf('utils/stock-search.js');
+  return q !== -1 && r !== -1 && a > q && a > r;
+})());
+check('the harness loads it too, or the Stock screen dies there first', (() => {
+  const html = fs.readFileSync(CON + '/src/renderer/_procurement-harness.html', 'utf8');
+  const a = html.indexOf('js/stock-search.js'), b = html.indexOf('js/stocklocation.js');
+  return a !== -1 && b > a;
+})());
+
 // §43: the phone and the Console must never compute two different plans from
 // the same inputs — one derivation, mirrored, checked here like the reducers.
 check('the plan derivation is byte-identical too',
@@ -225,6 +271,9 @@ for (const id in state.items) {
     max_qty: (maxEff === null || maxEff === undefined || maxEff === '') ? null : Number(maxEff),
     min_source: (policy.min_qty !== undefined && policy.min_qty !== null) ? 'idms'
                : ((it.min_qty === null || it.min_qty === undefined) ? null : 'tm'),
+    // Straight off the policy, null when unset — never a zero (Console §15).
+    annual_consumption: (policy.annual_consumption === null || policy.annual_consumption === undefined
+                         || policy.annual_consumption === '') ? null : Number(policy.annual_consumption),
     is_low: R.isLow(it) ? 1 : 0, critical: it.critical ? 1 : 0, blocked: it.blocked ? 1 : 0,
     archived: it.archived ? 1 : 0,
     supplier: (it.suppliers && it.suppliers[0] && it.suppliers[0].supplier_id) || null,

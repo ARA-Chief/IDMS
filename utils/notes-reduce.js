@@ -393,6 +393,92 @@
     return best;
   }
 
+  // Is this note filed against a machine? Both renderers keep an Equipment pad
+  // — a tree of asset codes — and this is what puts a note in it and takes it
+  // out of the department's own list.
+  //
+  // It is the TYPE and not the code, and the difference matters. The type says
+  // who a note is for; the code says what it is about, and the two are
+  // independent (see noteType above). An alert carries a code and is still the
+  // department's to read; an Offload List row carries one and is still work
+  // somebody picks up; an assignable note carries one so the service report it
+  // is promoted into arrives with its equipment filled in. Hiding every note
+  // that merely names a machine would empty the three pads people actually
+  // work off, which is why this asks the narrower question.
+  //
+  // The pad itself is deliberately wider than this: it lists every note
+  // carrying a code, so an assignable note about a machine is reachable from
+  // the machine as well as from the person. Nothing is hidden by being filed;
+  // only equipment-typed notes are MOVED — and hiddenByPad below says what
+  // "moved" costs them, which is less than all of it.
+  //
+  // Both halves are required, and the second is not pedantry. Choosing
+  // Equipment on the radios and then walking away leaves a note typed for a
+  // machine that names no machine: it has left every list, and the pad is a
+  // tree of codes, so there is no code for it to hang under. Such a note would
+  // exist and be reachable from nowhere. Until it names its machine it simply
+  // has not moved, and the picker sitting open under the radio is the one
+  // click that moves it.
+  //
+  // Accepts a derived note or the Console's flat `notes` row — both carry
+  // `assignment`, `assignees` and `equipment_code`, which is all this reads.
+  function isFiledAgainstEquipment(note) {
+    if (!note || !note.equipment_code) return false;
+    return noteType(note) === 'equipment';
+  }
+
+  // Does the Equipment pad take this note out of the ordinary list being drawn?
+  // `folderPath` is the folder that list IS — null for the department's own
+  // top level, for General and for a person's list.
+  //
+  // A note that has moved leaves the lists it merely fell into and keeps the
+  // one it was PUT in. Filing is an act: somebody chose `Rounds`, or dragged a
+  // note onto `Overhauls`, and answering that by emptying the folder is the app
+  // overruling them. The top-level department list is the opposite — it is
+  // where a note sits when nobody has filed it anywhere — so that is the list
+  // an equipment note leaves, along with General and every personal list.
+  //
+  // So `Rounds` fills again: the phone's rounds comments are equipment-typed
+  // and filed there, and they are now in the folder AND under their machine.
+  // Which is right. A remark about the JW pump is reachable from the round it
+  // was made on and from the pump, and it is still one note with one
+  // completion — what "one home per note" was ever protecting against is two
+  // RECORDS of one thing, not two ways in to the same one.
+  //
+  // Same arguments as isFiledAgainstEquipment, plus the folder of the list.
+  function hiddenByPad(note, folderPath) {
+    if (!isFiledAgainstEquipment(note)) return false;   // it never moved
+    if (!note.folder) return true;                      // unfiled: the pad only
+    return note.folder !== (folderPath || null);        // its own folder keeps it
+  }
+
+  // How many rows a Recents list mirrors. Both renderers draw two of them —
+  // one for the department in hand plus General, one vessel-wide — and neither
+  // is a place: nothing is filed there, and a note shown there still lives
+  // wherever it lives. A fixed ten because the list answers "what has just
+  // been touched", and a longer one stops answering it.
+  var RECENT_LIMIT = 10;
+
+  // Recency is `updated`, which every mutation in the reducer stamps —
+  // including the ones with nothing to show for themselves, like a star. A
+  // note that has never been edited falls back to its creation, so a stream
+  // written before `updated` existed still sorts somewhere sensible rather
+  // than at the bottom forever.
+  function recencyOf(note) {
+    if (!note) return '';
+    return note.updated || note.created || '';
+  }
+
+  // Newest first. Does not mutate, and does not apply the pinned/starred order
+  // the ordinary lists use — a mirror of what was last touched is the one list
+  // on either screen where a star must not jump the queue.
+  function byRecency(notes) {
+    return (notes || []).slice().sort(function (a, b) {
+      var ra = recencyOf(a), rb = recencyOf(b);
+      return ra === rb ? 0 : (ra > rb ? -1 : 1);
+    });
+  }
+
   // Is this note on that person's plate? crew_id is the key; a username is
   // accepted so a caller that only knows a login can still ask.
   function isAssignedTo(note, crewIdOrUsername) {
@@ -411,6 +497,11 @@
   var api = {
     reduce: reduce,
     noteType: noteType,
+    isFiledAgainstEquipment: isFiledAgainstEquipment,
+    hiddenByPad: hiddenByPad,
+    byRecency: byRecency,
+    recencyOf: recencyOf,
+    RECENT_LIMIT: RECENT_LIMIT,
     taskMetaFromComments: taskMetaFromComments,
     commentProse: commentProse,
     TASK_META_FIELDS: TASK_META_FIELDS,

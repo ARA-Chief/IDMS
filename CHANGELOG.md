@@ -8,6 +8,73 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.31 — 2026-09-20
+
+- **A note about a machine now lives in one place.** Set a note's type to
+  **Equipment** and name the machine, and it leaves its list for the
+  **Equipment** band at the foot of the Notes sidebar — the tree of component
+  codes. No more finding the same note twice.
+- Alerts, To Order and the Offload List are untouched: a note there that
+  names a machine is still on the list somebody works off. Only notes whose
+  *type* is Equipment move, and one you have not given a machine to yet stays
+  where it is until you pick one.
+- **A folder keeps what you filed into it.** Only the lists a note fell into
+  by default — the department's own list, General, somebody's personal list —
+  let it go. Rounds comments stay in the Rounds folder and appear under their
+  machine as well, so you can reach one from the round or from the machine.
+  It is still one note either way.
+- **Two new Recents rows**, one for the vessel and one for your department,
+  each showing the last ten notes anybody edited — most recent first, with a
+  line saying which list each one came out of. Open, edit or delete them from
+  there like any other note. Nothing is filed into a Recents row.
+- **Gear sizes on My Profile.** A new Gear Sizes section lists what you wear —
+  gloves, boots, trousers, jacket, shirt and the rest — with a size and a note
+  for each. Add a row for anything missing, remove any you don't need, and tap
+  save. Engine room crew: your sizes from your most recent gear order are
+  already filled in, with the year of the order in the note — check them and
+  fix anything that has changed. The Console's Crew List shows and edits the
+  same sizes.
+- **Your sizes, in US and EU.** Each garment on your Gear Sizes now has both —
+  a Fristads jacket is C50 on the order form and L on an American label, and
+  the ship buys both ways. Fill in whichever you know. The engine room's are
+  already filled in from the last order each person was on.
+- **Procurement is now called Inventory**, the name the Console gives it. Same
+  tile, same people can open it. Inside, the register is **Items** and Stock
+  Location is **Stock**, as on the Console.
+- **Stock searches the whole ship.** The box at the top of Stock now finds
+  items, not only spaces — type a name, a maker or a part number and every line
+  it finds sits under the shelf it is on, with its own count box and a ✓ for
+  "seen, and the book is right". A thing kept on two shelves is a line on each,
+  so a count always lands on the shelf you typed it against. Plain words still
+  find a space by name too.
+- **The same searches as the Console.** `belt green` for both words,
+  `belt OR sling*`, `-green` to leave something out, `"bow thruster"` for a
+  phrase, and `maker:` `supplier:` `pn:` to look in one column — `pn:` checks
+  both part numbers at once. Suggestions appear under the box as you type; tap
+  one to use it. Every shelf's own search box works the same way.
+- **Every line shows who makes it and who sells it** — maker, maker's part
+  number, supplier and supplier's ref — so the number on the box in your hand
+  can be matched whichever of them printed it.
+- **Receive, Move and Open from the line.** Tap a line's name: under it are
+  **Receive into** and **Move stock from** that shelf, and from a search,
+  **Open** to go to the whole shelf.
+- **Items search looks at makers and suppliers too**, the way the Console's
+  does, and an item shows its maker's part number and its annual use. The
+  Minimum & policy form has the Annual consumption box the Console has — leave
+  it blank until somebody knows the figure.
+- **Notes from last year stay put on New Year's Day.** Notes and the alerts on
+  the home screen only read this year's notes, so on 1 January every note
+  still open from December would have disappeared here while the Console kept
+  it — and anything written on one in January would have been lost. They read
+  every year now, the way the Console does.
+- **Navipedia, on the department screen.** Under the departments is a
+  Navipedia tile: the vessel's maps and orientation pages, the SOP, job and KSA
+  cards as they print, the JSAs, Electrical Distribution — what a breaker feeds,
+  what a machine hangs off, and where the panel is on the deck drawing — and
+  Diagnostics, what the record says about how a machine fails. Read-only: edits,
+  sign-offs and printing stay on the Console. Anything you have opened once
+  stays readable with no signal, and the home screen says how old your copy is.
+
 ## 1.30 — 2026-09-18
 
 - **Editing a requisition no longer empties boxes this app cannot show.** A
