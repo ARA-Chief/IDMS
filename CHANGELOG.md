@@ -67,6 +67,13 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
   still open from December would have disappeared here while the Console kept
   it — and anything written on one in January would have been lost. They read
   every year now, the way the Console does.
+- **Navipedia, on the department screen.** Under the departments is a
+  Navipedia tile: the vessel's maps and orientation pages, the SOP, job and KSA
+  cards as they print, the JSAs, Electrical Distribution — what a breaker feeds,
+  what a machine hangs off, and where the panel is on the deck drawing — and
+  Diagnostics, what the record says about how a machine fails. Read-only: edits,
+  sign-offs and printing stay on the Console. Anything you have opened once
+  stays readable with no signal, and the home screen says how old your copy is.
 
 ## 1.30 — 2026-09-18
 
