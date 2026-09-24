@@ -8,6 +8,14 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.32 — 2026-09-24
+
+- **Navipedia is filled in.** The Console has sent its first copy, so the
+  Navipedia tile on the department screen now opens the vessel's maps, the SOP,
+  job and KSA cards, the JSAs, Electrical Distribution and Diagnostics. The
+  first time you open a section it downloads; after that it reads with no
+  signal. The Console sends a fresh copy by itself at least once a day.
+
 ## 1.31 — 2026-09-20
 
 - **A note about a machine now lives in one place.** Set a note's type to
