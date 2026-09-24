@@ -115,7 +115,9 @@ if (!CON) {
   const i = pub.indexOf('function npmFingerprint');
   const ctx = {};
   vm.createContext(ctx);
-  vm.runInContext(pub.slice(i, pub.indexOf('\n}\n', i) + 2), ctx);
+  // Up to the closing brace at column 0, whatever the line endings (CRLF on a
+  // Windows checkout).
+  vm.runInContext(pub.slice(i).match(/^[\s\S]*?\r?\n\}/)[0], ctx);
   const blocks = ['```yaml\n- id: 1\n  step: Stop the engine\n```', 'ÅÆØ — unicode, and a long line '.repeat(40), ''];
   check('and gives the Console\'s answer for every block', blocks.every(b => ctx.npmFingerprint(b) === S.nvFingerprint(b)));
 
