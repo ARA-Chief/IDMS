@@ -2965,7 +2965,35 @@ function showDeptPicker() {
     grid.appendChild(btn);
   });
 
+  // Navipedia is not a department — it is the vessel's reference, the same
+  // for everybody and read-only here — so it sits under the departments as a
+  // tile of its own, open to every crew member. It is deliberately NOT in
+  // reachableDepartments(): a single-department user still goes straight to
+  // their module, and reaches this screen (and Navipedia) by Switch Department.
+  var navi = document.createElement('button');
+  navi.style.cssText = [
+    'width:100%', 'padding:14px 16px', 'border-radius:var(--radius-lg)', 'margin-top:8px',
+    'border:1px dashed var(--border-accent)', 'background:transparent', 'color:var(--text-primary)',
+    'cursor:pointer', 'display:flex', 'align-items:center', 'gap:12px', 'text-align:left'
+  ].join(';');
+  navi.innerHTML = '<span style="flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;' +
+    'background:var(--accent-glow);color:var(--accent);font-size:17px">&#9875;</span>' +
+    '<span style="flex:1"><span style="display:block;font-size:16px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">Navipedia</span>' +
+    '<span style="display:block;font-size:12px;color:var(--text-secondary);margin-top:2px">Maps, SOPs, JSAs, electrical, diagnostics — read-only</span></span>';
+  navi.onclick = openNavipedia;
+  grid.appendChild(navi);
+
   showScreen('screen-dept');
+}
+
+// navipedia.html reads who is signed in from fw_session, which is otherwise
+// only written on entering a department — so somebody who signed in without
+// "Remember me" and went straight to Navipedia from this screen would be asked
+// to sign in again there. The session is written here first; routeAfterLogin
+// reads only its user, so coming back lands on this screen as before.
+function openNavipedia() {
+  try { localStorage.setItem('fw_session', JSON.stringify({ user: currentUser, department: currentDepartment || null })); } catch (e) {}
+  window.location.href = 'navipedia.html';
 }
 
 // ── LOAD DEPARTMENT CONFIG ───────────────

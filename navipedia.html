@@ -1,0 +1,2229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a1628">
+<title>Navipedia — IDMS</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-0: #0a1628;
+    --bg-1: #0f1e38;
+    --bg-2: #162440;
+    --bg-3: #1e2f4d;
+    --bg-input: #0f1e38;
+    --accent: #00c2ff;
+    --accent-dim: #0090c0;
+    --accent-glow: rgba(0, 194, 255, 0.15);
+    --danger: #ff4d4d;
+    --warning: #ffaa00;
+    --success: #00ff99;
+    --text-primary: #e8f0fe;
+    --text-secondary: #7a90b0;
+    --text-muted: #4a5c78;
+    --border: rgba(255,255,255,0.08);
+    --border-md: rgba(255,255,255,0.16);
+    --border-accent: rgba(0, 194, 255, 0.3);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --font: 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    --mono: ui-monospace, 'SF Mono', Consolas, 'Courier New', monospace;
+  }
+
+  html, body { height: 100%; background: var(--bg-0); color: var(--text-primary); font-family: var(--font); font-size: 15px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
+  button { font-family: inherit; }
+  code { font-family: var(--mono); font-size: 0.9em; background: var(--bg-3); padding: 0 4px; border-radius: 4px; }
+
+  .screen { display: none; min-height: 100%; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* ── Sign-in ─────────────────────────────────────────────── */
+  .center-card { margin: auto; width: min(360px, 92vw); background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px 28px; text-align: center; }
+  .center-card h1 { font-size: 22px; margin-bottom: 6px; }
+  .center-card .sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 22px; line-height: 1.5; }
+  .btn { display: inline-block; width: 100%; padding: 12px 16px; border: none; border-radius: var(--radius-md); background: var(--accent); color: #04263a; font-weight: 600; font-size: 15px; cursor: pointer; }
+  .btn.ghost { background: var(--bg-3); color: var(--text-primary); margin-top: 10px; }
+  .err { color: var(--danger); font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+  /* ── The bar ─────────────────────────────────────────────── */
+  .bar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px;
+    padding: calc(10px + env(safe-area-inset-top)) 10px 10px; background: var(--bg-1); border-bottom: 1px solid var(--border); }
+  .bar-back { flex: none; width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--accent); font-size: 26px; line-height: 1; cursor: pointer; }
+  .bar-back[hidden] { display: none; }
+  .bar-titles { flex: 1; min-width: 0; }
+  .bar-title { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-sub { font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-btn { flex: none; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-secondary); padding: 7px 10px; font-size: 13px; cursor: pointer; }
+  #reauth-bar { display: none; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(255,170,0,.10); border-bottom: 1px solid rgba(255,170,0,.35); font-size: 12.5px; color: var(--text-secondary); }
+  #reauth-bar .btn { width: auto; padding: 7px 12px; font-size: 13px; flex: none; }
+
+  .body { flex: 1; padding: 12px 12px calc(40px + env(safe-area-inset-bottom)); max-width: 900px; width: 100%; margin: 0 auto; }
+  .loading { padding: 40px 10px; text-align: center; color: var(--text-secondary); font-size: 14px; }
+  .empty { padding: 18px 6px; color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
+  .note-box { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin: 10px 0; }
+  .warn-box { background: rgba(255,170,0,.08); border: 1px solid rgba(255,170,0,.35); border-radius: var(--radius-md); padding: 10px 12px; font-size: 13px; line-height: 1.5; margin: 10px 0; }
+  .dim { color: var(--text-secondary); }
+  .small { font-size: 12px; }
+
+  /* ── Home ────────────────────────────────────────────────── */
+  .group-head { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 18px 4px 8px; }
+  .group-head:first-child { margin-top: 6px; }
+  .tile { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; margin-bottom: 8px; border-radius: var(--radius-md);
+    background: var(--bg-2); border: 1px solid var(--border); color: var(--text-primary); text-align: left; cursor: pointer; }
+  .tile:active { background: var(--bg-3); }
+  .tile-ico { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-glow); color: var(--accent); font-size: 18px; }
+  .tile-main { flex: 1; min-width: 0; }
+  .tile-name { display: block; font-size: 15.5px; font-weight: 600; }
+  .tile-desc { display: block; font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; line-height: 1.4; }
+  .tile-chev { color: var(--text-muted); font-size: 20px; }
+  .pub { font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin: 18px 4px 0; }
+  .pub.stale { color: var(--warning); }
+
+  /* ── Lists ───────────────────────────────────────────────── */
+  .search { position: sticky; top: calc(59px + env(safe-area-inset-top)); z-index: 10; background: var(--bg-0); padding: 2px 0 8px; }
+  .search input { width: 100%; padding: 11px 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-size: 16px; font-family: var(--font); }
+  .search input:focus { outline: none; border-color: var(--border-accent); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 8px; }
+  .chip-btn { padding: 6px 11px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text-secondary); font-size: 12.5px; cursor: pointer; }
+  .chip-btn.on { background: var(--accent-glow); border-color: var(--border-accent); color: var(--accent); }
+  .chip-btn span { color: var(--text-muted); margin-left: 3px; }
+  .count { font-size: 12px; color: var(--text-muted); margin: 2px 4px 6px; }
+  .list-group { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); padding: 14px 4px 6px; }
+  .row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 9px 10px; border: none; border-bottom: 1px solid var(--border);
+    background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; font-size: 14.5px; }
+  .row:active { background: var(--bg-2); }
+  .row-id { flex: none; font-family: var(--mono); font-size: 12.5px; color: var(--accent); min-width: 64px; }
+  .row-main { flex: 1; min-width: 0; line-height: 1.35; }
+  .row-sub { display: block; font-size: 12px; color: var(--text-secondary); margin-top: 1px; }
+  .row .tag { flex: none; }
+  .tag { display: inline-block; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-md); color: var(--text-secondary); white-space: nowrap; }
+  .tag.ok { border-color: rgba(0,255,153,.35); color: var(--success); }
+  .tag.warn { border-color: rgba(255,170,0,.45); color: var(--warning); }
+  .tag.dash { border-style: dashed; }
+  .tag.accent { border-color: var(--border-accent); color: var(--accent); }
+  .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: transparent; border: 1px solid var(--border-md); }
+  .dot.current { background: var(--success); border-color: var(--success); }
+  .dot.behind { background: var(--warning); border-color: var(--warning); }
+  .dot.note { background: var(--accent); border-color: var(--accent); }
+  .dot.under { border-color: var(--accent); }
+  mark { background: rgba(0,194,255,.28); color: inherit; border-radius: 2px; }
+
+  /* ── A page ──────────────────────────────────────────────── */
+  .head { margin: 4px 2px 10px; }
+  .kicker { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); }
+  .title { font-size: 20px; font-weight: 700; line-height: 1.25; margin-top: 2px; }
+  .title .tid { font-family: var(--mono); color: var(--accent); font-size: 15px; font-weight: 600; margin-right: 6px; }
+  .title .soft { color: var(--text-secondary); font-weight: 500; }
+  .meta { font-size: 12.5px; color: var(--text-secondary); margin-top: 4px; line-height: 1.5; }
+  .path { font-size: 11px; color: var(--text-muted); margin-top: 3px; word-break: break-word; }
+  .seg { display: flex; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 3px; margin: 8px 0; overflow-x: auto; }
+  .seg button { flex: 1 0 auto; padding: 8px 10px; border: none; border-radius: 8px; background: transparent; color: var(--text-secondary); font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .seg button.on { background: var(--bg-3); color: var(--text-primary); font-weight: 600; }
+
+  .banner { border-radius: var(--radius-md); padding: 10px 12px; font-size: 13px; line-height: 1.5; margin: 8px 0; background: var(--bg-2); border: 1px solid var(--border); color: var(--text-secondary); }
+  .banner ul { margin: 6px 0 6px 18px; }
+  .banner.behind { background: rgba(255,170,0,.08); border-color: rgba(255,170,0,.35); color: var(--text-primary); }
+  .banner.generated { border-color: var(--border-accent); }
+
+  /* The note, as read */
+  .md { font-size: 15px; line-height: 1.6; color: var(--text-primary); word-wrap: break-word; }
+  .md p { margin: 0 0 10px; }
+  .md .h { margin: 18px 0 8px; line-height: 1.3; }
+  .md h2.h { font-size: 19px; } .md h3.h { font-size: 17px; } .md h4.h, .md h5.h, .md h6.h { font-size: 15px; }
+  .md ul.list, .md ol.list { margin: 0 0 10px 22px; }
+  .md li { margin: 3px 0; }
+  .md hr { border: none; border-top: 1px solid var(--border-md); margin: 14px 0; }
+  .md pre { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; margin: 0 0 10px; white-space: pre; }
+  .md .table-wrap { overflow-x: auto; margin: 0 0 12px; -webkit-overflow-scrolling: touch; }
+  .md table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+  .md th, .md td { border: 1px solid var(--border-md); padding: 6px 8px; text-align: left; vertical-align: top; }
+  .md th { background: var(--bg-2); font-weight: 600; }
+  .md .callout { border-left: 3px solid var(--accent); background: var(--bg-2); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 8px 12px; margin: 0 0 12px; }
+  .md .callout-warning, .md .callout-caution, .md .callout-danger { border-left-color: var(--warning); }
+  .md .callout-title { font-weight: 600; margin-bottom: 4px; }
+  .md .callout p:last-child { margin-bottom: 0; }
+  .md .embed { border: 1px solid var(--border-accent); border-radius: var(--radius-md); margin: 0 0 12px; overflow: hidden; }
+  .md .embed-src { font-size: 12px; color: var(--text-secondary); background: var(--bg-2); padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .md .embed-body { padding: 10px 12px 2px; }
+  .md .embed-broken { border-color: rgba(255,77,77,.5); padding: 8px 10px; font-size: 13px; color: var(--text-secondary); }
+  .lnk { color: var(--accent); text-decoration: underline; text-decoration-color: rgba(0,194,255,.4); text-underline-offset: 2px; cursor: pointer; background: none; border: none; font: inherit; padding: 0; text-align: left; }
+  .lnk.ambiguous { text-decoration-style: dotted; }
+  .lnk.far { color: var(--text-primary); text-decoration-style: dashed; }
+  .dangling { border-bottom: 1px dashed var(--text-muted); color: var(--text-secondary); }
+  .extlink { border-bottom: 1px dotted var(--text-muted); }
+  .steps { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px 10px 30px; margin: 0 0 14px; }
+  .steps-head { margin-left: -18px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); margin-bottom: 4px; }
+
+  /* The paper — cards, JSAs and the diagnostics report, as they print */
+  .paper-wrap { background: #fff; border-radius: var(--radius-md); overflow: hidden; margin: 10px 0; }
+  .paper { display: block; width: 100%; border: 0; min-height: 200px; background: #fff; }
+  .usedby { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; font-size: 12.5px; }
+  .usedby .lbl { color: var(--text-secondary); margin-right: 2px; }
+  .pill { padding: 4px 9px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--border); color: var(--accent); font-family: var(--mono); font-size: 12px; cursor: pointer; }
+
+  /* ── Electrical ──────────────────────────────────────────── */
+  .sec { margin: 16px 0; }
+  .sec > h3 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; }
+  .sec > h3 .sub { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--text-muted); }
+  .caveat { margin: 16px 0; padding: 10px 12px; border-radius: var(--radius-md); background: rgba(255,170,0,.08); border: 1px solid rgba(255,170,0,.35); font-size: 12.5px; line-height: 1.5; }
+  .facts { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-bottom: 8px; }
+  .facts th { text-align: left; font-weight: 500; color: var(--text-secondary); padding: 5px 8px 5px 0; width: 38%; vertical-align: top; }
+  .facts td { padding: 5px 0; vertical-align: top; }
+  .figs { display: flex; gap: 14px; flex-wrap: wrap; margin: 6px 0; }
+  .fig { margin: 0; }
+  .fig figcaption { font-size: 11px; color: var(--text-secondary); margin-top: 2px; max-width: 220px; }
+  .fig svg text { font-size: 10px; fill: var(--text-secondary); font-family: inherit; }
+  .deck rect { fill: var(--bg-2); stroke: var(--border-md); }
+  .deck-on rect { fill: var(--accent); fill-opacity: .18; stroke: var(--accent); }
+  .fig svg .deck-on text { fill: var(--text-primary); font-weight: 600; }
+  .room { fill: var(--bg-2); stroke: var(--border-md); }
+  .fig svg .room-name { font-size: 10px; }
+  .fig svg .axis { font-size: 8.5px; letter-spacing: .08em; }
+  .rdot { fill: var(--accent); stroke: var(--bg-1); stroke-width: 2; }
+  .band { fill: var(--accent); fill-opacity: .3; }
+  .drawing-cap { font-size: 12px; color: var(--text-secondary); margin: 10px 0 4px; line-height: 1.45; }
+  .drawing { position: relative; width: 100%; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .drawing img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .drawing img[hidden] { display: none; }
+  .drawing-wait { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: #666; }
+  .marker { position: absolute; transform: translate(-7px, -7px); display: flex; align-items: center; gap: 3px; background: none; border: none; padding: 0; cursor: pointer; }
+  .marker-dot { width: 14px; height: 14px; border-radius: 50%; background: #0a84c6; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); flex: none; }
+  .marker-label { font-size: 9.5px; font-weight: 600; color: #0b2d40; background: rgba(255,255,255,.9); border: 1px solid rgba(10,132,198,.6); border-radius: 3px; padding: 0 3px; white-space: nowrap; }
+  .marker-on .marker-dot { background: #e0443a; animation: pulse 1.6s ease-out infinite; }
+  .marker-on .marker-label { border-color: #e0443a; color: #5a0f0a; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(224,68,58,.65); } 100% { box-shadow: 0 0 0 16px rgba(224,68,58,0); } }
+  @media (prefers-reduced-motion: reduce) { .marker-on .marker-dot { animation: none; } }
+  .tree { list-style: none; padding-left: 14px; border-left: 1px solid var(--border-md); margin: 2px 0 2px 2px; }
+  .tree li { padding: 4px 0; font-size: 13.5px; line-height: 1.5; }
+  .arrow { color: var(--text-muted); }
+  .brtable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .brtable th { text-align: left; font-weight: 500; font-size: 11.5px; color: var(--text-secondary); border-bottom: 1px solid var(--border-md); padding: 5px 6px; }
+  .brtable td { padding: 7px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .brtable .num { width: 40px; text-align: right; font-family: var(--mono); }
+  .brtable tr.empty td { color: var(--text-muted); }
+  .ecard { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 8px; }
+  .ecard-head { margin-bottom: 4px; }
+  .serves-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; padding: 5px 0; font-size: 13.5px; }
+  .kind { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; padding: 1px 6px; border-radius: 4px; background: var(--bg-3); color: var(--text-secondary); }
+  .kind.panel { color: var(--accent); } .kind.breaker { color: var(--warning); } .kind.item { color: var(--success); }
+  .ladder-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .ladder-deck { font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; }
+  .ladder-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill.dash { border-style: dashed; }
+  details.chain { margin-top: 6px; font-size: 13px; }
+  details.chain summary { color: var(--text-secondary); cursor: pointer; }
+  .diag li { margin: 6px 0 6px 18px; font-size: 13.5px; line-height: 1.5; }
+
+  /* ── Diagnostics ─────────────────────────────────────────── */
+  .node { display: flex; align-items: center; gap: 6px; min-height: 42px; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 14px; }
+  .node.retired { opacity: .55; }
+  .node.hist .node-code { color: var(--warning); }
+  .twisty { flex: none; width: 30px; height: 30px; border: none; background: none; color: var(--text-secondary); font-size: 13px; cursor: pointer; transition: transform .12s; }
+  .twisty.open { transform: rotate(90deg); }
+  .twisty-sp { flex: none; width: 30px; }
+  .node-code { flex: none; font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .node-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text-secondary); padding: 4px 2px 8px; }
+  .check input { width: 18px; height: 18px; }
+  .field-row { display: flex; gap: 8px; margin: 6px 0; }
+  .field-row input { flex: 1; min-width: 0; padding: 10px 11px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary); font-size: 16px; font-family: var(--font); }
+  .field-row button { flex: none; padding: 0 14px; border-radius: var(--radius-md); border: 1px solid var(--border-accent); background: var(--accent-glow); color: var(--accent); font-size: 14px; cursor: pointer; }
+  .field-lbl { font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+
+  #toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--border-md); color: var(--text-primary);
+    padding: 10px 14px; border-radius: var(--radius-md); font-size: 13.5px; max-width: 90vw; box-shadow: 0 6px 24px rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 50; }
+  #toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ── Microsoft sign-in (only when this browser has no session) ── -->
+<div class="screen active" id="screen-auth">
+  <div class="center-card">
+    <h1>Navipedia</h1>
+    <div class="sub">The vessel's orientation, cards and references — read-only on the phone.</div>
+    <button class="btn" id="btn-msauth" onclick="nvMsSignIn()">Sign in with Microsoft</button>
+    <div class="err" id="auth-err"></div>
+    <button class="btn ghost" onclick="location.href='index.html'">Back to IDMS</button>
+  </div>
+</div>
+
+<!-- ── No IDMS session in this browser ─────────────────────── -->
+<div class="screen" id="screen-noidms">
+  <div class="center-card">
+    <h1>Sign in to IDMS first</h1>
+    <div class="sub">Navipedia opens from the department screen once you are signed in to IDMS on this phone.</div>
+    <button class="btn" onclick="location.href='index.html'">Open IDMS</button>
+  </div>
+</div>
+
+<!-- ── App ─────────────────────────────────────────────────── -->
+<div class="screen" id="screen-app">
+  <div class="bar">
+    <button class="bar-back" id="bar-back" aria-label="Back" onclick="nvBack()">‹</button>
+    <div class="bar-titles">
+      <div class="bar-title" id="bar-title">Navipedia</div>
+      <div class="bar-sub" id="bar-sub"></div>
+    </div>
+    <button class="bar-btn" id="bar-home" onclick="nvHomeOrIdms()">IDMS</button>
+  </div>
+  <div id="reauth-bar">
+    <span style="flex:1"><b>Microsoft sign-in has expired.</b> What is already on this phone stays readable.</span>
+    <button class="btn" onclick="nvReconnect()">Sign in again</button>
+  </div>
+  <div class="body" id="body"></div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+<!-- The Console's own pure modules, mirrored byte-identical (tools/test/
+     console-derive.test.js): the same code turns the same data into the same
+     page on both doors. -->
+<script src="utils/ksa-view.js"></script>
+<script src="utils/navipedia-cards-print.js"></script>
+<script src="utils/jsa-form.js"></script>
+<script src="utils/electrical-lookup.js"></script>
+<script src="utils/diagnostics-ladder.js"></script>
+<script src="utils/diagnostics-report.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════
+// IDMS Navipedia — standalone page, read-only.
+//
+// The Console's Navipedia (IDMS-Console/docs/navipedia*.md) reads the vault on
+// the ship's server. A phone cannot reach that share, so the Console publishes
+// what its screens read to OneDrive, and this page reads it:
+//
+//   Documents/IDMS/data/navipedia/
+//     manifest.json            what was published, when, by whom; a
+//                              fingerprint per file
+//     range.json               the 0.8 Navipedia range, its links and embeds
+//     range-lane.json          the lane notes the range links to (one hop)
+//     cards.json               the SOP / Job / KSA card corpus
+//     jsa.json                 the JSAs
+//     electrical.json          the panel mirror, spaces, deck canvases
+//     electrical-images.json   the deck drawings
+//     diagnostics.json         failure history, register, TM critical flags
+//     diagnostics-jobs.json    the job-history mirror
+//     letterhead.json          Report Setup's letterhead and the vessel name
+//
+// IDMS-Console/docs/navipedia-mobile.md is the contract. Each file is fetched
+// the first time its section is opened and kept on the phone (IndexedDB), and
+// fetched again only when the manifest's fingerprint for it changes — so a
+// phone that has opened a section once can read it offline.
+//
+// Parity with the Console, less authoring: nothing here writes anything, to the
+// vault or to OneDrive. The Console's Edit, Mark reviewed, New map, New JSA,
+// Sign, Upkeep, Print, Save PDF and Open in Obsidian have no button here.
+// ════════════════════════════════════════════════════════════
+
+var ONEDRIVE_BASE = 'Documents/IDMS';
+var NV_DIR = ONEDRIVE_BASE + '/data/navipedia';
+// The bundle schema this page reads (navipedia-mobile.js BUNDLE_VERSION).
+var NV_BUNDLE_VERSION = 1;
+// A copy older than this is said to be old, loudly.
+var NV_STALE_DAYS = 3;
+
+var MSAL_CONFIG = {
+  auth: {
+    clientId:    '5f7c6099-c379-4cfa-ab6a-92bf33b812aa',
+    authority:   'https://login.microsoftonline.com/816c3d02-39d9-4940-9b6f-08b4cf0321ce',
+    redirectUri: 'https://ara-chief.github.io/IDMS/'
+  },
+  cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+};
+var MSAL_SCOPES = ['User.Read', 'Files.ReadWrite', 'offline_access'];
+
+var NV = {
+  msal: null, account: null, user: null,
+  manifest: null, manifestFrom: '',   // 'network' | 'phone'
+  files: {},                          // name -> parsed file (memory)
+  loading: {},                        // name -> Promise
+  stack: [],                          // the views, newest last
+  // Per-section state that outlives a view
+  pagesFilter: '',
+  cardQuery: { sops: '', jobs: '', ksas: '' }, ksaFilter: 'all', cardFormat: 'sheet',
+  jsaQuery: '', jsaFilter: 'all',
+  elecQuery: '',
+  diag: { q: '', only: false, expanded: {}, tier: 'tech', techFilter: '', sweepQ: '' },
+  // Derived indexes, built once per file
+  ix: {}
+};
+
+// ── Small things ────────────────────────────────────────────
+
+function nvEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function nvShow(id) {
+  document.querySelectorAll('.screen').forEach(function (s) { s.classList.toggle('active', s.id === id); });
+}
+var nvToastTimer = null;
+function nvToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(nvToastTimer);
+  nvToastTimer = setTimeout(function () { t.classList.remove('on'); }, 3200);
+}
+function nvAgo(iso) {
+  var t = Date.parse(iso);
+  if (!isFinite(t)) return '';
+  var m = Math.round((Date.now() - t) / 60000);
+  if (m < 2) return 'just now';
+  if (m < 60) return m + ' min ago';
+  var h = Math.round(m / 60);
+  if (h < 36) return h + ' h ago';
+  return Math.round(h / 24) + ' days ago';
+}
+// FNV-1a, as the Console's publish keys each step block
+// (navipedia-mobile-publish.js npmFingerprint). Change both or neither.
+function nvFingerprint(text) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return ('00000000' + h.toString(16)).slice(-8) + '-' + text.length.toString(36);
+}
+function nvHighlight(text, query) {
+  var terms = String(query || '').trim().toLowerCase().split(/\s+/)
+    .filter(function (t) { return t.length > 1 && ['or', 'and', 'not'].indexOf(t) === -1 && t.charAt(0) !== '-'; });
+  var out = nvEsc(text);
+  terms.forEach(function (t) {
+    var re = new RegExp('(' + nvEsc(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig');
+    out = out.replace(/(^|>)([^<]*)/g, function (m, lead, seg) { return lead + seg.replace(re, '<mark>$1</mark>'); });
+  });
+  return out;
+}
+
+// ── Microsoft sign-in (notes.html's, verbatim in shape) ─────
+
+function nvNeedsInteraction(e) {
+  if (!e) return false;
+  var code = e.errorCode || '';
+  return e.name === 'InteractionRequiredAuthError' ||
+         code === 'interaction_required' || code === 'login_required' ||
+         code === 'consent_required'     || code === 'no_account_error' ||
+         code === 'monitor_window_timeout';
+}
+async function nvToken(force) {
+  try {
+    var res = await NV.msal.acquireTokenSilent({ scopes: MSAL_SCOPES, account: NV.account, forceRefresh: !!force });
+    document.getElementById('reauth-bar').style.display = 'none';
+    return res.accessToken;
+  } catch (e) {
+    if (nvNeedsInteraction(e)) {
+      document.getElementById('reauth-bar').style.display = 'flex';
+      var err = new Error('Microsoft sign-in has expired');
+      err.nvReauth = true;
+      throw err;
+    }
+    throw e;
+  }
+}
+async function nvReconnect() {
+  try {
+    var res = await NV.msal.acquireTokenPopup({ scopes: MSAL_SCOPES, account: NV.account });
+    if (res && res.account) NV.account = res.account;
+    document.getElementById('reauth-bar').style.display = 'none';
+    await nvLoadManifest();
+    nvRender();
+  } catch (e) { nvToast('Could not sign in — ' + (e && e.message ? e.message : e)); }
+}
+function nvGraphUrl(path) {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/' + encodeURIComponent(path).replace(/%2F/g, '/') + ':/content';
+}
+async function nvFetch(url) {
+  var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + await nvToken(false) }, cache: 'no-store' });
+  if (resp.status === 401) resp = await fetch(url, { headers: { Authorization: 'Bearer ' + await nvToken(true) }, cache: 'no-store' });
+  return resp;
+}
+function nvInit() {
+  try {
+    NV.msal = new msal.PublicClientApplication(MSAL_CONFIG);
+    NV.msal.handleRedirectPromise().then(function () {
+      var accounts = NV.msal.getAllAccounts();
+      if (accounts.length > 0) { NV.account = accounts[0]; nvAfterMsAuth(); }
+    }).catch(function (e) { nvAuthError(e); });
+  } catch (e) { nvAuthError(e); }
+}
+function nvAuthError(e) {
+  document.getElementById('auth-err').textContent = 'Sign-in problem: ' + (e && e.message ? e.message : e);
+}
+function nvMsSignIn() {
+  document.getElementById('auth-err').textContent = '';
+  NV.msal.loginPopup({ scopes: MSAL_SCOPES })
+    .then(function (r) { NV.account = r.account; nvAfterMsAuth(); })
+    .catch(function (e) { nvAuthError(e); });
+}
+// The IDMS session this browser already holds (notes.html ntSavedIdmsUser).
+function nvSavedIdmsUser() {
+  try {
+    var s = JSON.parse(localStorage.getItem('fw_session') || 'null');
+    if (s && s.user && s.user.username) return s.user;
+  } catch (e) {}
+  try {
+    var u = JSON.parse(localStorage.getItem('fw_user') || 'null');
+    if (u && u.username) return u;
+  } catch (e) {}
+  return null;
+}
+async function nvAfterMsAuth() {
+  NV.user = nvSavedIdmsUser();
+  if (!NV.user) { nvShow('screen-noidms'); return; }
+  nvShow('screen-app');
+  document.getElementById('body').innerHTML = '<div class="loading">Checking for the latest Navipedia…</div>';
+  await nvLoadManifest();
+  // A deep link opens on top of Home, so Back lands there rather than
+  // leaving the page.
+  var start = nvViewFromHash();
+  NV.stack = [{ v: 'home' }];
+  history.replaceState({ depth: 1 }, '', location.pathname + location.search);
+  if (start) {
+    NV.stack.push(start);
+    history.pushState({ depth: 2 }, '', nvHashFor(start));
+  }
+  nvRender();
+}
+
+// ── The phone's copy: IndexedDB, one row per published file ─
+
+var nvDbP = null;
+function nvDb() {
+  if (nvDbP) return nvDbP;
+  nvDbP = new Promise(function (resolve) {
+    try {
+      var req = indexedDB.open('idms-navipedia', 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore('files'); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { resolve(null); };
+    } catch (e) { resolve(null); }
+  });
+  return nvDbP;
+}
+async function nvDbGet(key) {
+  var db = await nvDb();
+  if (!db) return null;
+  return new Promise(function (resolve) {
+    try {
+      var r = db.transaction('files').objectStore('files').get(key);
+      r.onsuccess = function () { resolve(r.result || null); };
+      r.onerror = function () { resolve(null); };
+    } catch (e) { resolve(null); }
+  });
+}
+async function nvDbPut(key, val) {
+  var db = await nvDb();
+  if (!db) return;
+  return new Promise(function (resolve) {
+    try {
+      var tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').put(val, key);
+      tx.oncomplete = tx.onerror = function () { resolve(); };
+    } catch (e) { resolve(); }
+  });
+}
+
+// The manifest is read from OneDrive every time the page opens — it is small,
+// and it is how the phone learns anything changed. Offline, the last one this
+// phone read stands, and the bar says so.
+async function nvLoadManifest() {
+  try {
+    var resp = await nvFetch(nvGraphUrl(NV_DIR + '/manifest.json'));
+    if (resp.status === 404) { NV.manifest = null; NV.manifestFrom = 'none'; return; }
+    if (!resp.ok) throw new Error('manifest ' + resp.status);
+    var text = await resp.text();
+    NV.manifest = JSON.parse(text);
+    NV.manifestFrom = 'network';
+    nvDbPut('manifest.json', { text: text });
+  } catch (e) {
+    var had = await nvDbGet('manifest.json');
+    try { NV.manifest = had ? JSON.parse(had.text) : null; } catch (x) { NV.manifest = null; }
+    NV.manifestFrom = NV.manifest ? 'phone' : 'none';
+  }
+}
+
+// One published file, parsed. From memory, else from the phone when its
+// fingerprint matches the manifest, else from OneDrive.
+function nvFile(name) {
+  if (NV.files[name]) return Promise.resolve(NV.files[name]);
+  if (NV.loading[name]) return NV.loading[name];
+  var want = NV.manifest && NV.manifest.files && NV.manifest.files[name];
+  var p = (async function () {
+    var had = await nvDbGet(name);
+    var text = null;
+    if (had && want && had.fp === want.fp) text = had.text;
+    if (text == null) {
+      try {
+        var resp = await nvFetch(nvGraphUrl(NV_DIR + '/' + name));
+        if (!resp.ok) throw new Error('OneDrive answered ' + resp.status);
+        text = await resp.text();
+        nvDbPut(name, { fp: want ? want.fp : '', text: text });
+      } catch (e) {
+        // Offline with an older copy: better than nothing, and the bar says
+        // how old the manifest it came with is.
+        if (had) text = had.text;
+        else throw e;
+      }
+    }
+    var obj = JSON.parse(text);
+    NV.files[name] = obj;
+    return obj;
+  })();
+  NV.loading[name] = p;
+  p.catch(function () {}).then(function () { delete NV.loading[name]; });
+  return p;
+}
+
+// ── Views and the back button ───────────────────────────────
+//
+// A stack of plain objects. The phone's own back gesture pops it, the same as
+// the ‹ in the bar.
+
+function nvGo(view) {
+  NV.stack.push(view);
+  history.pushState({ depth: NV.stack.length }, '', nvHashFor(view));
+  window.scrollTo(0, 0);
+  nvRender();
+}
+function nvReplace(view) {
+  NV.stack[NV.stack.length - 1] = view;
+  history.replaceState({ depth: NV.stack.length }, '', nvHashFor(view));
+  nvRender();
+}
+function nvBack() {
+  if (NV.stack.length > 1) history.back();
+  else location.href = 'index.html';
+}
+// The history entry says how deep it was, so a jump of several entries (Home)
+// and a single Back both land on the right view.
+window.addEventListener('popstate', function (e) {
+  var depth = (e.state && e.state.depth) || 1;
+  if (depth < NV.stack.length) NV.stack = NV.stack.slice(0, Math.max(1, depth));
+  window.scrollTo(0, 0);
+  nvRender();
+});
+function nvHomeOrIdms() {
+  if (NV.stack.length > 1) {
+    var n = NV.stack.length - 1;
+    NV.stack = [{ v: 'home' }];
+    history.go(-n);
+  } else {
+    location.href = 'index.html';
+  }
+}
+// A deep link survives a reload: #card=SOP-0021, #elec=LP3 23, #diag=331.001.
+function nvHashFor(v) {
+  if (v.v === 'card') return '#card=' + encodeURIComponent(v.id);
+  if (v.v === 'note') return '#note=' + encodeURIComponent(v.rel);
+  if (v.v === 'jsa')  return '#jsa=' + encodeURIComponent(v.id);
+  if (v.v === 'diagm') return '#diag=' + encodeURIComponent(v.code);
+  return location.pathname + location.search;
+}
+function nvViewFromHash() {
+  var m = location.hash.match(/^#(card|note|jsa|diag)=(.+)$/);
+  if (!m) return null;
+  var val = decodeURIComponent(m[2]);
+  if (m[1] === 'card') return { v: 'card', id: val };
+  if (m[1] === 'note') return { v: 'note', rel: val };
+  if (m[1] === 'jsa')  return { v: 'jsa', id: val };
+  if (m[1] === 'diag') return { v: 'diagm', code: val };
+  return null;
+}
+
+function nvSetBar(title, sub) {
+  document.getElementById('bar-title').textContent = title || 'Navipedia';
+  document.getElementById('bar-sub').textContent = sub || '';
+  document.getElementById('bar-home').textContent = NV.stack.length > 2 ? 'Home' : 'IDMS';
+}
+
+var nvRenderSeq = 0;
+async function nvRender() {
+  var seq = ++nvRenderSeq;
+  var view = NV.stack[NV.stack.length - 1] || { v: 'home' };
+  var body = document.getElementById('body');
+  var R = NV_VIEWS[view.v] || NV_VIEWS.home;
+  nvSetBar(R.title(view), '');
+  if (R.needs && R.needs.length) {
+    var missing = R.needs.filter(function (n) { return !NV.files[n]; });
+    if (missing.length) {
+      body.innerHTML = '<div class="loading">' + nvEsc(R.loadingText || 'Reading…') + '</div>';
+      try { await Promise.all(missing.map(nvFile)); }
+      catch (e) {
+        if (seq !== nvRenderSeq) return;
+        body.innerHTML = nvNotAvailable(missing, e);
+        return;
+      }
+      if (seq !== nvRenderSeq) return;
+    }
+  }
+  try { R.render(view, body); }
+  catch (e) {
+    console.error(e);
+    body.innerHTML = '<div class="warn-box">This page could not be drawn: ' + nvEsc(e && e.message ? e.message : e) + '</div>';
+  }
+}
+
+function nvNotAvailable(names, e) {
+  if (!NV.manifest) return nvNeverPublishedHtml();
+  var why = e && e.nvReauth ? 'Microsoft sign-in has expired — sign in again above.'
+          : 'This part has not been downloaded yet, and OneDrive could not be reached (' + nvEsc(e && e.message ? e.message : e) + '). Open it once with a connection and it stays readable offline.';
+  return '<div class="warn-box"><b>Not on this phone yet.</b> ' + why + '</div>';
+}
+function nvNeverPublishedHtml() {
+  return '<div class="warn-box"><b>Nothing has been published to phones yet.</b> ' +
+    'The Console publishes the Navipedia when anybody opens it there, at most once a day, or on demand from ' +
+    'Navipedia → Health → <b>Publish to phones</b>.</div>';
+}
+// A file the Console could not read when it published says so, instead of
+// the page drawing empty.
+function nvFileError(name) {
+  var f = NV.files[name];
+  if (f && f.ok === false) return '<div class="warn-box">The Console could not read this part of the vault when it published: ' + nvEsc(f.error || 'unknown reason') + '</div>';
+  return '';
+}
+
+// ════════════════════════════════════════════════════════════
+// Home
+// ════════════════════════════════════════════════════════════
+
+var NV_SECTIONS = [
+  ['Orientation', [
+    ['starthere', '⌂', 'Start Here', 'The front door to the vessel'],
+    ['ship',      '⛴', 'The Ship', 'The deck maps'],
+    ['systems',   '⚙', 'Systems', 'The Systems Index and its hubs'],
+    ['pages',     '☰', 'All pages', 'Every map, trail and view in the range'],
+    ['health',    '✓', 'Health', 'Which maps are behind their sources']
+  ]],
+  ['Cards', [
+    ['sops', '§', 'SOPs', 'Procedures and global tasks'],
+    ['jobs', '⚒', 'Jobs', 'Job cards and job wrappers'],
+    ['ksas', '◈', 'KSAs', 'Knowledge and skills']
+  ]],
+  ['Safety and systems', [
+    ['jsa',  '⚠', 'JSA', 'Job safety analyses, by machine'],
+    ['elec', '⚡', 'Electrical Distribution', 'What feeds a breaker, a panel or a machine — and where it is'],
+    ['diag', '✚', 'Diagnostics', 'What the record says about how a machine fails']
+  ]]
+];
+// The range's entries land on one note each, by name (NPD_SECTIONS).
+var NV_RANGE_ENTRY = { starthere: 'Start Here', ship: 'Below Main Deck', systems: 'Systems Index' };
+
+function nvOpenSection(key) {
+  if (NV_RANGE_ENTRY[key]) { nvGo({ v: 'note', entry: key }); return; }
+  if (key === 'pages')  { nvGo({ v: 'pages' }); return; }
+  if (key === 'health') { nvGo({ v: 'health' }); return; }
+  if (key === 'sops' || key === 'jobs' || key === 'ksas') { nvGo({ v: 'cards', section: key }); return; }
+  if (key === 'jsa')  { nvGo({ v: 'jsas' }); return; }
+  if (key === 'elec') { nvGo({ v: 'elec', ev: { kind: 'home' } }); return; }
+  if (key === 'diag') { nvGo({ v: 'diag' }); return; }
+}
+
+function nvPublishedLine() {
+  var m = NV.manifest;
+  if (!m) return '';
+  var age = (Date.now() - Date.parse(m.published)) / 86400000;
+  var when = new Date(m.published).toLocaleString();
+  var src = NV.manifestFrom === 'phone' ? ' OneDrive could not be reached — this is the copy already on the phone.' : '';
+  return '<div class="pub' + (age > NV_STALE_DAYS ? ' stale' : '') + '">Published from the Console ' + nvEsc(nvAgo(m.published)) +
+    ' (' + nvEsc(when) + (m.by ? ', ' + nvEsc(m.by) : '') + ').' +
+    (age > NV_STALE_DAYS ? ' <b>That is more than ' + NV_STALE_DAYS + ' days old</b> — the vault may have moved on since.' : '') + src +
+    '<br>Read-only here. Edits, sign-offs and printing are done on the Console.</div>';
+}
+
+var NV_VIEWS = {};
+
+NV_VIEWS.home = {
+  title: function () { return 'Navipedia'; },
+  render: function (view, body) {
+    if (NV.manifest && Number(NV.manifest.version) > NV_BUNDLE_VERSION) {
+      body.innerHTML = '<div class="warn-box">The Console published a newer Navipedia than this page can read. Reload the app to update it.</div>';
+      return;
+    }
+    var html = NV.manifest ? '' : nvNeverPublishedHtml();
+    NV_SECTIONS.forEach(function (g) {
+      html += '<div class="group-head">' + nvEsc(g[0]) + '</div>';
+      g[1].forEach(function (s) {
+        html += '<button class="tile" data-section="' + s[0] + '"><span class="tile-ico">' + s[1] + '</span>' +
+          '<span class="tile-main"><span class="tile-name">' + nvEsc(s[2]) + '</span><span class="tile-desc">' + nvEsc(s[3]) + '</span></span>' +
+          '<span class="tile-chev">›</span></button>';
+      });
+    });
+    body.innerHTML = html + nvPublishedLine();
+    body.onclick = function (e) {
+      var t = e.target.closest('[data-section]');
+      if (t) nvOpenSection(t.dataset.section);
+    };
+    body.oninput = null;
+  }
+};
+
+// ════════════════════════════════════════════════════════════
+// The range — maps, trails, views (Console: navipedia.js)
+// ════════════════════════════════════════════════════════════
+
+var NV_KIND_LABEL = { map: 'Map', trail: 'Trail', view: 'View', canvas: 'Canvas', base: 'Base' };
+var NV_IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+
+function nvRange() { return NV.files['range.json']; }
+function nvRangeByRel(rel) {
+  var r = nvRange();
+  return r && r.notes ? r.notes.filter(function (n) { return n.rel === rel; })[0] || null : null;
+}
+
+NV_VIEWS.pages = {
+  title: function () { return 'All pages'; },
+  needs: ['range.json'],
+  loadingText: 'Reading the range…',
+  render: function (view, body) {
+    var r = nvRange();
+    if (r.ok === false) { body.innerHTML = nvFileError('range.json'); return; }
+    body.innerHTML = '<div class="search"><input type="search" id="pg-q" placeholder="Filter the range…" value="' + nvEsc(NV.pagesFilter) + '"></div><div id="pg-list"></div>';
+    var draw = function () {
+      var q = NV.pagesFilter.trim().toLowerCase();
+      var shown = r.notes.filter(function (n) {
+        if (!q) return true;
+        return (n.title + ' ' + n.name + ' ' + n.id + ' ' + n.folder + ' ' + (n.tags || []).join(' ')).toLowerCase().indexOf(q) !== -1;
+      });
+      var behind = r.notes.filter(function (n) { return n.behind && n.behind.length; }).length;
+      var out = '<button class="row" data-health="1"><span class="dot' + (behind ? ' behind' : ' current') + '"></span><span class="row-main">' +
+        (behind ? behind + ' map' + (behind === 1 ? '' : 's') + ' behind their sources' : 'Currency — every tracked map is current') + '</span><span class="tile-chev">›</span></button>';
+      var folder = null;
+      shown.forEach(function (n) {
+        if (n.folder !== folder) { folder = n.folder; out += '<div class="list-group">' + nvEsc(folder || 'Range root') + '</div>'; }
+        var stale = n.behind && n.behind.length;
+        out += '<button class="row" data-rel="' + nvEsc(n.rel) + '"><span class="dot' + (stale ? ' behind' : (n.tracked ? ' current' : '')) + '"></span>' +
+          '<span class="row-main">' + nvEsc(n.title) + '</span><span class="tag">' + nvEsc(NV_KIND_LABEL[n.kind] || n.kind) + '</span></button>';
+      });
+      if (!shown.length) out += '<div class="empty">Nothing in the range matches that.</div>';
+      document.getElementById('pg-list').innerHTML = out;
+    };
+    draw();
+    body.oninput = function (e) { if (e.target.id === 'pg-q') { NV.pagesFilter = e.target.value; draw(); } };
+    body.onclick = function (e) {
+      if (e.target.closest('[data-health]')) { nvGo({ v: 'health' }); return; }
+      var row = e.target.closest('[data-rel]');
+      if (row) nvGo({ v: 'note', rel: row.dataset.rel });
+    };
+  }
+};
+
+NV_VIEWS.health = {
+  title: function () { return 'Health'; },
+  needs: ['range.json'],
+  loadingText: 'Reading the range…',
+  render: function (view, body) {
+    var r = nvRange();
+    if (r.ok === false) { body.innerHTML = nvFileError('range.json'); return; }
+    var tracked = r.notes.filter(function (n) { return n.tracked; });
+    var behind = tracked.filter(function (n) { return n.behind.length; });
+    var untracked = r.notes.filter(function (n) { return (n.kind === 'map' || n.kind === 'trail') && !n.tracked; });
+    var report = r.notes.filter(function (n) { return n.name === 'Navipedia Health' && n.ext === '.md'; })[0];
+    var html = '<div class="head"><div class="title">Currency</div><div class="meta">' + tracked.length + ' tracked · ' + behind.length +
+      ' behind · as of the Console\'s publish, ' + nvEsc(nvAgo(NV.manifest && NV.manifest.published)) + '</div></div>' +
+      '<div class="md"><p>A page is tracked when it carries both <code>reviewed:</code> and a <code>covers:</code> list. It is behind when something it covers has moved since. A page with no <code>covers:</code> makes no claim about what it depends on, so nothing can be said about it — that is not a pass, and it is listed below.</p></div>' +
+      (report ? '<button class="tile" data-rel="' + nvEsc(report.rel) + '"><span class="tile-ico">✓</span><span class="tile-main"><span class="tile-name">The health report</span><span class="tile-desc">Navipedia Health, as the generator last wrote it</span></span><span class="tile-chev">›</span></button>' : '') +
+      '<div class="sec"><h3>Behind their sources</h3>';
+    if (behind.length) {
+      behind.forEach(function (n) {
+        html += '<button class="row" data-rel="' + nvEsc(n.rel) + '"><span class="dot behind"></span><span class="row-main">' + nvEsc(n.title) +
+          '<span class="row-sub">Reviewed ' + nvEsc(n.reviewed) + ' · ' + n.behind.map(function (b) { return nvEsc(b.name) + (b.via === 'missing' ? ' (missing)' : ' — ' + nvEsc(b.date)); }).join('; ') + '</span></span></button>';
+      });
+    } else html += '<div class="empty">Nothing. Every tracked page has been read since its sources last moved.</div>';
+    html += '</div><div class="sec"><h3>Not tracked</h3>';
+    if (untracked.length) {
+      untracked.forEach(function (n) {
+        html += '<button class="row" data-rel="' + nvEsc(n.rel) + '"><span class="dot"></span><span class="row-main">' + nvEsc(n.title) +
+          '<span class="row-sub">' + nvEsc(n.folder) + ' · ' + (n.reviewed ? 'no covers:' : 'no reviewed:') + '</span></span></button>';
+      });
+    } else html += '<div class="empty">Every authored page states what it covers and when it was read.</div>';
+    html += '</div>';
+    body.innerHTML = html;
+    body.oninput = null;
+    body.onclick = function (e) {
+      var row = e.target.closest('[data-rel]');
+      if (row) nvGo({ v: 'note', rel: row.dataset.rel });
+    };
+  }
+};
+
+// A range note, or a lane note one hop out of it.
+NV_VIEWS.note = {
+  title: function (view) {
+    var rec = view.rel ? nvRangeByRel(view.rel) : null;
+    return rec ? rec.title : (view.entry ? NV_SECTIONS[0][1].filter(function (s) { return s[0] === view.entry; })[0][2] : 'Navipedia');
+  },
+  needs: ['range.json'],
+  loadingText: 'Reading the range…',
+  render: function (view, body) {
+    var r = nvRange();
+    if (r.ok === false) { body.innerHTML = nvFileError('range.json'); return; }
+    body.oninput = null;
+    body.onclick = nvNoteClick;
+    // An entry is a note by name; Markdown wins the name over the canvas.
+    if (view.entry && !view.rel) {
+      var name = NV_RANGE_ENTRY[view.entry];
+      var hit = r.notes.filter(function (n) { return n.name === name && n.ext === '.md'; })[0] ||
+                r.notes.filter(function (n) { return n.kind === 'map'; })[0];
+      if (!hit) { body.innerHTML = '<div class="empty">The range has no page called “' + nvEsc(name) + '”.</div>'; return; }
+      view.rel = hit.rel;
+      history.replaceState({ depth: NV.stack.length }, '', nvHashFor(view));
+      nvSetBar(hit.title);
+    }
+    var rec = nvRangeByRel(view.rel);
+    if (rec) { body.innerHTML = nvRangeNoteHtml(rec); return; }
+    // Not in the range: a lane note, which lives in its own file.
+    if (!NV.files['range-lane.json']) {
+      body.innerHTML = '<div class="loading">Reading the note…</div>';
+      nvFile('range-lane.json').then(nvRender, function (e) { body.innerHTML = nvNotAvailable(['range-lane.json'], e); });
+      return;
+    }
+    var lane = (NV.files['range-lane.json'].lane || {})[view.rel];
+    if (!lane) {
+      body.innerHTML = '<div class="warn-box">This note is not on the phone. The phone carries the Navipedia range and the notes it links to directly; open <b>' + nvEsc(view.rel) + '</b> on the Console.</div>';
+      return;
+    }
+    nvSetBar(lane.frontmatter && lane.frontmatter.title ? String(lane.frontmatter.title) : lane.name);
+    body.innerHTML = nvLaneNoteHtml(lane);
+  }
+};
+
+function nvRangeNoteHtml(rec) {
+  var meta = [NV_KIND_LABEL[rec.kind] || rec.kind];
+  if (rec.status)   meta.push('Status: ' + rec.status);
+  if (rec.author)   meta.push('Written by ' + rec.author);
+  if (rec.revised)  meta.push('Revised ' + rec.revised);
+  if (rec.reviewed) meta.push('Reviewed ' + rec.reviewed);
+  var banner = '';
+  if (rec.kind === 'view') {
+    banner = '<div class="banner generated"><b>Generated view.</b> Written by <code>' + nvEsc(rec.generator || 'a generator') +
+      '</code> and rewritten in full on every run. Change the cards it reads and rerun the generator.</div>';
+  } else if (rec.kind === 'canvas') {
+    banner = '<div class="banner">A canvas — the deck drawing with a card on every space. Canvases are drawn in Obsidian and opened there, on the Console.' +
+      ' The panels on a deck drawing are under <b>Electrical Distribution</b>.</div>';
+  } else if (rec.kind === 'base') {
+    banner = '<div class="banner">A Base — a live query over the vault, run by Obsidian\'s Bases plugin, on the Console.</div>';
+  } else if (rec.behind && rec.behind.length) {
+    banner = '<div class="banner behind"><b>Behind its sources.</b> This page was reviewed ' + nvEsc(rec.reviewed) + '; what it covers has moved since:<ul>' +
+      rec.behind.map(function (b) { return '<li>' + nvEsc(b.name) + ' — ' + (b.via === 'missing' ? 'no note of that name in the vault' : nvEsc(b.date) + ' (' + nvEsc(b.via) + ')') + '</li>'; }).join('') +
+      '</ul>Until somebody re-reads it on the Console and marks it reviewed, check what it says against those.</div>';
+  }
+  var head = '<div class="head"><div class="title">' + nvEsc(rec.title) + '</div><div class="meta">' + nvEsc(meta.join('  ·  ')) +
+    '</div><div class="path">' + nvEsc(rec.rel) + '</div></div>';
+  if (rec.error) return head + banner + '<div class="warn-box">' + nvEsc(rec.error) + '</div>';
+  if (rec.kind === 'canvas' || rec.kind === 'base') return head + banner;
+  var steps = rec.kind === 'trail' && rec.steps && rec.steps.length ? nvStepsHtml(rec.steps) : '';
+  return head + banner + '<div class="md">' + steps + nvMarkdown(rec.body || '', 0) + '</div>';
+}
+
+function nvLaneNoteHtml(lane) {
+  var fm = lane.frontmatter || {};
+  var meta = ['Lane note'];
+  if (fm.status)  meta.push('Status: ' + fm.status);
+  if (fm.revised) meta.push('Revised ' + fm.revised);
+  var title = fm.title ? String(fm.title) : lane.name;
+  return '<div class="head"><div class="title">' + nvEsc(title) + '</div><div class="meta">' + nvEsc(meta.join('  ·  ')) +
+    '</div><div class="path">' + nvEsc(lane.rel) + '</div></div>' +
+    '<div class="banner">A note from outside the Navipedia range, read-only. It belongs to its own lane and is edited there.</div>' +
+    '<div class="md">' + nvMarkdown(lane.body || '', 0) + '</div>';
+}
+
+function nvStepsHtml(steps) {
+  var links = nvRange().links || {};
+  return '<div class="steps"><div class="steps-head">The trail, in order</div><ol>' + steps.map(function (s) {
+    var hit = links[s];
+    return '<li>' + (hit ? nvLinkTag(hit, nvEsc(s), s) : '<span class="dangling">' + nvEsc(s) + '</span>') + '</li>';
+  }).join('') + '</ol></div>';
+}
+
+// A link that goes somewhere. Where it can open on the phone it is a live
+// link; a note two hops out says it is read on the Console.
+function nvLinkTag(hit, labelHtml, title) {
+  var cls = 'lnk' + (hit.ambiguous ? ' ambiguous' : '');
+  var tip = hit.rel + (hit.ambiguous ? ' — ' + hit.ambiguous + ' notes share this name' : '');
+  if (hit.kind === 'card') return '<a class="' + cls + '" data-card="' + nvEsc(hit.id) + '" title="' + nvEsc(tip) + '">' + labelHtml + '</a>';
+  if (hit.kind === 'image' || hit.kind === 'obsidian') return '<a class="' + cls + ' far" data-far="' + nvEsc(hit.rel) + '" title="' + nvEsc(tip) + '">' + labelHtml + '</a>';
+  return '<a class="' + cls + '" data-note="' + nvEsc(hit.rel) + '" title="' + nvEsc(tip) + '">' + labelHtml + '</a>';
+}
+
+function nvNoteClick(e) {
+  var c = e.target.closest('[data-card]');
+  if (c) { e.preventDefault(); nvOpenCard(c.dataset.card); return; }
+  var n = e.target.closest('[data-note]');
+  if (n) { e.preventDefault(); nvGo({ v: 'note', rel: n.dataset.note }); return; }
+  var f = e.target.closest('[data-far]');
+  if (f) { e.preventDefault(); nvToast(f.dataset.far + ' opens in Obsidian, on the Console.'); return; }
+  var x = e.target.closest('.extlink');
+  if (x) nvToast(x.title);
+}
+
+// The Console's small block renderer (navipedia.js npdMarkdown), ported: it
+// covers what the range's notes use, and anything it does not recognise falls
+// through to a paragraph rather than disappearing.
+function nvMarkdown(body, depth) {
+  var lines = String(body || '').replace(/\r\n/g, '\n').split('\n');
+  var out = [];
+  var para = [];
+  var flush = function () {
+    if (!para.length) return;
+    out.push('<p>' + nvInline(para.join(' '), depth) + '</p>');
+    para = [];
+  };
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var t = line.trim();
+    var fence = t.match(/^(```+|~~~+)/);
+    if (fence) {
+      flush();
+      var marker = fence[1], buf = [];
+      i++;
+      for (; i < lines.length; i++) {
+        if (lines[i].trim().indexOf(marker) === 0) break;
+        buf.push(lines[i]);
+      }
+      out.push('<pre>' + nvEsc(buf.join('\n')) + '</pre>');
+      continue;
+    }
+    if (!t) { flush(); continue; }
+    var embed = t.match(/^!\[\[([^\]]+)\]\]$/);
+    if (embed) { flush(); out.push(nvEmbedHtml(embed[1], depth)); continue; }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { flush(); out.push('<hr>'); continue; }
+    var h = t.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      flush();
+      if (h[1].length === 1 && !out.length && depth === 0) continue;
+      var lvl = Math.min(h[1].length + 1, 6);
+      out.push('<h' + lvl + ' class="h">' + nvInline(h[2], depth) + '</h' + lvl + '>');
+      continue;
+    }
+    if (t.charAt(0) === '|' && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] || '')) {
+      flush();
+      var tb = [];
+      while (i < lines.length && lines[i].trim().charAt(0) === '|') tb.push(lines[i++]);
+      i--;
+      out.push(nvTableHtml(tb, depth));
+      continue;
+    }
+    if (t.charAt(0) === '>') {
+      flush();
+      var qb = [], callout = '', title = '';
+      while (i < lines.length && lines[i].trim().charAt(0) === '>') {
+        var inner = lines[i].trim().replace(/^>\s?/, '');
+        var c = inner.match(/^\[!([a-z]+)\][-+]?\s*(.*)$/i);
+        if (c) { callout = c[1].toLowerCase(); title = c[2].trim(); inner = ''; }
+        qb.push(inner);
+        i++;
+      }
+      i--;
+      out.push('<div class="callout callout-' + nvEsc(callout || 'note') + '">' +
+        (title ? '<div class="callout-title">' + nvInline(title, depth + 1) + '</div>' : '') +
+        nvMarkdown(qb.join('\n'), depth + 1) + '</div>');
+      continue;
+    }
+    var li = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (li) {
+      flush();
+      var ordered = /\d/.test(li[2]);
+      var items = [];
+      while (i < lines.length) {
+        var m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+        if (!m) {
+          if (lines[i].trim() && /^\s+\S/.test(lines[i]) && items.length) { items[items.length - 1] += ' ' + lines[i].trim(); i++; continue; }
+          break;
+        }
+        items.push(m[3]);
+        i++;
+      }
+      i--;
+      var tag = ordered ? 'ol' : 'ul';
+      out.push('<' + tag + ' class="list">' + items.map(function (x) { return '<li>' + nvInline(x, depth) + '</li>'; }).join('') + '</' + tag + '>');
+      continue;
+    }
+    para.push(t);
+  }
+  flush();
+  return out.join('\n');
+}
+
+function nvCells(row) {
+  return row.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map(function (c) { return c.trim().replace(/\\\|/g, '|'); });
+}
+function nvTableHtml(rows, depth) {
+  if (rows.length < 2) return '';
+  var head = nvCells(rows[0]);
+  var body = rows.slice(2).map(nvCells);
+  return '<div class="table-wrap"><table><thead><tr>' + head.map(function (c) { return '<th>' + nvInline(c, depth) + '</th>'; }).join('') +
+    '</tr></thead><tbody>' + body.map(function (r) { return '<tr>' + r.map(function (c) { return '<td>' + nvInline(c, depth) + '</td>'; }).join('') + '</tr>'; }).join('') +
+    '</tbody></table></div>';
+}
+
+function nvEmbedHtml(inner, depth) {
+  var e = (nvRange().embeds || {})[inner];
+  if (!e) return '<div class="embed embed-broken">Embed not resolved: ' + nvEsc(inner) + '</div>';
+  if (e.image) return '<div class="embed embed-broken"><div class="embed-src">Image — ' + nvEsc(e.name) + '</div>Images are opened on the Console.</div>';
+  if (!e.ok) return '<div class="embed embed-broken"><div class="embed-src">Embed does not resolve — ' + nvEsc(inner) + '</div>' + nvEsc(e.error || 'unknown reason') + '</div>';
+  var body = depth >= 1
+    ? '<p class="dim">This section embeds further sections — open ' + nvEsc(e.source) + ' to read them.</p>'
+    : nvMarkdown(e.body, depth + 1);
+  var note = String(e.source || '').split(' › ')[0];
+  var hit = (nvRange().links || {})[note];
+  return '<figure class="embed"><figcaption class="embed-src">' + (hit ? nvLinkTag(hit, nvEsc(e.source)) : nvEsc(e.source)) +
+    '</figcaption><div class="embed-body">' + body + '</div></figure>';
+}
+
+function nvInline(raw, depth) {
+  var slots = [];
+  var slot = function (html) { slots.push(html); return '\u0000' + (slots.length - 1) + '\u0001'; };
+  var s = String(raw == null ? '' : raw);
+  s = s.replace(/!\[\[([^\]]+)\]\]/g, function (m, inner) { return slot(nvInlineEmbedHtml(inner)); });
+  s = s.replace(/\[\[([^\]]+)\]\]/g, function (m, inner) { return slot(nvLinkHtml(inner)); });
+  s = s.replace(/`([^`]+)`/g, function (m, code) { return slot('<code>' + nvEsc(code) + '</code>'); });
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (m, text, href) { return slot('<span class="extlink" title="' + nvEsc(href) + '">' + nvEsc(text) + '</span>'); });
+  s = nvEsc(s);
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+       .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+       .replace(/==([^=]+)==/g, '<mark>$1</mark>');
+  s = s.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
+  return s.replace(/\u0000(\d+)\u0001/g, function (m, i) { return slots[Number(i)]; });
+}
+function nvInlineEmbedHtml(inner) {
+  var e = (nvRange().embeds || {})[inner];
+  if (e && e.ok) return '<span title="Embedded from ' + nvEsc(e.source) + '">' + nvEsc(e.body.split('\n')[0]) + '</span>';
+  return '<span class="dangling">![[' + nvEsc(inner) + ']]</span>';
+}
+function nvLinkHtml(inner) {
+  var bar = inner.lastIndexOf('|');
+  var target = (bar === -1 ? inner : inner.slice(0, bar)).trim();
+  var alias = (bar === -1 ? '' : inner.slice(bar + 1)).trim();
+  var hash = target.indexOf('#');
+  var note = (hash === -1 ? target : target.slice(0, hash)).trim();
+  var label = nvEsc(alias || target);
+  if (!note) return '<span>' + label + '</span>';
+  var hit = (nvRange().links || {})[note];
+  if (!hit) return '<span class="dangling" title="No note called “' + nvEsc(note) + '” — an unwritten link is this range\'s backlog">' + label + '</span>';
+  return nvLinkTag(hit, label);
+}
+
+// ════════════════════════════════════════════════════════════
+// The paper — a document built by one of the Console's own
+// builders, written into a frame, and let out to the phone's width
+// ════════════════════════════════════════════════════════════
+
+// The documents are sized for paper (Letter, a half sheet, landscape for a
+// JSA). On a phone the page is let out to the screen's width instead: the
+// same document, the same words, reflowed. Wide tables scroll sideways.
+var NV_PAPER_CSS = '@media screen {' +
+  ' html { background: #fff; }' +
+  ' body { width: auto !important; max-width: 100%; padding: 14px 12px 22px !important; font-size: 13.5px !important; overflow-wrap: anywhere; }' +
+  ' img { max-width: 100%; height: auto; }' +
+  ' table { max-width: 100%; }' +
+  ' .grid, .facts, table.grid { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }' +
+  ' .xref, a[data-id], a[data-code] { color: #0a6fa8; text-decoration: underline; }' +
+  '}';
+
+function nvPaper(host, html, onXref) {
+  host.innerHTML = '<div class="paper-wrap"><iframe class="paper" title="The page"></iframe></div>';
+  var frame = host.querySelector('iframe');
+  var doc = frame.contentDocument;
+  doc.open();
+  doc.write(String(html).replace(/<\/head>/i, '<style>' + NV_PAPER_CSS + '</style></head>'));
+  doc.close();
+  doc.documentElement.style.overflow = 'hidden';
+  var fit = function () { try { frame.style.height = Math.max(200, doc.documentElement.scrollHeight) + 'px'; } catch (e) {} };
+  fit();
+  Array.prototype.forEach.call(doc.images, function (img) { img.addEventListener('load', fit, { once: true }); });
+  try { new ResizeObserver(fit).observe(doc.body); } catch (e) { setTimeout(fit, 80); }
+  setTimeout(fit, 300);
+  doc.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('.xref');
+    if (!a) return;
+    e.preventDefault();
+    if (onXref) onXref(a.dataset);
+  });
+}
+
+function nvLetterhead() {
+  var l = NV.files['letterhead.json'] || {};
+  return { setup: l.setup || { companyLogoAlign: 'left', vesselIconAlign: 'right', secondaryColor: '#222222', headerColor: '#555555' },
+           vessel: l.vessel || 'F/T Araho' };
+}
+
+// ════════════════════════════════════════════════════════════
+// SOPs, Jobs, KSAs (Console: navipedia-cards.js)
+// ════════════════════════════════════════════════════════════
+
+var NV_KSA_FILTERS = [['all', 'All'], ['knowledge', 'Knowledge'], ['skill', 'Skills — global'], ['vessel', 'Skills — vessel']];
+function nvP() { return window.navipediaCardsPrint; }
+function nvCards() { return NV.files['cards.json']; }
+function nvShort(id) { return window.ksaView ? ksaView.shortId(id) : String(id || ''); }
+function nvPlain(t) { return window.ksaView ? ksaView.plainTitle(t) : String(t || ''); }
+function nvCardById(id) {
+  var c = nvCards();
+  if (!c || !c.notes) return null;
+  var hit = c.notes.filter(function (r) { return r.id === id; })[0];
+  if (hit) return hit;
+  var s = nvShort(id);
+  return c.notes.filter(function (r) { return nvShort(r.id) === s; })[0] || null;
+}
+function nvOpenCard(id) {
+  nvFile('cards.json').then(function () {
+    var rec = nvCardById(id);
+    if (!rec) { nvToast(id + ' is not in the card index.'); return; }
+    nvGo({ v: 'card', id: rec.id });
+  }, function () { nvToast('The cards are not on this phone yet, and OneDrive could not be reached.'); });
+}
+function nvInSection(section) {
+  var S = nvP().SECTIONS[section];
+  return (nvCards().notes || []).filter(S.has);
+}
+function nvCardsFiltered(section) {
+  var cards = nvInSection(section);
+  if (section === 'ksas' && NV.ksaFilter !== 'all') {
+    cards = cards.filter(function (r) {
+      var k = nvP().competencyKind(r);
+      if (!k) return false;
+      if (NV.ksaFilter === 'knowledge') return k.kind === 'knowledge';
+      if (NV.ksaFilter === 'skill') return k.kind === 'skill' && k.scope === 'global';
+      if (NV.ksaFilter === 'vessel') return k.kind === 'skill' && k.scope === 'vessel';
+      return true;
+    });
+  }
+  return cards;
+}
+// npcGrouped: SOPs and jobs by machine, global tasks first; knowledge and
+// skills by kind, then category.
+function nvCardsGrouped(section, cards) {
+  var P = nvP();
+  var keyed = cards.map(function (rec) {
+    var order, label;
+    if (section === 'ksas') {
+      var k = P.competencyKind(rec) || { kind: 'skill', scope: 'global' };
+      var head = k.kind === 'knowledge' ? 'Knowledge' : k.scope === 'vessel' ? 'Vessel skills' : 'Skills';
+      order = k.kind === 'knowledge' ? '0' : k.scope === 'vessel' ? '2' : '1';
+      label = head + ' — ' + ([rec.category, rec.subcategory].filter(Boolean).join(' › ') || 'Uncategorised');
+    } else if (rec.family === 'TASK') { order = '0'; label = 'Global tasks'; }
+    else { order = rec.asset ? '1' : '2'; label = rec.asset || 'No asset stated'; }
+    return { rec: rec, label: label, sort: order + ' ' + label.toLowerCase() };
+  });
+  keyed.sort(function (a, b) {
+    return a.sort.localeCompare(b.sort, undefined, { numeric: true }) ||
+           String(a.rec.id).localeCompare(String(b.rec.id), undefined, { numeric: true });
+  });
+  return keyed;
+}
+function nvCardRow(rec, section, query, other) {
+  var P = nvP();
+  var chips = [];
+  if (section === 'sops' && rec.is_job) chips.push('<span class="tag">Job</span>');
+  if (rec.is_stub) chips.push('<span class="tag warn">Stub</span>');
+  if (other) chips.push('<span class="tag accent">' + nvEsc(P.SECTIONS[other].label) + '</span>');
+  var sub = query ? [P.docKind(rec), rec.asset || [rec.category, rec.subcategory].filter(Boolean).join(' › ')].filter(Boolean).join(' · ') : '';
+  return '<button class="row" data-id="' + nvEsc(rec.id) + '"><span class="row-id">' + nvEsc(nvShort(rec.id)) + '</span>' +
+    '<span class="row-main">' + (query ? nvHighlight(nvPlain(rec.title), query) : nvEsc(nvPlain(rec.title))) +
+    (sub ? '<span class="row-sub">' + nvEsc(sub) + '</span>' : '') + '</span>' + chips.join('') + '</button>';
+}
+
+NV_VIEWS.cards = {
+  title: function (view) { return { sops: 'SOPs', jobs: 'Jobs', ksas: 'KSAs' }[view.section] || 'Cards'; },
+  needs: ['cards.json'],
+  loadingText: 'Reading the card index…',
+  render: function (view, body) {
+    var c = nvCards();
+    if (c.ok === false) { body.innerHTML = nvFileError('cards.json'); return; }
+    var section = view.section;
+    var noun = { sops: 'SOPs and global tasks', jobs: 'jobs', ksas: 'knowledge and skills' }[section];
+    body.innerHTML = '<div class="search"><input type="search" id="cd-q" autocomplete="off" spellcheck="false" placeholder="Search ' + nvEsc(noun) +
+      ' — number, title, equipment…" value="' + nvEsc(NV.cardQuery[section]) + '"></div>' +
+      (section === 'ksas' ? '<div class="chips" id="cd-f"></div>' : '') + '<div id="cd-list"></div>';
+    var draw = function () {
+      var P = nvP();
+      var f = document.getElementById('cd-f');
+      if (f) f.innerHTML = NV_KSA_FILTERS.map(function (x) { return '<button class="chip-btn' + (NV.ksaFilter === x[0] ? ' on' : '') + '" data-filter="' + x[0] + '">' + nvEsc(x[1]) + '</button>'; }).join('');
+      var q = NV.cardQuery[section];
+      var cards = nvCardsFiltered(section);
+      var out = '';
+      if (q.trim()) {
+        // Hits here first, then a few from the other two sections — an SOP
+        // number typed into Jobs is the commonest miss (npcHits).
+        var here = P.search(cards, q, 30);
+        var seen = {};
+        here.forEach(function (r) { seen[r.id] = 1; });
+        var elsewhere = [];
+        Object.keys(P.SECTIONS).filter(function (s) { return s !== section; }).forEach(function (s) {
+          P.search(nvInSection(s), q, 4).forEach(function (rec) { if (!seen[rec.id]) { seen[rec.id] = 1; elsewhere.push({ rec: rec, section: s }); } });
+        });
+        out += '<div class="count">' + here.length + (here.length === 30 ? '+' : '') + ' match' + (here.length === 1 ? '' : 'es') + '</div>';
+        here.forEach(function (r) { out += nvCardRow(r, section, q); });
+        if (!here.length) out += '<div class="empty">No card here matches “' + nvEsc(q) + '”.</div>';
+        if (elsewhere.length) {
+          out += '<div class="list-group">In other sections</div>';
+          elsewhere.slice(0, 5).forEach(function (h) { out += nvCardRow(h.rec, section, q, h.section); });
+        }
+      } else {
+        out += '<div class="count">' + cards.length + ' ' + (cards.length === 1 ? 'card' : 'cards') + '</div>';
+        var group = null;
+        nvCardsGrouped(section, cards).forEach(function (g) {
+          if (g.label !== group) { group = g.label; out += '<div class="list-group">' + nvEsc(group) + '</div>'; }
+          out += nvCardRow(g.rec, section, '');
+        });
+        if (!cards.length) out += '<div class="empty">Nothing here.</div>';
+      }
+      document.getElementById('cd-list').innerHTML = out;
+    };
+    draw();
+    body.oninput = function (e) { if (e.target.id === 'cd-q') { NV.cardQuery[section] = e.target.value; draw(); } };
+    body.onclick = function (e) {
+      var f = e.target.closest('[data-filter]');
+      if (f) { NV.ksaFilter = f.dataset.filter; draw(); return; }
+      var row = e.target.closest('[data-id]');
+      if (row) nvGo({ v: 'card', id: row.dataset.id });
+    };
+  }
+};
+
+NV_VIEWS.card = {
+  title: function (view) { return nvShort(view.id); },
+  needs: ['cards.json', 'letterhead.json'],
+  loadingText: 'Reading the card…',
+  render: function (view, body) {
+    var P = nvP();
+    var rec = nvCardById(view.id);
+    if (!rec) { body.innerHTML = '<div class="empty">' + nvEsc(view.id) + ' is not in the card index.</div>'; return; }
+    var note = nvCards().bodies[rec.id];
+    var meta = [
+      rec.revision !== '' && rec.revision != null ? 'Rev ' + rec.revision : '',
+      rec.revised ? 'Revised ' + rec.revised : '',
+      rec.status ? 'Status: ' + rec.status : '',
+      rec.approved_by ? 'Approved by ' + rec.approved_by : ''
+    ].filter(Boolean).join('  ·  ');
+    var html = '<div class="head"><div class="kicker">' + nvEsc(P.docKind(rec)) + (rec.asset ? ' · ' + nvEsc(rec.asset) : '') + '</div>' +
+      '<div class="title"><span class="tid">' + nvEsc(nvShort(rec.id)) + '</span>' + nvEsc(nvPlain(rec.title)) + '</div>' +
+      '<div class="meta">' + nvEsc(meta) + '</div></div>' +
+      '<div class="seg" role="group" aria-label="Format">' +
+      '<button data-format="sheet" class="' + (NV.cardFormat === 'sheet' ? 'on' : '') + '">Sheet — the whole card</button>' +
+      '<button data-format="card" class="' + (NV.cardFormat === 'card' ? 'on' : '') + '">Card — the doing part</button></div>' +
+      nvUsedByHtml(rec, view) + '<div id="cd-paper"></div>';
+    body.innerHTML = html;
+    var host = document.getElementById('cd-paper');
+    if (!note || note.error) { host.innerHTML = '<div class="warn-box">' + nvEsc((note && note.error) || 'The card was not published.') + '</div>'; }
+    else {
+      var steps = nvCards().steps || {};
+      var lh = nvLetterhead();
+      var doc = P.buildDocument(rec, note, {
+        format: NV.cardFormat, corpus: nvCards().notes, setup: lh.setup, vessel: lh.vessel,
+        printedAt: new Date(), issuedLine: false, interactive: true,
+        // The Console parsed every step block when it published; the phone
+        // looks the answer up rather than carrying sop-editor.js.
+        parseSteps: function (fence) { return steps[nvFingerprint(fence)] || null; }
+      });
+      nvPaper(host, doc, function (d) { if (d.id) nvOpenCard(d.id); });
+    }
+    body.oninput = null;
+    body.onclick = function (e) {
+      var s = e.target.closest('[data-format]');
+      if (s) { NV.cardFormat = s.dataset.format; nvRender(); return; }
+      if (e.target.closest('[data-usedby-more]')) { view.usedByAll = true; nvRender(); return; }
+      var u = e.target.closest('[data-usedby]');
+      if (u) nvGo({ v: 'card', id: u.dataset.usedby });
+    };
+  }
+};
+
+// npcUsedByHtml: for a knowledge or skill, the cards that ask for it.
+function nvUsedByHtml(rec, view) {
+  if (nvP().homeSection(rec) !== 'ksas') return '';
+  var s = nvShort(rec.id);
+  var users = (nvCards().notes || []).filter(function (c) {
+    return (c.requires_ksa || []).some(function (raw) {
+      var m = String(raw).match(/\[\[([^\]|]+)/) || String(raw).match(/^([A-Za-z]{3}-[\w.-]+)/);
+      return m && (m[1].trim() === rec.id || nvShort(m[1].trim()) === s);
+    });
+  });
+  if (!users.length) return '<div class="usedby"><span class="lbl">Required by</span><span class="dim">no card names this yet</span></div>';
+  var CAP = 14;
+  var shown = view.usedByAll ? users : users.slice(0, CAP);
+  var more = users.length - shown.length;
+  return '<div class="usedby"><span class="lbl">Required by ' + users.length + '</span>' +
+    shown.map(function (c) { return '<button class="pill" data-usedby="' + nvEsc(c.id) + '" title="' + nvEsc(nvPlain(c.title)) + '">' + nvEsc(nvShort(c.id)) + '</button>'; }).join('') +
+    (more > 0 ? '<button class="chip-btn" data-usedby-more="1">and ' + more + ' more</button>' : '') + '</div>';
+}
+
+// ════════════════════════════════════════════════════════════
+// JSA (Console: navipedia-jsa.js, the reading half)
+// ════════════════════════════════════════════════════════════
+
+var NV_JSA_FILTERS = [['all', 'All'], ['draft', 'Drafts'], ['signed', 'Signed']];
+
+NV_VIEWS.jsas = {
+  title: function () { return 'JSA'; },
+  needs: ['jsa.json'],
+  loadingText: 'Reading the JSAs…',
+  render: function (view, body) {
+    var J = NV.files['jsa.json'];
+    if (J.ok === false) { body.innerHTML = nvFileError('jsa.json'); return; }
+    body.innerHTML = '<div class="search"><input type="search" id="js-q" placeholder="Search — number, task, machine, who signed…" value="' + nvEsc(NV.jsaQuery) + '"></div>' +
+      '<div class="chips" id="js-f"></div><div id="js-list"></div>';
+    var draw = function () {
+      document.getElementById('js-f').innerHTML = NV_JSA_FILTERS.map(function (x) {
+        return '<button class="chip-btn' + (NV.jsaFilter === x[0] ? ' on' : '') + '" data-filter="' + x[0] + '">' + x[1] + '</button>';
+      }).join('');
+      var q = NV.jsaQuery.trim().toLowerCase();
+      var list = (J.rows || []).filter(function (r) {
+        if (NV.jsaFilter === 'draft' && r.approved_by) return false;
+        if (NV.jsaFilter === 'signed' && !r.approved_by) return false;
+        if (!q) return true;
+        var hay = [r.id, r.title, r.asset, r.department, r.titles, r.approved_by, r.author, r.date].filter(Boolean).join(' ').toLowerCase();
+        return q.split(/\s+/).every(function (t) { return hay.indexOf(t) !== -1; });
+      });
+      var out = '<div class="count">' + list.length + ' ' + (list.length === 1 ? 'JSA' : 'JSAs') + '</div>';
+      if (!list.length) out += '<div class="empty">' + ((J.rows || []).length ? 'Nothing matches.' : 'No JSAs in the vault yet. They are written on the Console, under Navipedia → JSA.') + '</div>';
+      // Grouped by the machine — somebody looking for one is standing at a pump.
+      var groups = {};
+      list.forEach(function (r) { var k = r.asset || '— no component named —'; (groups[k] = groups[k] || []).push(r); });
+      Object.keys(groups).sort(function (a, b) { return a.localeCompare(b, undefined, { numeric: true }); }).forEach(function (k) {
+        out += '<div class="list-group">' + nvEsc(k) + '</div>';
+        groups[k].forEach(function (r) {
+          out += '<button class="row" data-id="' + nvEsc(r.id) + '"><span class="row-main"><span class="row-id">' + nvEsc(r.id) + '</span> ' +
+            (r.approved_by ? '<span class="tag ok">signed</span>' : '<span class="tag warn">draft</span>') +
+            (r.built_with === 'composed' ? ' <span class="tag">composed</span>' : '') +
+            '<span style="display:block;margin-top:3px">' + nvEsc(r.title || '(untitled)') + '</span>' +
+            '<span class="row-sub">' + nvEsc(r.date || 'undated') + (r.approved_by ? ' · ' + nvEsc(r.approved_by) : r.author ? ' · ' + nvEsc(r.author) : '') + '</span></span></button>';
+        });
+      });
+      document.getElementById('js-list').innerHTML = out;
+    };
+    draw();
+    body.oninput = function (e) { if (e.target.id === 'js-q') { NV.jsaQuery = e.target.value; draw(); } };
+    body.onclick = function (e) {
+      var f = e.target.closest('[data-filter]');
+      if (f) { NV.jsaFilter = f.dataset.filter; draw(); return; }
+      var row = e.target.closest('[data-id]');
+      if (row) nvGo({ v: 'jsa', id: row.dataset.id });
+    };
+  }
+};
+
+NV_VIEWS.jsa = {
+  title: function (view) { return view.id; },
+  needs: ['jsa.json', 'letterhead.json'],
+  loadingText: 'Reading the JSA…',
+  render: function (view, body) {
+    var J = NV.files['jsa.json'];
+    var rec = (J.rows || []).filter(function (r) { return r.id === view.id; })[0];
+    var note = (J.notes || {})[view.id];
+    if (!rec || !note) { body.innerHTML = '<div class="empty">' + nvEsc(view.id) + ' is not among the published JSAs.</div>'; return; }
+    if (note.error) { body.innerHTML = '<div class="warn-box">' + nvEsc(note.error) + '</div>'; return; }
+    var F = window.jsaForm;
+    var form = F.formFromNote(rec, note);
+    var signed = !!String(form.approved_by || '').trim();
+    var meta = [form.date || '', signed ? 'Signed by ' + nvEsc(form.approved_by) : '<b style="color:var(--warning)">DRAFT — not yet approved</b>',
+      form.author ? 'written by ' + nvEsc(form.author) : '',
+      form.built_with === 'composed' ? 'composed from ' + (form.composed_from || []).length + ' cards' : ''].filter(Boolean).join(' · ');
+    body.innerHTML = '<div class="head"><div class="kicker">Job Safety Analysis</div><div class="title"><span class="tid">' + nvEsc(form.id) + '</span>' +
+      nvEsc(form.title || '(untitled)') + '</div><div class="meta">' + meta + '</div></div><div id="js-paper"></div>';
+    var lh = nvLetterhead();
+    nvPaper(document.getElementById('js-paper'), F.buildDocument(form, { setup: lh.setup, vessel: lh.vessel, printedAt: new Date() }));
+    body.oninput = null;
+    body.onclick = null;
+  }
+};
+
+// ════════════════════════════════════════════════════════════
+// Electrical Distribution (Console: navipedia-electrical.js)
+// ════════════════════════════════════════════════════════════
+
+function nvEL() { return window.electricalLookup; }
+function nvEix() {
+  if (!NV.ix.elec) NV.ix.elec = nvEL().build(NV.files['electrical.json']);
+  return NV.ix.elec;
+}
+function nvEgo(ev) { nvGo({ v: 'elec', ev: ev }); }
+
+function nvEViewFor(text) {
+  var ix = nvEix(), L = nvEL();
+  var ref = L.parseBreakerRef(ix, text);
+  var p = ix.resolvePanel(text);
+  if (p) return { kind: 'panel', panel: p.name };
+  if (ref) return { kind: 'breaker', panel: ref.panel.name, br: ref.br };
+  return { kind: 'item', query: text };
+}
+function nvECanonDeck(name) {
+  var decks = (NV.files['electrical.json'] || {}).decks || [];
+  var f = String(name || '').toLowerCase().trim();
+  if (!f) return '';
+  var alias = { 'second deck': '2nd deck', 'first deck': '1st deck', 'truck deck': 'trunk deck', 'bridge': 'bridge deck' }[f] || f;
+  return decks.filter(function (d) { return d.toLowerCase() === alias; })[0] || name;
+}
+function nvEPanelsByDeck() {
+  var L = nvEL(), ix = nvEix();
+  var decks = (NV.files['electrical.json'].decks || []).slice();
+  var groups = {};
+  ix.panels.forEach(function (p) {
+    var loc = L.locate(ix, p);
+    var deck = nvECanonDeck(loc.deck) || 'Location not recorded';
+    (groups[deck] = groups[deck] || []).push({ p: p, loc: loc });
+  });
+  var order = function (d) { var i = decks.indexOf(d); return i < 0 ? 999 : i; };
+  return Object.keys(groups).sort(function (a, b) { return order(a) - order(b) || a.localeCompare(b); })
+    .map(function (d) { return [d, groups[d]]; });
+}
+function nvEPanelLink(name) {
+  var p = nvEix().byName.get(name);
+  return '<button class="lnk" data-go-panel="' + nvEsc(name) + '">' + nvEsc(p ? (p.panel || p.name) : name) + '</button>';
+}
+function nvEBreakerLink(panel, br, text) {
+  var p = nvEix().byName.get(panel);
+  return '<button class="lnk" data-go-breaker="' + nvEsc(panel) + '|' + br + '">' + nvEsc(text || ((p ? (p.panel || p.name) : panel) + ' br ' + br)) + '</button>';
+}
+function nvECaveat() { return '<div class="caveat">⚠ ' + nvEsc(nvEL().CAVEAT) + '</div>'; }
+function nvEHead(title, meta, chips) {
+  return '<div class="head"><div class="title">' + title + '</div>' + (meta ? '<div class="meta">' + meta + '</div>' : '') +
+    (chips ? '<div style="margin-top:6px">' + chips + '</div>' : '') + '</div>';
+}
+
+NV_VIEWS.elec = {
+  title: function (view) {
+    var ev = view.ev || {};
+    if (ev.kind === 'panel') return 'Panel ' + ev.panel;
+    if (ev.kind === 'breaker') return ev.panel + ' br ' + ev.br;
+    if (ev.kind === 'item') return ev.component ? String(ev.component).split(' ')[0] : '“' + ev.query + '”';
+    if (ev.kind === 'space') return ev.space;
+    return 'Electrical Distribution';
+  },
+  needs: ['electrical.json'],
+  loadingText: 'Reading the panel schedule…',
+  render: function (view, body) {
+    var m = NV.files['electrical.json'];
+    if (m.ok === false) { body.innerHTML = nvFileError('electrical.json'); return; }
+    var ev = view.ev || { kind: 'home' };
+    var html;
+    if (ev.kind === 'panel')        html = nvEPanelView(ev.panel);
+    else if (ev.kind === 'breaker') html = nvEBreakerView(ev.panel, ev.br);
+    else if (ev.kind === 'item')    html = nvEItemView(ev);
+    else if (ev.kind === 'space')   html = nvESpaceView(ev.space);
+    else                            html = nvEHomeView();
+    body.innerHTML = html;
+    nvEHydrateDrawings();
+    if (ev.kind === 'home') nvEWireSearch();
+    else body.oninput = null;
+    body.onclick = function (e) {
+      var t = e.target.closest('[data-go-panel],[data-go-breaker],[data-go-item],[data-go-item-q],[data-go-space],[data-ac],[data-card]');
+      if (!t) return;
+      if (t.dataset.goBreaker) { var pb = t.dataset.goBreaker.split('|'); nvEgo({ kind: 'breaker', panel: pb[0], br: Number(pb[1]) }); }
+      else if (t.dataset.goPanel) nvEgo({ kind: 'panel', panel: t.dataset.goPanel });
+      else if (t.dataset.goItemQ) nvEgo({ kind: 'item', query: t.dataset.goItemQ });
+      else if (t.dataset.goItem) nvEgo({ kind: 'item', query: t.dataset.goItem, component: t.dataset.goItem });
+      else if (t.dataset.goSpace) nvEgo({ kind: 'space', space: t.dataset.goSpace });
+      else if (t.dataset.card) nvOpenCard(t.dataset.card);
+      else if (t.dataset.ac != null) {
+        var h = NV.elecHits[Number(t.dataset.ac)];
+        if (h) nvEPick(h);
+      }
+    };
+  }
+};
+
+function nvEPick(h) {
+  var q = NV.elecQuery.trim();
+  NV.elecQuery = '';
+  if (h.kind === 'panel') nvEgo({ kind: 'panel', panel: h.panel });
+  else if (h.kind === 'breaker') nvEgo({ kind: 'breaker', panel: h.panel, br: h.br });
+  else if (h.kind === 'component') nvEgo({ kind: 'item', query: q, component: h.component.note });
+  else nvEgo({ kind: 'item', query: h.query });
+}
+
+function nvEWireSearch() {
+  var body = document.getElementById('body');
+  var draw = function () {
+    var box = document.getElementById('el-ac');
+    var ix = nvEix(), L = nvEL();
+    var q = NV.elecQuery;
+    if (!q.trim()) { box.innerHTML = ''; document.getElementById('el-home').hidden = false; return; }
+    document.getElementById('el-home').hidden = true;
+    var hits = NV.elecHits = L.suggest(ix, q, { limit: 14 });
+    var heads = { panel: 'Panels', breaker: 'Breakers', component: 'Equipment register', search: '' };
+    var html = '', last = null;
+    hits.forEach(function (h, i) {
+      if (h.kind !== last && heads[h.kind]) html += '<div class="list-group">' + heads[h.kind] + '</div>';
+      last = h.kind;
+      var main = '', sub = '';
+      if (h.kind === 'panel') {
+        var p = ix.byName.get(h.panel);
+        main = '<span class="kind panel">Panel</span> <b>' + nvHighlight(p.panel || p.name, q) + '</b> <span class="dim">' + nvEsc(p.system) + '</span>';
+        sub = L.locate(ix, p).where;
+      } else if (h.kind === 'breaker') {
+        var pb = ix.byName.get(h.panel);
+        main = '<span class="kind breaker">Breaker</span> <b>' + nvEsc((pb.panel || pb.name) + ' br ' + h.br) + '</b> ' +
+          (h.held === false ? '<em>not on the schedule</em>' : nvHighlight(h.label || '(unlabeled)', q));
+        sub = L.locate(ix, pb).where;
+      } else if (h.kind === 'component') {
+        var c = h.component;
+        main = '<span class="kind item">' + (c.group ? 'Group' : 'Item') + '</span> <span class="row-id">' + nvEsc(c.code) + '</span> ' + nvHighlight(c.name, q);
+        sub = h.supply ? 'Fed from ' + h.supply.map(function (s) { return s.panel + ' br ' + s.br; }).join(', ')
+            : (c.group ? 'Group — the machines beneath it' : 'No crosswalked breaker — the schedule’s labels will be searched');
+      } else {
+        main = '<span class="kind">All</span> Everything that names “' + nvEsc(h.query) + '”' + (h.total > 14 ? ' — ' + h.total + ' hits' : '');
+      }
+      html += '<button class="row" data-ac="' + i + '"><span class="row-main">' + main + (sub ? '<span class="row-sub">' + nvEsc(sub) + '</span>' : '') + '</span></button>';
+    });
+    box.innerHTML = html || '<div class="empty">Nothing matches “' + nvEsc(q) + '”.</div>';
+  };
+  body.oninput = function (e) { if (e.target.id === 'el-q') { NV.elecQuery = e.target.value; draw(); } };
+  var input = document.getElementById('el-q');
+  input.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    var h = (NV.elecHits || [])[0];
+    if (h && NV.elecQuery.trim()) nvEPick(h);
+  });
+  draw();
+}
+
+function nvEHomeView() {
+  var ix = nvEix(), L = nvEL(), m = NV.files['electrical.json'];
+  var positions = ix.panels.reduce(function (n, p) { return n + p.breakers.length; }, 0);
+  var onMap = {};
+  ix.panels.forEach(function (p) {
+    var loc = L.locate(ix, p);
+    if (!loc.map) return;
+    var bySpace = onMap[loc.map.name] = onMap[loc.map.name] || {};
+    (bySpace[loc.map.space] = bySpace[loc.map.space] || []).push(p);
+  });
+  var maps = '';
+  ix.maps.forEach(function (map) {
+    var bySpace = onMap[map.name] || {};
+    var markers = Object.keys(bySpace).map(function (space) {
+      var list = bySpace[space];
+      return { rect: map.spaces[space], space: space, label: space + ' · ' + list.length,
+               title: ((ix.spaces[space] || {}).name || space) + ': ' + list.map(function (p) { return p.panel || p.name; }).join(', ') };
+    });
+    maps += '<section class="sec"><h3>' + nvEsc(map.name) + ' <span class="sub">— ' + markers.length + ' spaces with panels; tap one</span></h3>' + nvEDrawingHtml(map, markers) + '</section>';
+  });
+  var ladder = nvEPanelsByDeck().map(function (d) {
+    var list = d[1].slice().sort(function (a, b) { return a.p.name.localeCompare(b.p.name, undefined, { numeric: true }); });
+    return '<div class="ladder-row"><div class="ladder-deck">' + nvEsc(d[0]) + '</div><div class="ladder-pills">' + list.map(function (x) {
+      return '<button class="pill' + (x.p.locationOnly ? ' dash' : '') + '" data-go-panel="' + nvEsc(x.p.name) + '">' + nvEsc(x.p.panel || x.p.name) + '</button>';
+    }).join('') + '</div></div>';
+  }).join('');
+  return '<div class="search"><input type="search" id="el-q" autocomplete="off" spellcheck="false" placeholder="Panel, breaker (LP3 23), machine or code…" value="' + nvEsc(NV.elecQuery) + '"></div>' +
+    '<div id="el-ac"></div><div id="el-home">' +
+    '<div class="meta" style="margin:0 2px 8px">' + ix.panels.length + ' panels · ' + positions + ' breaker positions, ' + ix.labels.length + ' labelled · ' +
+      ix.supply.size + ' crosswalked to the equipment register · mirror generated ' + nvEsc((ix.panels[0] || {}).generated || '—') + '</div>' +
+    '<div class="md" style="font-size:14px"><p>Search a <b>panel</b> (<code>P405</code>), a <b>breaker</b> (<code>LP3 23</code>) or an <b>item</b> — a machine, a code (<code>702.005</code>) or a label\'s words (<code>fuel oil</code>, <code>lights or lighting</code>, <code>pump not bilge</code>).</p></div>' +
+    (maps || '<div class="note-box">No deck map in <code>0.8.1 The Ship</code> carries Space Register cards yet, so panels are placed by deck and room only.</div>') +
+    '<section class="sec"><h3>By deck</h3>' + ladder + '</section>' +
+    (m.spacesError ? '<div class="note-box">The Space Register (spaces.json) could not be read: ' + nvEsc(m.spacesError) + '</div>' : '') + '</div>';
+}
+
+function nvELocationHtml(p) {
+  var L = nvEL(), ix = nvEix();
+  var loc = L.locate(ix, p);
+  var deck = nvECanonDeck(loc.deck);
+  var spaces = loc.spaces.map(function (s) { return '<button class="lnk" data-go-space="' + nvEsc(s.id) + '">' + nvEsc(s.id) + '</button> ' + nvEsc(s.name); }).join(' or ');
+  var facts = [
+    ['Deck', nvEsc(p.deck || '—')], ['Room', nvEsc(p.room || '—')], ['Position', nvEsc(p.position || '—')],
+    p.scheduleLocation ? ['Schedule sheet says', nvEsc(p.scheduleLocation)] : null,
+    ['Space', spaces || '<span class="dim">no Space Register entry names this room</span>']
+  ].filter(Boolean);
+  var drawing = loc.map
+    ? '<div class="drawing-cap">' + nvEsc(loc.map.name) + ' — the <b>' + nvEsc(loc.map.space) + '</b> card as laid on the drawing. The panel is <b>' + nvEsc(p.position || 'somewhere') + '</b> inside that room.</div>' +
+      nvEDrawingHtml(ix.maps.filter(function (m) { return m.name === loc.map.name; })[0], [{ rect: loc.map.rect, space: loc.map.space, label: p.panel || p.name, on: true }])
+    : '<div class="note-box">No deck map places ' + nvEsc(deck || 'this deck') + ' yet.</div>';
+  return '<table class="facts">' + facts.map(function (f) { return '<tr><th>' + f[0] + '</th><td>' + f[1] + '</td></tr>'; }).join('') + '</table>' +
+    '<div class="figs">' + nvEDeckLadderSvg(deck) + nvERoomSvg(p.room, loc.inRoom, p.position) + '</div>' + drawing;
+}
+
+function nvEDeckLadderSvg(deck) {
+  var decks = NV.files['electrical.json'].decks || [];
+  if (!decks.length) return '';
+  var rowH = 17, w = 190, h = decks.length * rowH + 6;
+  var rows = decks.map(function (d, i) {
+    var y = 3 + i * rowH, on = d === deck;
+    return '<g class="' + (on ? 'deck-on' : 'deck') + '"><rect x="2" y="' + y + '" width="' + (w - 4) + '" height="' + (rowH - 3) + '" rx="3"/>' +
+      '<text x="10" y="' + (y + rowH - 7) + '">' + nvEsc(d) + (on ? '  ◀' : '') + '</text></g>';
+  }).join('');
+  var found = decks.indexOf(deck) !== -1;
+  return '<figure class="fig"><svg viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" role="img" aria-label="Deck: ' + nvEsc(deck) + '">' + rows + '</svg>' +
+    '<figcaption>' + (found ? 'Deck' : 'Deck “' + nvEsc(deck || '—') + '” is not in the Space Register list') + '</figcaption></figure>';
+}
+
+function nvERoomSvg(room, pos, words) {
+  var w = 220, h = 124, x0 = 26, y0 = 20, rw = 168, rh = 84;
+  var fx = { aft: 0.2, mid: 0.5, fwd: 0.8 }, fy = { port: 0.2, center: 0.5, stbd: 0.8 };
+  var mark = '';
+  if (pos.fa && pos.ps) mark = '<circle class="rdot" cx="' + (x0 + rw * fx[pos.fa]) + '" cy="' + (y0 + rh * fy[pos.ps]) + '" r="7"/>';
+  else if (pos.fa) mark = '<rect class="band" x="' + (x0 + rw * fx[pos.fa] - 10) + '" y="' + (y0 + 3) + '" width="20" height="' + (rh - 6) + '" rx="6"/>';
+  else if (pos.ps) mark = '<rect class="band" x="' + (x0 + 3) + '" y="' + (y0 + rh * fy[pos.ps] - 9) + '" width="' + (rw - 6) + '" height="18" rx="6"/>';
+  var cap = pos.fa || pos.ps ? 'In the room: ' + nvEsc(words) : 'The schedule gives no side: “' + nvEsc(words || '—') + '”';
+  return '<figure class="fig"><svg viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" role="img" aria-label="' + nvEsc(cap) + '">' +
+    '<rect class="room" x="' + x0 + '" y="' + y0 + '" width="' + rw + '" height="' + rh + '" rx="4"/>' +
+    '<text class="room-name" x="' + (x0 + rw / 2) + '" y="' + (y0 + rh / 2 + 4) + '" text-anchor="middle">' + nvEsc(room || '') + '</text>' + mark +
+    '<text class="axis" x="' + (x0 + rw / 2) + '" y="13" text-anchor="middle">PORT</text>' +
+    '<text class="axis" x="' + (x0 + rw / 2) + '" y="' + (h - 4) + '" text-anchor="middle">STBD</text>' +
+    '<text class="axis" x="' + (w - 2) + '" y="' + (y0 + rh / 2 + 4) + '" text-anchor="end">FWD</text>' +
+    '<text class="axis" x="2" y="' + (y0 + rh / 2 + 4) + '">AFT</text></svg><figcaption>' + cap + '</figcaption></figure>';
+}
+
+function nvEDrawingHtml(map, markers) {
+  if (!map) return '';
+  var ms = markers.filter(function (m) { return m.rect; }).map(function (m) {
+    var cx = (m.rect.x + m.rect.w / 2) * 100, cy = (m.rect.y + m.rect.h / 2) * 100;
+    return '<button class="marker' + (m.on ? ' marker-on' : '') + '" style="left:' + cx + '%;top:' + cy + '%" data-go-space="' + nvEsc(m.space) + '" title="' + nvEsc(m.title || m.label) + '">' +
+      '<span class="marker-dot"></span><span class="marker-label">' + nvEsc(m.label) + '</span></button>';
+  }).join('');
+  return '<div class="drawing" style="aspect-ratio:' + map.aspect + '" data-image="' + nvEsc(map.image) + '"><img alt="' + nvEsc(map.name) + ' deck drawing" hidden>' +
+    '<div class="drawing-wait">Loading the drawing…</div>' + ms + '</div>';
+}
+
+// The drawings are their own file, fetched the first time one is on screen.
+function nvEHydrateDrawings() {
+  var els = document.querySelectorAll('#body .drawing[data-image]');
+  if (!els.length) return;
+  nvFile('electrical-images.json').then(function (f) {
+    Array.prototype.forEach.call(els, function (el) {
+      if (!el.isConnected) return;
+      var res = (f.images || {})[el.dataset.image];
+      var img = el.querySelector('img'), wait = el.querySelector('.drawing-wait');
+      if (res && res.dataUrl) { img.src = res.dataUrl; img.hidden = false; if (wait) wait.remove(); }
+      else if (wait) wait.textContent = 'The drawing could not be read: ' + ((res && res.error) || 'not published');
+    });
+  }, function () {
+    Array.prototype.forEach.call(els, function (el) { var w = el.querySelector('.drawing-wait'); if (w) w.textContent = 'The drawing is not on this phone yet.'; });
+  });
+}
+
+function nvEUpTreeHtml(nodes) {
+  if (!nodes.length) return '';
+  return '<ul class="tree">' + nodes.map(function (n) {
+    return '<li><span class="arrow">↑</span> ' + nvEBreakerLink(n.panel, n.br) + ' <span class="dim">“' + nvEsc(n.label) + '”</span>' +
+      (n.loop ? ' <span class="tag">loop — shown above</span>' : '') + (!n.known ? ' <span class="tag">not in the panel mirror</span>' : '') +
+      nvEUpTreeHtml(n.up) + '</li>';
+  }).join('') + '</ul>';
+}
+function nvEDownTreeHtml(nodes) {
+  if (!nodes.length) return '';
+  return '<ul class="tree">' + nodes.map(function (n) {
+    var p = nvEix().byName.get(n.panel);
+    var other = p && p.fedFrom.length > 1 ? ' <span class="tag">also fed from ' + (p.fedFrom.length - 1) + ' other</span>' : '';
+    return '<li><span class="arrow">↓</span> br ' + n.br + ' → ' + nvEPanelLink(n.panel) + ' <span class="dim">“' + nvEsc(n.label) + '”</span>' + other +
+      (n.loop ? ' <span class="tag">loop</span>' : nvEDownTreeHtml(n.down)) + '</li>';
+  }).join('') + '</ul>';
+}
+function nvEUpstreamSection(p, heading) {
+  var up = nvEL().upstream(nvEix(), p.name);
+  return '<section class="sec"><h3>' + (heading || 'Fed from — back to the source') + '</h3>' +
+    (up.length
+      ? '<div>' + nvEPanelLink(p.name) + '</div>' + nvEUpTreeHtml(up) +
+        (p.fedFrom.length > 1 ? '<div class="warn-box">' + nvEsc(p.panel || p.name) + ' is fed from ' + p.fedFrom.length + ' places. Opening one of them may not de-energise it.</div>' : '')
+      : '<div class="dim small">No panel in the mirror names a feed to ' + nvEsc(p.panel || p.name) + '. It may be fed from a switchboard the schedule does not list, or from an unlabeled breaker — only the panel itself can say.</div>') +
+    '</section>';
+}
+function nvECitedHtml(list) {
+  if (!list.length) return '';
+  return '<section class="sec"><h3>Cards that cite it</h3><div class="ladder-pills">' + list.map(function (c) {
+    return '<button class="pill" data-card="' + nvEsc(c.note) + '">' + nvEsc(c.note) + (c.brs ? ' <span class="dim">br ' + c.brs.join(', ') + '</span>' : '') + '</button>';
+  }).join('') + '</div></section>';
+}
+
+function nvEPanelView(name) {
+  var ix = nvEix(), L = nvEL();
+  var p = ix.byName.get(name);
+  if (!p) return '<div class="empty">Panel ' + nvEsc(name) + ' is not in the panel mirror.</div>';
+  var down = L.downstream(ix, p.name);
+  var load = L.downstreamLoad(ix, p.name);
+  var labelled = p.breakers.filter(function (b) { return !L.isEmptyLabel(b.label); }).length;
+  var citedBrs = {};
+  p.citedBy.forEach(function (c) { c.brs.forEach(function (br) { citedBrs[br] = (citedBrs[br] || 0) + 1; }); });
+  var feedsAt = {};
+  (ix.feeds.get(p.name) || []).forEach(function (f) { feedsAt[f.br] = f.panel; });
+  var rows = p.breakers.map(function (b) {
+    var comp = b.links.filter(function (l) { return l.kind === 'component'; }).map(function (l) {
+      return '<button class="lnk small" data-go-item="' + nvEsc(l.note) + '">' + nvEsc(l.note.split(' ')[0]) + '</button>';
+    }).join(' ');
+    var fed = feedsAt[b.no] ? '→ ' + nvEPanelLink(feedsAt[b.no]) : '';
+    var empty = L.isEmptyLabel(b.label);
+    return '<tr class="' + (empty ? 'empty' : '') + '"><td class="num">' + nvEBreakerLink(p.name, b.no, String(b.no)) + '</td><td>' +
+      (empty ? nvEsc(b.label || 'unlabeled') : nvEsc(b.label)) + (comp || fed ? '<div class="small">' + comp + ' ' + fed + '</div>' : '') +
+      (citedBrs[b.no] ? ' <span class="tag">cited</span>' : '') + '</td></tr>';
+  }).join('');
+  var chips = (p.system ? '<span class="tag">' + nvEsc(p.system) + '</span> ' : '') + (p.locationOnly ? '<span class="tag dash">Location only</span>' : '');
+  return nvEHead('Panel ' + nvEsc(p.display), p.locationOnly ? 'Placed by the Summary sheet; no schedule sheet lists its breakers' : p.breakers.length + ' positions, ' + labelled + ' labelled', chips) +
+    '<section class="sec"><h3>Where it is</h3>' + nvELocationHtml(p) + '</section>' +
+    (p.locationOnly ? '<div class="warn-box">Location only — the list on the panel door is the only list. Isolation points on this panel cannot be cited from the vault; read them at the panel and treat every one as [VERIFY].</div>' : '') +
+    nvEUpstreamSection(p) +
+    '<section class="sec"><h3>Feeds — what depends on it</h3>' +
+    (down.length
+      ? nvEDownTreeHtml(down) + '<div class="dim small" style="margin-top:6px">Downstream: ' + load.panels.length + ' panel' + (load.panels.length === 1 ? '' : 's') + ' carrying ' + load.circuits +
+        ' labelled circuits, plus the ' + labelled + ' on this panel. ' + (load.multiFed.length ? load.multiFed.join(', ') + (load.multiFed.length === 1 ? ' has' : ' have') + ' another feed and may stay live.' : '') + '</div>'
+      : '<div class="dim small">No other panel names ' + nvEsc(p.panel || p.name) + ' as its feed. What it serves is its own breaker schedule below.</div>') +
+    '</section>' +
+    (p.breakers.length ? '<section class="sec"><h3>Breaker schedule</h3><table class="brtable"><thead><tr><th class="num">Br</th><th>Circuit</th></tr></thead><tbody>' + rows + '</tbody></table></section>' : '') +
+    nvECitedHtml(p.citedBy) + nvECaveat();
+}
+
+function nvEBreakerView(panelName, br) {
+  var ix = nvEix(), L = nvEL();
+  var r = L.serves(ix, panelName, br);
+  var p = ix.byName.get(panelName);
+  if (!p) return '<div class="empty">Panel ' + nvEsc(panelName) + ' is not in the panel mirror.</div>';
+  var pname = p.panel || p.name;
+  if (!r.found) return nvEHead(nvEsc(pname) + ' br ' + br) + '<div class="warn-box">Panel ' + nvEPanelLink(p.name) + ' has no breaker ' + br + ' in its schedule (positions held: ' + nvEsc(r.held) + ').</div>';
+  var serves;
+  if (r.locationOnly) serves = '<div class="warn-box">' + nvEsc(pname) + ' is location-only: no schedule sheet lists its breakers, so what br ' + br + ' serves cannot be read from the vault. Read it at the panel.</div>';
+  else if (r.empty) serves = '<div class="dim">The position exists and carries no circuit label (' + nvEsc(r.breaker.label || 'unlabeled') + ').</div>';
+  else {
+    var comps = r.components.map(function (n) {
+      return '<div class="serves-row"><span class="kind item">Item</span> <button class="lnk" data-go-item="' + nvEsc(n) + '">' + nvEsc(n) + '</button> <span class="tag ok">crosswalked</span></div>';
+    }).join('');
+    var panels = r.feedsPanels.map(function (n) {
+      return '<div class="serves-row"><span class="kind panel">Panel</span> ' + nvEPanelLink(n) + ' <span class="dim">' + nvEsc(ix.byName.get(n) ? L.locate(ix, ix.byName.get(n)).where : '') + '</span></div>';
+    }).join('');
+    serves = comps + panels ||
+      '<div class="dim">Not crosswalked to a register component — the label is the schedule\'s own words. Search it as an item to see every breaker that names the same thing: <button class="lnk" data-go-item-q="' + nvEsc(r.breaker.label) + '">' + nvEsc(r.breaker.label) + '</button></div>';
+  }
+  var cited = r.cited.map(function (n) { return { note: n, brs: null }; });
+  return nvEHead(nvEsc(pname) + ' <span class="soft">br ' + br + '</span>' + (r.breaker && !r.empty ? ' — ' + nvEsc(r.breaker.label) : ''),
+      'In panel ' + nvEPanelLink(p.name) + ' · ' + nvEsc(p.system || '')) +
+    '<section class="sec"><h3>Serves</h3>' + serves + '</section>' +
+    '<section class="sec"><h3>Where to walk — panel ' + nvEsc(pname) + '</h3>' + nvELocationHtml(p) + '</section>' +
+    nvEUpstreamSection(p, 'Upstream of ' + nvEsc(pname)) + nvECitedHtml(cited) + nvECaveat();
+}
+
+function nvEItemView(v) {
+  var ix = nvEix(), L = nvEL();
+  var component = v.component ? ix.equipByNote.get(v.component) : null;
+  var r = L.feedsOf(ix, { query: v.query || v.component, component: component });
+  var register;
+  if (component) {
+    register = r.linked.length
+      ? '<span class="tag ok">crosswalked</span> The crosswalk links ' + nvEsc(component.note) + ' to a breaker.'
+      : component.group
+        ? nvEsc(component.note) + ' is a group, not a machine — it has no breaker of its own. ' + (r.group && r.group.children.length
+            ? r.group.children.length + ' unit' + (r.group.children.length === 1 ? '' : 's') + ' beneath it carr' + (r.group.children.length === 1 ? 'ies' : 'y') + ' one.'
+            : 'No unit beneath it carries a crosswalked supply, so the schedule’s labels were searched.')
+        : nvEsc(component.note) + ' is in the register and the crosswalk gave it no breaker, so the schedule\'s labels were searched for “' + nvEsc(r.subject) + '”.';
+  } else if (r.register.length) {
+    register = r.linked.length
+      ? r.register.length + ' register entr' + (r.register.length === 1 ? 'y matches' : 'ies match') + '; ' + r.linked.length + ' carr' + (r.linked.length === 1 ? 'ies' : 'y') + ' a crosswalked breaker.'
+      : r.register.length + ' register entr' + (r.register.length === 1 ? 'y matches' : 'ies match') + '; none carries a crosswalked breaker, so the schedule\'s labels were searched.';
+  } else {
+    register = 'Nothing in the equipment register matches “' + nvEsc(r.query) + '”. The schedule\'s labels were searched anyway.';
+  }
+  var title = component ? '<span class="tid">' + nvEsc(component.code) + '</span><span class="soft">' + nvEsc(component.name) + '</span>' : '“' + nvEsc(r.query) + '”';
+  if (!r.panels.length) {
+    var diag = (r.diagnosis || []).map(function (d) {
+      var terms = d.terms.map(function (a) { return '“' + nvEsc(a) + '”'; }).join(' or ');
+      var why = d.dead ? 'That word is nowhere in the schedule' + (d.near.length ? '; it does use: ' + d.near.map(nvEsc).join(', ') : '') + '.'
+                       : 'That word IS in the schedule, just never alongside the rest.';
+      return '<li>Without ' + terms + ': ' + d.count + ' label' + (d.count === 1 ? '' : 's') + '. ' + why +
+        (d.sample.length ? '<ul>' + d.sample.map(function (s) { return '<li>' + nvEBreakerLink(s.panel, s.br) + ' “' + nvEsc(s.label) + '”</li>'; }).join('') + '</ul>' : '') + '</li>';
+    }).join('');
+    return nvEHead(title, 'What it depends on') + '<div class="note-box">' + register + '</div>' +
+      '<section class="sec"><h3>Not scheduled</h3><p class="small" style="line-height:1.5">Searched ' + r.panelCount + ' panel notes for ' + nvEsc(r.searched) + ' and no breaker label names it.</p>' +
+      (diag ? '<ul class="diag">' + diag + '</ul><p class="dim small">Drop or respell that term and the rest of the search stands.</p>' : '') +
+      '<p class="dim small">Many breaker positions are unlabeled — the machine may well be fed from one of them, and only the panel itself can say.</p></section>' +
+      (r.register.length > 1 && !component ? nvERegisterList(r.register) : '');
+  }
+  var cards = r.panels.map(function (x) {
+    var p = ix.byName.get(x.panel);
+    if (!p) return '<div class="ecard">Panel ' + nvEsc(x.panel) + ' — not in the panel mirror</div>';
+    var lines = x.rows.map(function (row) {
+      return '<div class="serves-row">' + nvEBreakerLink(x.panel, row.br) + ' <span>“' + nvEsc(row.label) + '”</span> ' +
+        (row.how === 'crosswalked' ? '<span class="tag ok">crosswalked</span>' : '<span class="tag warn">label match, unconfirmed</span>') + '</div>';
+    }).join('');
+    var up = L.upstream(ix, x.panel);
+    return '<div class="ecard"><div class="ecard-head">' + nvEPanelLink(x.panel) + ' <span class="dim small">' + nvEsc(L.locate(ix, p).where) + '</span></div>' + lines +
+      (up.length ? '<details class="chain"><summary>Upstream of ' + nvEsc(p.panel || p.name) + '</summary>' + nvEUpTreeHtml(up) + '</details>' : '') + '</div>';
+  }).join('');
+  var byMap = {};
+  r.panels.forEach(function (x) {
+    var p = ix.byName.get(x.panel);
+    if (!p) return;
+    var loc = L.locate(ix, p);
+    if (!loc.map) return;
+    var mm = byMap[loc.map.name] = byMap[loc.map.name] || {};
+    if (!mm[loc.map.space]) mm[loc.map.space] = { rect: loc.map.rect, space: loc.map.space, labels: [], on: true };
+    mm[loc.map.space].labels.push(p.panel || p.name);
+  });
+  var drawings = Object.keys(byMap).map(function (name) {
+    var map = ix.maps.filter(function (m) { return m.name === name; })[0];
+    return '<div class="drawing-cap">' + nvEsc(name) + '</div>' + nvEDrawingHtml(map, Object.keys(byMap[name]).map(function (k) {
+      var x = byMap[name][k]; return { rect: x.rect, space: x.space, on: true, label: x.labels.join(', ') };
+    }));
+  }).join('');
+  var off = r.panels.filter(function (x) { var p = ix.byName.get(x.panel); return p && !L.locate(ix, p).map; })
+    .map(function (x) { var p = ix.byName.get(x.panel); return nvEPanelLink(x.panel) + ' <span class="dim">' + nvEsc(L.locate(ix, p).where) + '</span>'; });
+  return nvEHead(title, 'Fed from ' + r.panels.length + ' panel' + (r.panels.length === 1 ? '' : 's')) +
+    '<div class="note-box">' + register + '</div>' +
+    (r.multiPanel ? '<div class="warn-box">More than one panel names this — isolating one may not de-energise it.</div>' : '') +
+    (!r.linked.length && !(r.group && r.group.children.length) ? '<div class="note-box">Searched ' + r.panelCount + ' panel notes for ' + nvEsc(r.searched) + '. These are matches made by reading labels; the crosswalk has not confirmed them.</div>' : '') +
+    '<section class="sec"><h3>Depends on</h3>' + cards + '</section>' +
+    '<section class="sec"><h3>Where to walk</h3>' + drawings + (off.length ? '<div class="small" style="margin-top:8px;line-height:1.7">' + (drawings ? 'Not on a deck map yet: ' : '') + off.join(' · ') + '</div>' : '') + '</section>' +
+    (r.register.length > 1 && !component ? nvERegisterList(r.register) : '') + nvECaveat();
+}
+
+function nvERegisterList(rows) {
+  var ix = nvEix();
+  var shown = rows.slice(0, 24);
+  return '<section class="sec"><h3>Register entries that match</h3><div class="dim small">Named, not picked — open the one you mean.</div>' +
+    shown.map(function (r) {
+      return '<button class="row" data-go-item="' + nvEsc(r.note) + '"><span class="row-id">' + nvEsc(r.code) + '</span><span class="row-main">' + nvEsc(r.name) + '</span>' +
+        (ix.supply.has(r.note) ? '<span class="tag ok">breaker</span>' : r.group ? '<span class="tag">group</span>' : '') + '</button>';
+    }).join('') +
+    (rows.length > shown.length ? '<div class="dim small">' + shown.length + ' of ' + rows.length + ' shown — narrow the search to see the rest.</div>' : '') + '</section>';
+}
+
+function nvESpaceView(id) {
+  var ix = nvEix(), L = nvEL();
+  var s = ix.spaces[id];
+  var here = ix.panels.filter(function (p) { return L.locate(ix, p).spaces.some(function (x) { return x.id === id; }); });
+  var map = ix.maps.filter(function (m) { return m.spaces[id]; })[0];
+  var list = here.map(function (p) {
+    return '<div class="serves-row">' + nvEPanelLink(p.name) + ' <span>' + nvEsc(p.position || '') + '</span> <span class="dim">' + nvEsc(p.system || '') + '</span>' +
+      (p.locationOnly ? ' <span class="tag dash">Location only</span>' : '') + '</div>';
+  }).join('');
+  return nvEHead('<span class="tid">' + nvEsc(id) + '</span><span class="soft">' + nvEsc(s ? s.name : '') + '</span>', nvEsc(s ? s.deck : '')) +
+    '<section class="sec"><h3>Panels in this space</h3>' + (list || '<div class="dim">The panel schedule places no panel here.</div>') + '</section>' +
+    (map ? '<section class="sec"><h3>' + nvEsc(map.name) + '</h3>' + nvEDrawingHtml(map, [{ rect: map.spaces[id], space: id, label: id, on: true }]) + '</section>' : '');
+}
+
+// ════════════════════════════════════════════════════════════
+// Diagnostics (Console: navipedia-diagnostics.js, less Upkeep)
+// ════════════════════════════════════════════════════════════
+
+var NV_HISTORIC = '__historic__';
+var NV_SWEEP_CAP = 120;
+var NV_LIST_CAP = 25;
+var NV_TIER_TABS = [['tech', 'Service history'], [1, 'Tier 1 · The record'], [2, 'Tier 2 · This unit'], [3, 'Tier 3 · Beside it'], ['all', 'All tiers']];
+
+function nvDL() { return window.diagnosticsLadder; }
+function nvDR() { return window.diagnosticsReport; }
+
+// ndxLoad, over the published files instead of IPC.
+function nvDix() {
+  if (NV.ix.diag) return NV.ix.diag;
+  var L = nvDL();
+  var d = NV.files['diagnostics.json'];
+  var x = { notes: d.notes || [], meta: d.meta || {}, rows: [], roots: [], byCode: new Map(), childrenOf: new Map(), historic: [], units: [] };
+  x.ix = L.indexNotes(x.notes);
+  var reg = d.register || {};
+  x.rows = reg.ok ? (reg.rows || []) : [];
+  x.roots = reg.ok ? (reg.roots || []) : [];
+  x.registerError = reg.ok ? null : (reg.error || 'The equipment register could not be read.');
+  x.rows.forEach(function (r) { x.byCode.set(r.code, r); });
+  x.rows.forEach(function (r) {
+    if (!r.parent) return;
+    if (!x.childrenOf.has(r.parent)) x.childrenOf.set(r.parent, []);
+    x.childrenOf.get(r.parent).push(r.code);
+  });
+  var inReg = new Set(x.rows.map(function (r) { return L.normCode(r.code); }));
+  var hist = new Map();
+  x.notes.forEach(function (n) {
+    [n.code].concat(n.covers || []).forEach(function (c) {
+      var k = L.normCode(c);
+      if (!c || inReg.has(k) || hist.has(k)) return;
+      hist.set(k, { code: c, name: n.name, historic: true });
+    });
+  });
+  (d.mirrorCodes || []).forEach(function (m) {
+    var k = L.normCode(m.code);
+    if (inReg.has(k)) return;
+    var had = hist.get(k);
+    if (!had) hist.set(k, { code: m.code, name: m.name || '(no longer named in the register)', historic: true });
+    else if (!had.name && m.name) had.name = m.name;
+  });
+  x.historic = Array.from(hist.values()).sort(function (a, b) { return L.compareCodes(a.code, b.code); });
+  x.units = x.rows.map(function (r) { return { code: r.code, name: r.name, retired: r.retired }; }).concat(x.historic);
+  NV.ix.diag = x;
+  return x;
+}
+
+// navipedia:diagnosticsRecord, over the published mirror: every mirror row
+// filed under each asked code, with its jobs or without.
+function nvDRecord(codes, jobs) {
+  var L = nvDL();
+  var j = NV.files['diagnostics-jobs.json'];
+  if (!j || !j.mirror) return [];
+  if (!NV.ix.mirror) {
+    var by = new Map();
+    j.mirror.forEach(function (r) {
+      var k = L.normCode(r.asked || r.code);
+      if (!by.has(k)) by.set(k, []);
+      by.get(k).push(r);
+    });
+    NV.ix.mirror = by;
+  }
+  var seen = new Set(), out = [];
+  codes.forEach(function (raw) {
+    var k = L.normCode(raw);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    (NV.ix.mirror.get(k) || []).forEach(function (r) {
+      var row = Object.assign({}, r, { asked: raw });
+      if (jobs) row.jobs = (r.jobs || []).map(function (x) { return Object.assign({}, x); });
+      else delete row.jobs;
+      out.push(row);
+    });
+  });
+  return out;
+}
+
+// equip:detail, answered from the register and TM's critical table.
+function nvDDetail(code) {
+  var x = nvDix();
+  var node = x.byCode.get(code);
+  if (!node) return null;
+  var ancestors = [];
+  var cur = node.parent, guard = 0;
+  while (cur && guard++ < 64) {
+    var p = x.byCode.get(cur);
+    if (!p) break;
+    ancestors.unshift({ code: p.code, name: p.name });
+    cur = p.parent;
+  }
+  var crit = (NV.files['diagnostics.json'].critical || {})[code] || null;
+  return { ok: true, asset: { maker: node.maker, makersType: node.makers_type }, ancestors: ancestors, tm: crit };
+}
+
+// ndxBuild + ndxBuildTier3, synchronously: everything is on the phone already.
+function nvDModel(code) {
+  var L = nvDL(), x = nvDix(), D = NV.diag;
+  var reg = x.byCode.get(code) || null;
+  var hist = reg ? null : x.historic.filter(function (h) { return L.normCode(h.code) === L.normCode(code); })[0];
+  var detail = reg ? nvDDetail(code) : null;
+  var asset = detail ? detail.asset : null;
+  var res = L.resolve(x.ix, code);
+  var codes = L.codesSearched(code, res);
+  var own = res.via === 'parent' ? null : res.note;
+  var mirror = nvDRecord(codes, true);
+  var jobs = [];
+  mirror.forEach(function (r) { (r.jobs || []).forEach(function (j) { jobs.push(j); }); });
+  jobs.sort(function (a, b) { return String(b.date || '').localeCompare(String(a.date || '')); });
+  var m = {
+    code: code,
+    title: reg ? reg.name : (hist ? hist.name : (res.note ? res.note.name : '')),
+    inRegister: !!reg,
+    ancestors: detail ? detail.ancestors : [],
+    maker: (asset && asset.maker) || (reg && reg.maker) || '',
+    model: (asset && asset.makersType) || (reg && reg.makers_type) || '',
+    critical: L.criticality(detail ? detail.tm : null),
+    symptom: '', engineer: '',
+    preparedAt: new Date(),
+    res: res, codes: codes, mirror: mirror, jobs: jobs,
+    beneath: L.notesBeneath(x.ix, code),
+    candidates: L.rankCandidates(own),
+    coverage: L.coverage(own, codes, mirror),
+    sinceSync: L.jobsSinceSync(own, jobs),
+    noteFile: null, recordFile: null,
+    ownNote: own
+  };
+  m.service = L.serviceHistory(m.jobs, { note: own, critical: m.critical });
+  if (D.tier === 3 || D.tier === 'all') nvDTier3(m);
+  return m;
+}
+
+function nvDTier3(m) {
+  var L = nvDL(), x = nvDix(), D = NV.diag;
+  var rows = m.inRegister ? x.rows : x.rows.concat(x.historic.map(function (h) { return { code: h.code, name: h.name }; }));
+  var p = L.population(rows, m.code);
+  m.population = p;
+  var ownNote = function (code) { var r = L.resolve(x.ix, code); return r.note && r.via !== 'parent' ? r.note : null; };
+  var self = { code: m.code, name: m.title, self: true, flags: [] };
+  var siblings = p.siblings.slice(), others = p.other.slice();
+  var sameTitle = p.sameTitle.slice(0, NV_LIST_CAP), sameModel = p.sameModel.slice(0, NV_LIST_CAP);
+  var listed = [self].concat(siblings, others, sameTitle, sameModel);
+  var counts = nvDRecord(Array.from(new Set(listed.map(function (u) { return u.code; }))), false);
+  var byNorm = new Map();
+  counts.forEach(function (r) {
+    var k = L.normCode(r.asked);
+    var had = byNorm.get(k);
+    if (!had) byNorm.set(k, { jobCount: r.jobCount, lastJob: r.lastJob });
+    else { had.jobCount += r.jobCount; if (r.lastJob > (had.lastJob || '')) had.lastJob = r.lastJob; }
+  });
+  var dress = function (u) { return Object.assign({}, u, { note: ownNote(u.code), mirror: byNorm.get(L.normCode(u.code)) || null }); };
+  m.selfUnit = dress(self);
+  m.siblingUnits = siblings.map(dress);
+  m.otherUnits = others.map(dress);
+  m.sameTitleUnits = sameTitle.map(dress);
+  m.sameModelUnits = sameModel.map(dress);
+  m.grid = L.categoryGrid(x.ix, [m.selfUnit].concat(m.siblingUnits));
+  var terms = L.sweepTerms(D.sweepQ);
+  if (terms.length) {
+    var lateralUnits = siblings.concat(others);
+    var includedClass = p.sameTitle.length > 0;
+    p.sameTitle.forEach(function (u) { if (!lateralUnits.some(function (y) { return y.code === u.code; })) lateralUnits.push(u); });
+    var capped = '';
+    if (lateralUnits.length > NV_SWEEP_CAP) {
+      capped = 'Searched the first ' + NV_SWEEP_CAP + ' of ' + lateralUnits.length + ' units (axis 1 first); the rest were not read.';
+      lateralUnits = lateralUnits.slice(0, NV_SWEEP_CAP);
+    }
+    var names = new Map(lateralUnits.map(function (u) { return [L.normCode(u.code), u.name]; }));
+    var lat = nvDRecord(lateralUnits.map(function (u) { return u.code; }), true);
+    var latJobs = [];
+    lat.forEach(function (r) { (r.jobs || []).forEach(function (j) { latJobs.push(Object.assign(j, { unitName: names.get(L.normCode(r.asked)) || r.name })); }); });
+    var selfJobs = m.jobs.map(function (j) { return Object.assign({}, j, { unitName: m.title }); });
+    m.sweep = { terms: terms, includedClass: includedClass, unitsSearched: lateralUnits.length,
+      lateral: L.sweep(latJobs, D.sweepQ).hits, self: L.sweep(selfJobs, D.sweepQ).hits, capped: capped };
+  } else {
+    m.sweep = { terms: [], lateral: [], self: [], unitsSearched: 0 };
+  }
+}
+
+NV_VIEWS.diag = {
+  title: function () { return 'Diagnostics'; },
+  needs: ['diagnostics.json'],
+  loadingText: 'Reading the failure history…',
+  render: function (view, body) {
+    var d = NV.files['diagnostics.json'];
+    if (d.ok === false) { body.innerHTML = nvFileError('diagnostics.json'); return; }
+    var x = nvDix(), L = nvDL(), D = NV.diag;
+    var m = x.meta || {};
+    body.innerHTML = '<div class="search"><input type="search" id="dg-q" autocomplete="off" spellcheck="false" placeholder="Search code or name…" value="' + nvEsc(D.q) + '"></div>' +
+      '<div id="dg-ac"></div><div id="dg-home"><div class="count">' + (m.failureHistory || 0).toLocaleString() + ' failure histories · ' + (m.mirrorNotes || 0).toLocaleString() + ' job records</div>' +
+      '<label class="check"><input type="checkbox" id="dg-only"' + (D.only ? ' checked' : '') + '> Only equipment with a failure history</label>' +
+      '<div id="dg-tree"></div>' + nvDAboutHtml() + '</div>';
+    var drawAc = function () {
+      var ac = document.getElementById('dg-ac'), home = document.getElementById('dg-home');
+      if (!D.q.trim()) { ac.innerHTML = ''; home.hidden = false; return; }
+      home.hidden = true;
+      var hits = L.searchUnits(x.units, D.q, 40);
+      ac.innerHTML = hits.length ? hits.map(function (u) {
+        var note = L.hasNote(x.ix, u.code);
+        return '<button class="row" data-code="' + nvEsc(u.code) + '"' + (u.retired ? ' style="opacity:.6"' : '') + '><span class="row-id">' + nvEsc(u.code) + '</span><span class="row-main">' + nvHighlight(u.name, D.q) + '</span>' +
+          (note ? '<span class="tag accent">history</span>' : '') + (u.historic ? '<span class="tag dash">old code</span>' : '') + '</button>';
+      }).join('') : '<div class="empty">No component matches that.</div>';
+    };
+    nvDDrawTree();
+    drawAc();
+    body.oninput = function (e) {
+      if (e.target.id === 'dg-q') { D.q = e.target.value; drawAc(); }
+      else if (e.target.id === 'dg-only') { D.only = e.target.checked; nvDDrawTree(); }
+    };
+    body.onclick = function (e) {
+      var tw = e.target.closest('[data-twisty]');
+      if (tw) { var k = tw.dataset.twisty; D.expanded[k] = !D.expanded[k]; nvDDrawTree(); return; }
+      var row = e.target.closest('[data-code]');
+      if (row) nvDSelect(row.dataset.code);
+    };
+  }
+};
+
+function nvDSelect(code) {
+  var x = nvDix(), D = NV.diag;
+  // The symptom search carries across machines; the reason filter belongs to
+  // the last machine's reports (ndxSelect).
+  D.techFilter = '';
+  // Opening a machine opens its branch in the tree too, for the way back.
+  if (!x.byCode.has(code)) D.expanded[NV_HISTORIC] = true;
+  var cur = x.byCode.get(code) && x.byCode.get(code).parent, guard = 0;
+  while (cur && guard++ < 64) { D.expanded[cur] = true; cur = x.byCode.get(cur) && x.byCode.get(cur).parent; }
+  if ((x.childrenOf.get(code) || []).length) D.expanded[code] = true;
+  nvGo({ v: 'diagm', code: code });
+}
+
+function nvDShown(code) {
+  var L = nvDL(), x = nvDix();
+  if (!NV.diag.only) return true;
+  return L.hasNote(x.ix, code) || L.hasNoteBeneath(x.ix, code);
+}
+function nvDMark(code) {
+  var L = nvDL(), x = nvDix();
+  if (L.hasNote(x.ix, code)) return '<span class="dot note" title="Has a failure-history note"></span>';
+  if (L.hasNoteBeneath(x.ix, code)) return '<span class="dot under" title="Failure-history notes beneath"></span>';
+  return '<span class="dot" style="border-color:transparent"></span>';
+}
+// Only expanded branches are built — collapsed, the register is a few dozen rows.
+function nvDDrawTree() {
+  var host = document.getElementById('dg-tree');
+  if (!host) return;
+  var x = nvDix(), L = nvDL(), D = NV.diag;
+  var out = [];
+  var row = function (code, name, depth, kids, cls) {
+    var open = !!D.expanded[code];
+    out.push('<div class="node ' + (cls || '') + '" data-code="' + nvEsc(code) + '" style="padding-left:' + (depth * 14) + 'px">' +
+      (kids ? '<button class="twisty' + (open ? ' open' : '') + '" data-twisty="' + nvEsc(code) + '" aria-label="' + (open ? 'Collapse' : 'Expand') + '">▸</button>' : '<span class="twisty-sp"></span>') +
+      nvDMark(code) + '<span class="node-code">' + nvEsc(code) + '</span><span class="node-name">' + nvEsc(name) + '</span></div>');
+    return open;
+  };
+  var walk = function (code, depth) {
+    var r = x.byCode.get(code);
+    if (!r || !nvDShown(code)) return;
+    var kids = (x.childrenOf.get(code) || []).filter(nvDShown);
+    if (row(code, r.name, depth, kids.length, r.retired ? 'retired' : '')) kids.forEach(function (k) { walk(k, depth + 1); });
+  };
+  x.roots.forEach(function (r) { walk(r, 0); });
+  var hist = x.historic.filter(function (h) { return !D.only || L.hasNote(x.ix, h.code); });
+  if (hist.length) {
+    var open = !!D.expanded[NV_HISTORIC];
+    out.push('<div class="node" data-twisty="' + NV_HISTORIC + '"><button class="twisty' + (open ? ' open' : '') + '" data-twisty="' + NV_HISTORIC + '">▸</button><span class="node-name">Not in the current register (' + hist.length + ')</span></div>');
+    if (open) hist.forEach(function (h) { row(h.code, h.name, 1, 0, 'hist'); });
+  }
+  if (!out.length) out.push('<div class="empty">' + nvEsc(x.registerError || 'Nothing to show.') + '</div>');
+  else if (x.registerError) out.unshift('<div class="empty">' + nvEsc(x.registerError) + ' Only codes with a record are listed.</div>');
+  host.innerHTML = out.join('');
+}
+
+function nvDAboutHtml() {
+  var L = nvDL();
+  return '<div class="sec" style="margin-top:22px"><h3>What the tiers are</h3>' + ['tech', 1, 2, 3].map(function (t) {
+    return '<div class="note-box"><b>' + nvEsc(L.TIERS[t].name) + '</b><br>' + nvEsc(L.TIERS[t].scope) + '</div>';
+  }).join('') +
+  '<div class="note-box"><b>Nothing here tells you what is wrong.</b> Every word of substance is recited from a note somebody wrote, and every number is a count. ' +
+  'The judgement of Tier 3 and Tier 4 is the Maintenance seat\'s, in the Roundtable. A ● in the tree marks a machine with a failure-history note; ○ a group with notes beneath it.</div></div>';
+}
+
+NV_VIEWS.diagm = {
+  title: function (view) { return view.code; },
+  needs: ['diagnostics.json', 'diagnostics-jobs.json', 'letterhead.json'],
+  loadingText: 'Reading the record…',
+  render: function (view, body) {
+    var D = NV.diag, x = nvDix();
+    var m = nvDModel(view.code);
+    nvSetBar(view.code, m.title);
+    var sweepOn = D.tier === 3 || D.tier === 'all' || D.tier === 'tech';
+    var tech = D.tier === 'tech';
+    var chips = '';
+    if (tech && m.service && m.service.count) {
+      var chip = function (val, label, n) { return '<button class="chip-btn' + (D.techFilter === val ? ' on' : '') + '" data-techf="' + nvEsc(val) + '">' + nvEsc(label) + '<span>' + n + '</span></button>'; };
+      var parts = [chip('', 'All', m.service.count)];
+      m.service.groups.forEach(function (g) {
+        parts.push(chip(g.group, g.group, g.count));
+        if (g.reasons.length > 1 || g.reasons[0].reason !== g.group) g.reasons.forEach(function (r) { parts.push(chip(r.reason, r.reason, r.count)); });
+      });
+      chips = '<div class="chips">' + parts.join('') + '</div>';
+    }
+    body.innerHTML = '<div class="head"><div class="title"><span class="tid">' + nvEsc(view.code) + '</span>' + nvEsc(m.title) + '</div>' +
+      (m.ancestors.length ? '<div class="meta">' + m.ancestors.map(function (a) { return nvEsc(a.code); }).join(' › ') + '</div>' : '') + '</div>' +
+      '<div class="seg" role="tablist">' + NV_TIER_TABS.map(function (t) { return '<button data-tier="' + t[0] + '" class="' + (D.tier === t[0] ? 'on' : '') + '">' + t[1] + '</button>'; }).join('') + '</div>' +
+      (sweepOn ? '<div class="field-lbl">' + (tech ? 'Search the reports' : 'Search the record (Tier 3)') + '</div><div class="field-row"><input type="search" id="dg-sweep" value="' + nvEsc(D.sweepQ) +
+        '" placeholder="won\'t start, tripped, no power"><button id="dg-sweep-go">Search</button></div>' : '') +
+      chips + '<div id="dg-paper"></div>';
+    var model = Object.assign({}, m, { techFilter: D.techFilter, techQuery: D.sweepQ });
+    var lh = nvLetterhead();
+    var tiers = D.tier === 'all' ? [1, 2, 3] : [D.tier];
+    nvPaper(document.getElementById('dg-paper'), nvDR().buildDocument(model, { tiers: tiers, setup: lh.setup, vessel: lh.vessel, printedAt: new Date(), interactive: true }),
+      function (d) { if (d.code) nvDSelect(d.code); });
+    var sweep = function () { var i = document.getElementById('dg-sweep'); if (i) D.sweepQ = i.value; nvRender(); };
+    body.oninput = null;
+    body.onclick = function (e) {
+      var t = e.target.closest('[data-tier]');
+      if (t) { var k = t.dataset.tier; D.tier = (k === 'all' || k === 'tech') ? k : Number(k); nvRender(); return; }
+      var c = e.target.closest('[data-techf]');
+      if (c) { D.techFilter = c.dataset.techf; nvRender(); return; }
+      if (e.target.closest('#dg-sweep-go')) sweep();
+    };
+    var si = document.getElementById('dg-sweep');
+    if (si) si.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); sweep(); } });
+  }
+};
+
+nvInit();
+</script>
+</body>
+</html>
