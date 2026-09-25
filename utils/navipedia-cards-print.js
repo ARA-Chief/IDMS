@@ -47,7 +47,7 @@
   // legacy KSA-P/KSA-T cards are practice and tool skills, and they file by
   // their own category beside the skills rather than in a bucket of their own;
   // a "KSA" tab is how a category being retired keeps coming back.
-  const COMPETENCY = ['KSA', 'KNG', 'SKG', 'SKD'];
+  const COMPETENCY = ['KSA', 'KNG', 'KND', 'SKG', 'SKD'];
 
   const SECTIONS = {
     sops: { label: 'SOPs', noun: 'procedure', has: r => r.family === 'SOP' || r.family === 'TASK' },
@@ -70,6 +70,7 @@
   function competencyKind(rec) {
     if (!rec) return null;
     if (rec.family === 'KNG') return { kind: 'knowledge', scope: 'global' };
+    if (rec.family === 'KND') return { kind: 'knowledge', scope: 'vessel' };
     if (rec.family === 'SKD') return { kind: 'skill', scope: 'vessel' };
     if (rec.family === 'SKG' || rec.family === 'KSA') return { kind: 'skill', scope: 'global' };
     return null;
@@ -83,6 +84,7 @@
       case 'TASK': return 'Global Task';
       case 'JOB':  return 'Job Card';
       case 'KNG':  return 'Knowledge';
+      case 'KND':  return 'Knowledge — vessel-specific';
       case 'SKD':  return 'Skill — vessel-specific';
       case 'SKG':
       case 'KSA':  return 'Skill';
@@ -295,6 +297,41 @@
     </table>`;
   }
 
+  // ── Figures ────────────────────────────────────────────────────────────────
+  //
+  // A card's own pictures — a photo of the panel a step names, a screenshot of
+  // the field to fill in — are embedded the Obsidian way, one to a line, with an
+  // italic caption on the line under it:
+  //
+  //   ![[Boat Book p014 ICMS stations.jpeg]]
+  //   *Figure 1 — The ICMS operator stations (step A10). Boat Book v0.1, p.14.*
+  //
+  // The machine's pictures are inherited from its folder (picturesHtml); these
+  // belong to the procedure. This module cannot read a file, so the screen hands
+  // the bytes in as `opts.figures` — name → data: URL — and a figure it was not
+  // handed prints as its name rather than as nothing. That is what the phone,
+  // reading a bundle without the pictures in it, shows.
+  const FIGURE_LINE  = /^!\[\[([^\]|#]+?\.(?:png|jpe?g|gif|webp|bmp))(?:\|[^\]]*)?\]\]\s*$/i;
+  const CAPTION_LINE = /^(?:\*([^*].*?)\*|_([^_].*?)_)\s*$/;
+
+  function figureNames(text) {
+    const out = [];
+    for (const line of String(text || '').split(/\r?\n/)) {
+      const m = line.trim().match(FIGURE_LINE);
+      if (m && !out.includes(m[1].trim())) out.push(m[1].trim());
+    }
+    return out;
+  }
+
+  function figureHtml(fig, ctx) {
+    const src = ctx.figures && ctx.figures[fig.name];
+    const cap = fig.caption ? `<figcaption>${inline(fig.caption, ctx)}</figcaption>` : '';
+    const pic = typeof src === 'string' && /^data:image\//.test(src)
+      ? `<img src="${src}" alt="${esc(fig.caption || fig.name)}">`
+      : `<div class="fig-none">Picture: ${esc(fig.name)}</div>`;
+    return `<figure>${pic}${cap}</figure>`;
+  }
+
   function md(text, ctx) {
     const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
     const out = [];
@@ -325,6 +362,26 @@
 
       if (!t) { flush(); continue; }
       if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { flush(); out.push('<hr>'); continue; }
+
+      // A run of figures, blank lines between them allowed, sets as one grid.
+      if (FIGURE_LINE.test(t)) {
+        flush();
+        const figs = [];
+        while (i < lines.length) {
+          const m = lines[i].trim().match(FIGURE_LINE);
+          if (m) {
+            const cap = (lines[i + 1] || '').trim().match(CAPTION_LINE);
+            figs.push({ name: m[1].trim(), caption: cap ? (cap[1] || cap[2]) : '' });
+            i += cap ? 2 : 1;
+            continue;
+          }
+          if (!lines[i].trim() && FIGURE_LINE.test((lines[i + 1] || '').trim())) { i++; continue; }
+          break;
+        }
+        i--;
+        out.push(`<div class="figs">${figs.map(f => figureHtml(f, ctx)).join('')}</div>`);
+        continue;
+      }
 
       const h = t.match(/^(#{1,6})\s+(.*)$/);
       if (h) { flush(); out.push(`<h3>${inline(h[2], ctx)}</h3>`); continue; }
@@ -408,6 +465,7 @@
     TASK: ['atomic steps'],
     KSA:  ['purpose', 'expectations', 'assessment criteria', 'common errors'],
     KNG:  ['summary'],
+    KND:  ['summary'],
     SKG:  ['summary'],
     SKD:  ['summary']
   };
@@ -444,6 +502,7 @@
     KSA:  [['_category', 'Category'], ['validity', 'Where it applies'], ['recency', 'Recency', 'sheet'],
            ['external_credential', 'External credential']],
     KNG:  [['_category', 'Category']],
+    KND:  [['_category', 'Category'], ['system', 'System']],
     SKG:  [['_category', 'Category']],
     SKD:  [['_category', 'Category'], ['system', 'System']]
   };
@@ -582,6 +641,61 @@
   }
 
   // ── Styles ─────────────────────────────────────────────────────────────────
+  // ── What the card inherits from its machine ──────────────────────────────────
+  //
+  // `opts.equipment` is equipCardContext.forAsset()'s answer for the card's
+  // `asset:` (src/renderer/js/equipment-pictures.js). None of it is on the card:
+  // it is the component's, looked up as the card is read, so a photo replaced in
+  // the component's folder is replaced on every card about that machine.
+  // docs/equipment-pictures.md.
+
+  // How many pictures each format carries. The half-sheet is taken to the job,
+  // where two pictures say "this one" and a page of them says nothing.
+  const PICTURE_CAP = { sheet: 12, card: 2 };
+
+  function picturesHtml(eq, format, ctx) {
+    const pics = (eq && eq.pictures && eq.pictures.items) || [];
+    if (!pics.length) return '';
+    const shown = pics.slice(0, PICTURE_CAP[format] || 2);
+    const whose = eq.pictures.filedAt && eq.pictures.filedAt !== eq.code
+      ? ` <span class="eq-whose">— pictures of ${esc(eq.pictures.filedAt)}, the nearest filed</span>` : '';
+    return `<section class="sec eq-pics"><h2>Equipment pictures${whose}</h2>
+      <div class="eq-grid eq-grid-${format}">${shown.map(p => {
+        const img = `<img src="${p.src}" alt="${esc(p.caption)}">`;
+        return `<figure>${ctx.interactive
+          ? `<a class="eqopen" data-path="${esc(p.path)}" title="Open ${esc(p.name)}">${img}</a>` : img}
+          <figcaption>${esc(p.caption)}</figcaption></figure>`;
+      }).join('')}</div></section>`;
+  }
+
+  // Drawings and manual folders held for the machine. On paper the path is
+  // printed, because a handout cannot be clicked and the path is how it is found.
+  function equipmentDocsHtml(eq, format, ctx) {
+    if (format !== 'sheet' || !eq || !eq.docs) return '';
+    const { drawings = [], manuals = [] } = eq.docs;
+    if (!drawings.length && !manuals.length) return '';
+    const door = (label, target, sub) => {
+      const main = ctx.interactive && target
+        ? `<a class="eqopen" data-path="${esc(target)}">${label}</a>` : label;
+      return `<li>${main}${sub ? `<div class="eq-path">${esc(sub)}</div>` : ''}</li>`;
+    };
+    const dRows = drawings.map(d => {
+      const target = d.exists ? d.path : d.folderPath;
+      const where = d.how === 'group' && d.via && d.via.length ? ` (for ${esc(d.via.join(', '))})` : '';
+      const label = `<b>${esc(d.drawing)}</b> ${esc(d.title || '')}${d.rev ? ' · rev ' + esc(d.rev) : ''}${where}`
+        + (target ? '' : ' <span class="eq-whose">— file not found</span>');
+      return door(label, target, target);
+    });
+    const mRows = manuals.map(m => {
+      const label = `<b>${esc(m.folder)}</b>${m.filedAt && m.filedAt !== eq.code ? ` (filed under ${esc(m.filedAt)})` : ''}`
+        + (m.reachable ? ` · ${m.fileCount} file${m.fileCount === 1 ? '' : 's'}` : ' <span class="eq-whose">— share not reachable</span>');
+      return door(label, m.reachable ? m.path : null, m.path);
+    });
+    return `<section class="sec"><h2>Equipment documents — ${esc(eq.code)}</h2>
+      ${dRows.length ? `<h3>Drawings</h3><ul>${dRows.join('')}</ul>` : ''}
+      ${mRows.length ? `<h3>Manuals</h3><ul>${mRows.join('')}</ul>` : ''}</section>`;
+  }
+
   //
   // One stylesheet, two scales. Everything is sized in `em` off the body, so
   // the card is the sheet at a smaller type size rather than a second layout
@@ -669,6 +783,26 @@ mark { background: #fff2a8; }
 .hazards > h2 { color: #8a5300; border-bottom-color: #e5c68f; }
 .hazards ul { margin-bottom: 0.3em; }
 
+.figs { display: grid; grid-template-columns: repeat(${card ? 1 : 2}, 1fr); gap: 0.6em; margin: 0.2em 0 0.6em; }
+.figs figure { break-inside: avoid; page-break-inside: avoid; }
+.figs img { display: block; width: 100%; max-height: ${card ? '2.6in' : '3.3in'}; object-fit: contain;
+  background: #f4f4f4; border: 0.5px solid #ccc; }
+.figs figcaption { font-size: 0.82em; color: #444; margin-top: 0.2em; }
+.fig-none { border: 1px dashed #aaa; color: #666; font-size: 0.85em; padding: 0.6em; text-align: center; }
+
+.eq-grid { display: grid; gap: 0.5em; margin-bottom: 0.3em; }
+.eq-grid-sheet { grid-template-columns: repeat(3, 1fr); }
+.eq-grid-card  { grid-template-columns: repeat(2, 1fr); }
+.eq-grid figure { break-inside: avoid; page-break-inside: avoid; }
+.eq-grid img { display: block; width: 100%; height: ${card ? '1.35in' : '1.9in'}; object-fit: contain;
+  background: #f4f4f4; border: 0.5px solid #ccc; }
+.eq-grid figcaption { font-size: 0.8em; color: #444; margin-top: 0.15em; }
+.eq-grid a { cursor: zoom-in; }
+.eq-whose { font-weight: 400; text-transform: none; letter-spacing: 0; color: #777; }
+.eq-path { font-family: Consolas, 'Courier New', monospace; font-size: 0.78em; color: #666; word-break: break-all; }
+a.eqopen { color: #0a5a8a; text-decoration: none; cursor: pointer; }
+@media print { a.eqopen { color: inherit; } }
+
 .issued { margin-top: 1.1em; break-inside: avoid; page-break-inside: avoid; }
 .iss-row { display: flex; gap: 1.2em; margin-top: 0.9em; }
 .iss-f { min-width: 0; }
@@ -688,7 +822,7 @@ mark { background: #fff2a8; }
   //
   // note: { frontmatter, body } as vault:readNote returns them.
   // opts: { format: 'sheet'|'card', corpus, setup, vessel, printedAt,
-  //         issuedLine, interactive, parseSteps }
+  //         issuedLine, interactive, parseSteps, equipment, figures }
   function buildDocument(rec, note, opts) {
     opts = opts || {};
     const format = opts.format === 'card' ? 'card' : 'sheet';
@@ -697,7 +831,8 @@ mark { background: #fff2a8; }
     const ctx    = {
       index: corpusIndex(opts.corpus || []),
       interactive: !!opts.interactive,
-      parseSteps: opts.parseSteps || root.sopParseYamlSteps
+      parseSteps: opts.parseSteps || root.sopParseYamlSteps,
+      figures: opts.figures || null
     };
     const setup  = opts.setup || {};
 
@@ -716,6 +851,7 @@ mark { background: #fff2a8; }
     if (rec.family === 'KSA') parts.push(hazardsHtml(fm.preconditions, ctx, 'Before starting'));
     if (format === 'sheet' || COMPETENCY.includes(rec.family)) parts.push(levelsHtml(fm.levels, ctx));
     parts.push(requiresHtml(fm.requires_ksa, ctx));
+    parts.push(picturesHtml(opts.equipment, format, ctx));
 
     if (!stub) {
       const split = K ? K.bodySections(body) : { preamble: body, sections: [] };
@@ -741,6 +877,7 @@ mark { background: #fff2a8; }
       }
     }
 
+    parts.push(equipmentDocsHtml(opts.equipment, format, ctx));
     if (opts.issuedLine) parts.push(issuedHtml(format));
 
     const label = shortId(rec.id) + ' — ' + plainTitle(rec.title);
@@ -770,7 +907,7 @@ mark { background: #fff2a8; }
 
   const api = {
     SECTIONS, COMPETENCY, homeSection, competencyKind, docKind,
-    search, buildDocument, fileName, wantSection, md, inline, corpusIndex
+    search, buildDocument, fileName, wantSection, md, inline, corpusIndex, figureNames
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.navipediaCardsPrint = api;

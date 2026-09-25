@@ -15,6 +15,9 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
   job and KSA cards, the JSAs, Electrical Distribution and Diagnostics. The
   first time you open a section it downloads; after that it reads with no
   signal. The Console sends a fresh copy by itself at least once a day.
+- **Vessel knowledge cards are in Navipedia → KSAs**, and a card that has
+  photographs in it on the Console names each one where it would be.
+  The pictures themselves are on the Console for now.
 
 ## 1.31 — 2026-09-20
 
