@@ -24,6 +24,8 @@
   <script src="utils/oil-attach.js"></script>
   <!-- Gear sizes on My Profile (mirror at IDMS-Console/src/renderer/js/gear-sizes.js) -->
   <script src="utils/gear-sizes.js"></script>
+  <!-- Motor hours: what a running-hours reading means (mirror at IDMS-Console/src/renderer/js/motor-hours-reduce.js) -->
+  <script src="utils/motor-hours-reduce.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1063,6 +1065,7 @@
 
   <!-- ── ROUNDS ENTRY ── -->
   <div class="screen" id="screen-roundsentry"></div>
+  <div class="screen" id="screen-motor-hours"></div>
 
   <!-- ── FACTORY HUB ── -->
   <div class="screen" id="screen-factory-home">
@@ -1703,6 +1706,16 @@
         </div>
         <div class="er-hub-tile-label">Rounds</div>
         <div class="er-hub-tile-sub">Start rounds entry</div>
+      </button>
+      <button class="er-hub-tile" onclick="openMotorHours()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="15" r="9" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M14 15l4-4M11 4h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Motor Hours</div>
+        <div class="er-hub-tile-sub">Running hours sheet</div>
       </button>
       <button class="er-hub-tile" onclick="openEngineTasks('screen-engine-home')">
         <div class="er-hub-tile-icon">
@@ -12475,5 +12488,6 @@ async function meReload(which) {
 
 </script>
 <script src="roundsentry.js"></script>
+<script src="motorhours.js"></script>
 </body>
 </html>

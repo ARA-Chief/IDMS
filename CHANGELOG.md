@@ -17,6 +17,11 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 - **Add Oil tells you if the Rough Log entry did not save**, and gives you the
   sentence to add by hand. The tanks have still been updated, so don't pour it
   twice.
+- **Engine Room → Motor Hours.** The running-hours sheet on the phone:
+  every machine, how to read its meter, and what it read last. Tap a row,
+  type the hours on the keypad, press Save. A reading lower than last time,
+  or more hours than the clock allows, is flagged in orange before you save.
+  What you type is kept on the phone until it saves.
 
 ## 1.32 — 2026-09-24
 
