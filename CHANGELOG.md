@@ -8,6 +8,21 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.33 — 2026-09-26
+
+- **Rough Log entries can no longer wipe each other out.** Each entry the
+  phone saves — by hand, from a task, or from Add Oil — is now kept as its own
+  file first, and only then added to the year's log. Before this, a save made
+  on a bad signal could replace the whole log with just that one entry.
+- **Add Oil tells you if the Rough Log entry did not save**, and gives you the
+  sentence to add by hand. The tanks have still been updated, so don't pour it
+  twice.
+- **Engine Room → Motor Hours.** The running-hours sheet on the phone:
+  every machine, how to read its meter, and what it read last. Tap a row,
+  type the hours on the keypad, press Save. A reading lower than last time,
+  or more hours than the clock allows, is flagged in orange before you save.
+  What you type is kept on the phone until it saves.
+
 ## 1.32 — 2026-09-24
 
 - **Navipedia is filled in.** The Console has sent its first copy, so the

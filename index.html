@@ -24,6 +24,8 @@
   <script src="utils/oil-attach.js"></script>
   <!-- Gear sizes on My Profile (mirror at IDMS-Console/src/renderer/js/gear-sizes.js) -->
   <script src="utils/gear-sizes.js"></script>
+  <!-- Motor hours: what a running-hours reading means (mirror at IDMS-Console/src/renderer/js/motor-hours-reduce.js) -->
+  <script src="utils/motor-hours-reduce.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1063,6 +1065,7 @@
 
   <!-- ── ROUNDS ENTRY ── -->
   <div class="screen" id="screen-roundsentry"></div>
+  <div class="screen" id="screen-motor-hours"></div>
 
   <!-- ── FACTORY HUB ── -->
   <div class="screen" id="screen-factory-home">
@@ -1703,6 +1706,16 @@
         </div>
         <div class="er-hub-tile-label">Rounds</div>
         <div class="er-hub-tile-sub">Start rounds entry</div>
+      </button>
+      <button class="er-hub-tile" onclick="openMotorHours()">
+        <div class="er-hub-tile-icon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="15" r="9" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M14 15l4-4M11 4h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="er-hub-tile-label">Motor Hours</div>
+        <div class="er-hub-tile-sub">Running hours sheet</div>
       </button>
       <button class="er-hub-tile" onclick="openEngineTasks('screen-engine-home')">
         <div class="er-hub-tile-icon">
@@ -6298,29 +6311,124 @@ function erUuid() {
   });
 }
 
-// ── ER Task Rough Log Helper ──────────────────────────────────────────────────
-// Writes a task-generated entry to the OneDrive roughlog file (fire-and-forget safe).
-async function erWriteTaskRoughLogEntry(entry) {
-  if (!graphToken) return;
-  var year = new Date(entry.timestamp || Date.now()).getFullYear();
-  var url  = 'https://graph.microsoft.com/v1.0/me/drive/root:/'
-           + ONEDRIVE_BASE + '/data/roughlog/roughlog-' + year + '.json:/content';
-  var data;
-  try {
-    var resp = await fetch(url, { headers: { Authorization: 'Bearer ' + graphToken } });
-    data = resp.ok ? await resp.json() : { schema_version: 1, vessel: '', year: year, entries: [] };
-    if (!Array.isArray(data.entries)) data.entries = [];
-  } catch(e) {
-    data = { schema_version: 1, vessel: '', year: year, entries: [] };
-  }
-  data.entries = data.entries.filter(function(e) { return e.id !== entry.id; });
-  data.entries.push(entry);
-  data.entries.sort(function(a, b) { return (a.timestamp || '').localeCompare(b.timestamp || ''); });
-  await fetch(url, {
-    method: 'PUT',
-    headers: { Authorization: 'Bearer ' + graphToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data, null, 2)
+// ── ER Rough Log writer ───────────────────────────────────────────────────────
+// Every rough-log entry the phone makes goes through here (Console mirror:
+// appendRoughLogEntry in IDMS-Console src/renderer/js/graph.js, and
+// docs/roughlog.md there). The rough log has many writers, so the record is
+// append-only — one immutable event per entry under
+//   data/roughlog/events/{yyyy}/{iso}-{event_id}.json
+// event_type 'rough_log_entry', payload { year: year, entry: entry }.
+//
+// roughlog-{year}.json is still written because this app's list and older
+// Consoles read nothing else — but only as a merge: re-read with its eTag, add
+// this one entry by id, If-Match, one retry. It used to be a blind PUT, and
+// when the read failed it wrote a file holding just the new entry; 219 entries
+// were lost that way between April and August 2026. A failed read now skips
+// the file and the event still holds the entry.
+//
+// Throws only if the event could not be written. Resolves to
+// 'ok' | 'conflict' | 'failed' for the year-file mirror.
+function erlYearOf(entry) {
+  var y = parseInt(String(entry.date || entry.timestamp || '').slice(0, 4), 10);
+  return isFinite(y) ? y : new Date().getFullYear();
+}
+
+function erlDriveUrl(path) {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/' + encodeURIComponent(path).replace(/%2F/g, '/');
+}
+
+// Graph's simple upload will not create missing folders; the first entry of a
+// year has to make its own. conflictBehavior 'replace' on a folder returns the
+// existing one untouched, so two phones racing here both succeed.
+async function erlEnsureFolder(path) {
+  var probe = await erlAuthFetch(erlDriveUrl(path), { cache: 'no-store' });
+  if (probe.ok) return;
+  if (probe.status !== 404) throw new Error('Folder check failed: HTTP ' + probe.status);
+  var cut = path.lastIndexOf('/');
+  if (cut <= 0) throw new Error('Refusing to create a folder at the drive root');
+  await erlEnsureFolder(path.slice(0, cut));
+  var resp = await erlAuthFetch(erlDriveUrl(path.slice(0, cut)) + ':/children', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: path.slice(cut + 1), folder: {}, '@microsoft.graph.conflictBehavior': 'replace' })
   });
+  if (!resp.ok) throw new Error('Folder create failed: HTTP ' + resp.status);
+}
+
+async function erlAppendEntryEvent(entry, year) {
+  var folder  = ONEDRIVE_BASE + '/data/roughlog/events/' + year;
+  var nowIso  = new Date().toISOString();
+  var eventId = erUuid();
+  var body = {
+    schema_version: 1,
+    event_id:   eventId,
+    event_type: 'rough_log_entry',
+    timestamp:  nowIso,
+    actor:      entry.user || 'unknown',
+    payload:    { year: year, entry: entry }
+  };
+  var url = erlDriveUrl(folder + '/' + nowIso.replace(/[:.\-]/g, '') + '-' + eventId + '.json') + ':/content';
+  var init = {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
+    body: JSON.stringify(body, null, 2)
+  };
+  var resp = await erlAuthFetch(url, init);
+  if (resp.status === 404) {
+    await erlEnsureFolder(folder);
+    resp = await erlAuthFetch(url, init);
+  }
+  if (resp.status !== 412 && !resp.ok) throw new Error('Log entry not saved: HTTP ' + resp.status);
+}
+
+async function erlMergeIntoYearFile(entry, year) {
+  var base = erlDriveUrl(ONEDRIVE_BASE + '/data/roughlog/roughlog-' + year + '.json');
+  for (var attempt = 0; attempt < 2; attempt++) {
+    // The content endpoint's ETag header may not be CORS-readable; the item
+    // metadata eTag always is (same reasoning as erTaskSaveDefinitionsFile).
+    var etag = null;
+    var meta = await erlAuthFetch(base + '?select=eTag', { cache: 'no-store' });
+    if (meta.ok) etag = (await meta.json()).eTag || null;
+    else if (meta.status !== 404) return 'failed';
+
+    var data;
+    if (etag) {
+      var resp = await erlAuthFetch(base + ':/content', { cache: 'no-store' });
+      if (!resp.ok) return 'failed';                       // never write what we could not read
+      data = await resp.json();
+      if (!data || !Array.isArray(data.entries)) return 'failed';
+    } else {
+      data = { schema_version: 1, vessel: 'F/T Araho', year: year, entries: [] };
+    }
+    if (data.entries.some(function(e) { return e && e.id === entry.id; })) return 'ok';
+    data.entries.push(entry);
+    data.entries.sort(function(a, b) { return String(a.timestamp || '').localeCompare(String(b.timestamp || '')); });
+
+    var headers = { 'Content-Type': 'application/json' };
+    if (etag) headers['If-Match'] = etag; else headers['If-None-Match'] = '*';
+    var put = await erlAuthFetch(base + ':/content', { method: 'PUT', headers: headers, body: JSON.stringify(data, null, 2) });
+    if (put.status === 412) continue;                      // someone saved first — re-read and re-merge
+    return put.ok ? 'ok' : 'failed';
+  }
+  return 'conflict';
+}
+
+async function erWriteRoughLogEntry(entry) {
+  var year = erlYearOf(entry);
+  await erlAppendEntryEvent(entry, year);
+  try {
+    var mirror = await erlMergeIntoYearFile(entry, year);
+    if (mirror !== 'ok') console.warn('[RoughLog] year file not updated (' + mirror + '); entry ' + entry.id + ' is in its event');
+    return mirror;
+  } catch (e) {
+    console.warn('[RoughLog] year file not updated:', e && e.message);
+    return 'failed';
+  }
+}
+
+// Kept under its old name: Tasks and Add Oil call it, fire-and-forget.
+async function erWriteTaskRoughLogEntry(entry) {
+  return erWriteRoughLogEntry(entry);
 }
 
 // ── ER Task Create Modal ──────────────────────────────────────────────────────
@@ -9653,24 +9761,12 @@ async function erlSubmitEntry() {
       equipment_id: null,
       ref_id:       null
     };
-    // Ensure local data structure exists
+    await erWriteRoughLogEntry(entry);
     if (!ERL.data) ERL.data = { schema_version: 1, vessel: 'F/T Araho', year: ERL.year, entries: [] };
-    // Read-merge-write: fetch remote to avoid clobbering concurrent writes
-    var url = erlGraphUrl(ERL.year);
-    var getResp = await erlAuthFetch(url);
-    if (getResp.ok) {
-      var remote = await getResp.json();
-      var localIds = new Set((ERL.data.entries || []).map(function(e) { return e.id; }));
-      (remote.entries || []).forEach(function(e) { if (!localIds.has(e.id)) ERL.data.entries.push(e); });
+    if (erlYearOf(entry) === ERL.year) {
+      ERL.data.entries.push(entry);
+      ERL.data.entries.sort(function(a, b) { return String(a.timestamp || '').localeCompare(String(b.timestamp || '')); });
     }
-    ERL.data.entries.push(entry);
-    ERL.data.entries.sort(function(a, b) { return a.timestamp.localeCompare(b.timestamp); });
-    var putResp = await erlAuthFetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ERL.data, null, 2)
-    });
-    if (!putResp.ok) throw new Error('Save failed: HTTP ' + putResp.status);
     erlCloseModal();
     erlRenderList();
   } catch (err) {
@@ -10645,10 +10741,10 @@ function incinStateOnScreen() {
 //      update tanks[].volume so other PWA users see the new level
 //      without waiting for the Console replay.
 //   2. Always: append a Rough Log (Engine Room dept.) entry via
-//      erWriteTaskRoughLogEntry — same helper Tasks already uses.
+//      erWriteTaskRoughLogEntry — same helper Tasks already uses, which
+//      appends an event and only merges into the year file (see it).
 // Multi-writer note: fuelstate.json is currently RMW'd by both Console
-// and PWA — universal ETag is Phase 9. This mirrors the existing PWA
-// roughlog pattern; the risk surface is unchanged.
+// and PWA — universal ETag is Phase 9.
 // ════════════════════════════════════════════════════════════════
 
 var ADDOIL = {
@@ -11658,7 +11754,9 @@ async function addOilCommit() {
     // (2) Rough log entry — always written, regardless of ORB outcome.
     // Department 'engine' is the dept_key for Engine Room; the Console
     // resolves this to the canonical department label on display.
-    await erWriteTaskRoughLogEntry({
+    // A failure is said out loud but does not stop the rest: the tanks have
+    // already moved, and treating it as fatal would invite a second pour.
+    try { await erWriteTaskRoughLogEntry({
       id:           roughLogId,
       timestamp:    nowIso,
       date:         d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
@@ -11672,7 +11770,11 @@ async function addOilCommit() {
       // equipment_id only attached when the movement resolved to a real asset.
       equipment_id: (machine && machine.code) || destAsset,
       ref_id:       null
-    });
+    }); } catch (e) {
+      console.error('[addOil] rough log write failed', e);
+      alert('The tanks were updated, but the Rough Log entry did not save (' + (e && e.message) + '). ' +
+            'Add it by hand from Rough Log: ' + roughLogBody);
+    }
 
     // (3) Stores issue — only when the oil came off a shelf. Oil out of a tank
     // moves the tank and nothing else: the entry carries item_id so it is
@@ -11719,7 +11821,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.32';
+var PWA_VERSION  = '1.33';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {
@@ -12386,5 +12488,6 @@ async function meReload(which) {
 
 </script>
 <script src="roundsentry.js"></script>
+<script src="motorhours.js"></script>
 </body>
 </html>
