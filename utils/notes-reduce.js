@@ -79,6 +79,16 @@
             note_id: p.note_id, title: p.title || '(untitled)', body: p.body || '',
             scope: p.scope || {}, folder: p.folder || null,
             equipment_code: p.equipment_code || null,
+            // §46 — WHERE on the machine, as against which machine
+            // (docs/item-positions.md). A note names one component in
+            // `equipment_code` and any number of positions on it here: "plate
+            // freezer #5" plus "S108, infeed fwd pan stopper proximity". The
+            // note still lives under the component, because that is the code it
+            // is filed against; the positions are a second tag on top.
+            //
+            // Ids only. The label is the register's to say, and a copy of it
+            // here would be the one that goes stale when a position is renamed.
+            positions: (p.positions || []).slice(),
             steps: (p.steps || []).map(function (s) {
               return { step_id: s.step_id, text: s.text, equipment_code: s.equipment_code || null, strikes: [] };
             }),
@@ -198,13 +208,28 @@
           if (n && !n.assignees.length) {
             if (p.mode === 'equipment')       n.assignment = 'equipment';
             else if (p.mode === 'assignable') n.assignment = 'assignable';
-            else { n.assignment = 'unassigned'; n.equipment_code = null; }
+            else {
+              n.assignment = 'unassigned';
+              n.equipment_code = null;
+              // The positions go with the code. A position is a place ON a
+              // component, so a note that no longer names a machine cannot
+              // still name somewhere on it — that would leave a tag pointing
+              // into a register the note has no route to, reachable from the
+              // position's own list and from nowhere else.
+              n.positions = [];
+            }
             if (p.equipment_code) n.equipment_code = p.equipment_code;
             n.updated = ev.timestamp;
           }
           break;
+        // Idempotent on comment_id: a repeated id is one comment written twice,
+        // and the first copy wins. Alerts gives its close comment a
+        // deterministic id so two consoles closing one episode leave one
+        // comment — and on 2026-09-24 one console wrote the same one 141
+        // times. The Console cache keys note_comments on comment_id, so this
+        // is also what keeps the count and the table in agreement.
         case 'comment_added':
-          if (n) {
+          if (n && !(p.comment_id && n.comments.some(function (c) { return c.comment_id === p.comment_id; }))) {
             n.comments.push({ comment_id: p.comment_id, text: p.text || '', attachments: p.attachments || [], actor: ev.actor, timestamp: ev.timestamp });
             n.updated = ev.timestamp;
           }
