@@ -8,6 +8,17 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.34 — 2026-09-27
+
+- **Navipedia → Fire & Emergency.** Fire detectors by space, the fire main
+  and CO2, and the blackout recovery cards, from the Console's next publish.
+  A laminated card's PDF is on the ship's share: the phone says where, and it
+  opens on the Console.
+- **Navipedia → LO/TO Assistance.** Pick a machine and see every breaker that
+  feeds it, where each panel is, and the one breaker further up that kills
+  them all, with what else it kills. A guide to where to go, not a permit:
+  prove it dead at the machine.
+
 ## 1.33 — 2026-09-26
 
 - **Rough Log entries can no longer wipe each other out.** Each entry the
