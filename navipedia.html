@@ -287,6 +287,7 @@
 <script src="utils/navipedia-cards-print.js"></script>
 <script src="utils/jsa-form.js"></script>
 <script src="utils/electrical-lookup.js"></script>
+<script src="utils/loto-assist.js"></script>
 <script src="utils/diagnostics-ladder.js"></script>
 <script src="utils/diagnostics-report.js"></script>
 <script>
@@ -348,6 +349,7 @@ var NV = {
   cardQuery: { sops: '', jobs: '', ksas: '' }, ksaFilter: 'all', cardFormat: 'sheet',
   jsaQuery: '', jsaFilter: 'all',
   elecQuery: '',
+  lotoQuery: '', lotoHits: [],
   diag: { q: '', only: false, expanded: {}, tier: 'tech', techFilter: '', sweepQ: '' },
   // Derived indexes, built once per file
   ix: {}
@@ -624,16 +626,18 @@ function nvHashFor(v) {
   if (v.v === 'note') return '#note=' + encodeURIComponent(v.rel);
   if (v.v === 'jsa')  return '#jsa=' + encodeURIComponent(v.id);
   if (v.v === 'diagm') return '#diag=' + encodeURIComponent(v.code);
+  if (v.v === 'loto' && v.lv && v.lv.kind === 'plan') return '#loto=' + encodeURIComponent(v.lv.component || v.lv.query);
   return location.pathname + location.search;
 }
 function nvViewFromHash() {
-  var m = location.hash.match(/^#(card|note|jsa|diag)=(.+)$/);
+  var m = location.hash.match(/^#(card|note|jsa|diag|loto)=(.+)$/);
   if (!m) return null;
   var val = decodeURIComponent(m[2]);
   if (m[1] === 'card') return { v: 'card', id: val };
   if (m[1] === 'note') return { v: 'note', rel: val };
   if (m[1] === 'jsa')  return { v: 'jsa', id: val };
   if (m[1] === 'diag') return { v: 'diagm', code: val };
+  if (m[1] === 'loto') return { v: 'loto', lv: { kind: 'plan', component: val, query: val } };
   return null;
 }
 
@@ -707,13 +711,24 @@ var NV_SECTIONS = [
     ['ksas', '◈', 'KSAs', 'Knowledge and skills']
   ]],
   ['Safety and systems', [
+    ['fire', '🔥', 'Fire & Emergency', 'Fire detectors by space, the fire main and CO2, blackout recovery cards'],
     ['jsa',  '⚠', 'JSA', 'Job safety analyses, by machine'],
     ['elec', '⚡', 'Electrical Distribution', 'What feeds a breaker, a panel or a machine — and where it is'],
+    ['loto', '🔒', 'LO/TO Assistance', 'Every breaker feeding a machine, where the panels are, and the point upstream'],
     ['diag', '✚', 'Diagnostics', 'What the record says about how a machine fails']
   ]]
 ];
 // The range's entries land on one note each, by name (NPD_SECTIONS).
-var NV_RANGE_ENTRY = { starthere: 'Start Here', ship: 'Below Main Deck', systems: 'Systems Index' };
+// Fire & Emergency is an authored map in 0.8.2 Systems (the Console's
+// NPD_SECTIONS.fire), so it opens as a range note like the three above.
+var NV_RANGE_ENTRY = { starthere: 'Start Here', ship: 'Below Main Deck', systems: 'Systems Index', fire: 'Fire & Emergency Systems' };
+function nvSectionName(key) {
+  for (var i = 0; i < NV_SECTIONS.length; i++) {
+    var hit = NV_SECTIONS[i][1].filter(function (s) { return s[0] === key; })[0];
+    if (hit) return hit[2];
+  }
+  return 'Navipedia';
+}
 
 function nvOpenSection(key) {
   if (NV_RANGE_ENTRY[key]) { nvGo({ v: 'note', entry: key }); return; }
@@ -722,6 +737,7 @@ function nvOpenSection(key) {
   if (key === 'sops' || key === 'jobs' || key === 'ksas') { nvGo({ v: 'cards', section: key }); return; }
   if (key === 'jsa')  { nvGo({ v: 'jsas' }); return; }
   if (key === 'elec') { nvGo({ v: 'elec', ev: { kind: 'home' } }); return; }
+  if (key === 'loto') { nvGo({ v: 'loto', lv: { kind: 'home' } }); return; }
   if (key === 'diag') { nvGo({ v: 'diag' }); return; }
 }
 
@@ -857,7 +873,7 @@ NV_VIEWS.health = {
 NV_VIEWS.note = {
   title: function (view) {
     var rec = view.rel ? nvRangeByRel(view.rel) : null;
-    return rec ? rec.title : (view.entry ? NV_SECTIONS[0][1].filter(function (s) { return s[0] === view.entry; })[0][2] : 'Navipedia');
+    return rec ? rec.title : (view.entry ? nvSectionName(view.entry) : 'Navipedia');
   },
   needs: ['range.json'],
   loadingText: 'Reading the range…',
@@ -870,8 +886,12 @@ NV_VIEWS.note = {
     if (view.entry && !view.rel) {
       var name = NV_RANGE_ENTRY[view.entry];
       var hit = r.notes.filter(function (n) { return n.name === name && n.ext === '.md'; })[0] ||
-                r.notes.filter(function (n) { return n.kind === 'map'; })[0];
-      if (!hit) { body.innerHTML = '<div class="empty">The range has no page called “' + nvEsc(name) + '”.</div>'; return; }
+                (view.entry === 'fire' ? null : r.notes.filter(function (n) { return n.kind === 'map'; })[0]);
+      if (!hit) {
+        body.innerHTML = '<div class="empty">The range has no page called “' + nvEsc(name) + '”.' +
+          (view.entry === 'fire' ? ' It is new, and reaches phones with the Console\'s next publish (Navipedia → Health → Publish to phones).' : '') + '</div>';
+        return;
+      }
       view.rel = hit.rel;
       history.replaceState({ depth: NV.stack.length }, '', nvHashFor(view));
       nvSetBar(hit.title);
@@ -1084,13 +1104,27 @@ function nvInline(raw, depth) {
   s = s.replace(/!\[\[([^\]]+)\]\]/g, function (m, inner) { return slot(nvInlineEmbedHtml(inner)); });
   s = s.replace(/\[\[([^\]]+)\]\]/g, function (m, inner) { return slot(nvLinkHtml(inner)); });
   s = s.replace(/`([^`]+)`/g, function (m, code) { return slot('<code>' + nvEsc(code) + '</code>'); });
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (m, text, href) { return slot('<span class="extlink" title="' + nvEsc(href) + '">' + nvEsc(text) + '</span>'); });
+  // A file:/// link is a laminated card or a drawing on the ship's share. The
+  // Console opens it (navipedia.js npdFileUrlPath); a phone cannot reach S:,
+  // so it says where the file is instead.
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (m, text, href) {
+    var file = nvFileUrlPath(href);
+    if (file) return slot('<span class="extlink" title="' + nvEsc(file + ' — on the ship\'s share; it opens on the Console') + '">' + nvEsc(text) + ' <span class="dim small">(file on S:)</span></span>');
+    return slot('<span class="extlink" title="' + nvEsc(href) + '">' + nvEsc(text) + '</span>');
+  });
   s = nvEsc(s);
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
        .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
        .replace(/==([^=]+)==/g, '<mark>$1</mark>');
   s = s.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
   return s.replace(/\u0000(\d+)\u0001/g, function (m, i) { return slots[Number(i)]; });
+}
+// `file:///S:/Engineer's%20Files/…/Card.pdf` → `S:\Engineer's Files\…\Card.pdf`
+// (navipedia.js npdFileUrlPath). Only a drive-letter path is a file link.
+function nvFileUrlPath(href) {
+  var m = String(href || '').trim().match(/^file:\/\/\/([A-Za-z]:\/.*)$/i);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1]).replace(/\//g, '\\'); } catch (e) { return null; }
 }
 function nvInlineEmbedHtml(inner) {
   var e = (nvRange().embeds || {})[inner];
@@ -1513,8 +1547,9 @@ NV_VIEWS.elec = {
     if (ev.kind === 'home') nvEWireSearch();
     else body.oninput = null;
     body.onclick = function (e) {
-      var t = e.target.closest('[data-go-panel],[data-go-breaker],[data-go-item],[data-go-item-q],[data-go-space],[data-ac],[data-card]');
+      var t = e.target.closest('[data-go-panel],[data-go-breaker],[data-go-item],[data-go-item-q],[data-go-space],[data-ac],[data-card],[data-loto]');
       if (!t) return;
+      if (t.dataset.loto) { nvGo({ v: 'loto', lv: { kind: 'plan', component: t.dataset.loto } }); return; }
       if (t.dataset.goBreaker) { var pb = t.dataset.goBreaker.split('|'); nvEgo({ kind: 'breaker', panel: pb[0], br: Number(pb[1]) }); }
       else if (t.dataset.goPanel) nvEgo({ kind: 'panel', panel: t.dataset.goPanel });
       else if (t.dataset.goItemQ) nvEgo({ kind: 'item', query: t.dataset.goItemQ });
@@ -1859,7 +1894,8 @@ function nvEItemView(v) {
   }).join('');
   var off = r.panels.filter(function (x) { var p = ix.byName.get(x.panel); return p && !L.locate(ix, p).map; })
     .map(function (x) { var p = ix.byName.get(x.panel); return nvEPanelLink(x.panel) + ' <span class="dim">' + nvEsc(L.locate(ix, p).where) + '</span>'; });
-  return nvEHead(title, 'Fed from ' + r.panels.length + ' panel' + (r.panels.length === 1 ? '' : 's')) +
+  var lotoBtn = component ? '<button class="lnk" data-loto="' + nvEsc(component.note) + '">LO/TO Assistance ›</button>' : '';
+  return nvEHead(title, 'Fed from ' + r.panels.length + ' panel' + (r.panels.length === 1 ? '' : 's'), lotoBtn) +
     '<div class="note-box">' + register + '</div>' +
     (r.multiPanel ? '<div class="warn-box">More than one panel names this — isolating one may not de-energise it.</div>' : '') +
     (!r.linked.length && !(r.group && r.group.children.length) ? '<div class="note-box">Searched ' + r.panelCount + ' panel notes for ' + nvEsc(r.searched) + '. These are matches made by reading labels; the crosswalk has not confirmed them.</div>' : '') +
@@ -1891,6 +1927,232 @@ function nvESpaceView(id) {
   return nvEHead('<span class="tid">' + nvEsc(id) + '</span><span class="soft">' + nvEsc(s ? s.name : '') + '</span>', nvEsc(s ? s.deck : '')) +
     '<section class="sec"><h3>Panels in this space</h3>' + (list || '<div class="dim">The panel schedule places no panel here.</div>') + '</section>' +
     (map ? '<section class="sec"><h3>' + nvEsc(map.name) + '</h3>' + nvEDrawingHtml(map, [{ rect: map.spaces[id], space: id, label: id, on: true }]) + '</section>' : '');
+}
+
+// ════════════════════════════════════════════════════════════
+// LO/TO Assistance (Console: navipedia-loto.js)
+// ════════════════════════════════════════════════════════════
+//
+// A machine's breakers, where it and its panels are, and the one point higher
+// up that covers every one of those panels. The answer is utils/loto-assist.js,
+// mirrored from the Console, over the same electrical.json Electrical
+// Distribution reads. TM Master's Location for a machine is read on the
+// Console only; the bundle does not carry it.
+
+function nvLA() { return window.lotoAssist; }
+function nvLgo(lv) { nvGo({ v: 'loto', lv: lv }); }
+
+NV_VIEWS.loto = {
+  title: function (view) {
+    var lv = view.lv || {};
+    if (lv.kind === 'plan') return 'LO/TO — ' + (lv.component ? String(lv.component).split(' ')[0] : '“' + lv.query + '”');
+    return 'LO/TO Assistance';
+  },
+  needs: ['electrical.json'],
+  loadingText: 'Reading the panel schedule…',
+  render: function (view, body) {
+    var m = NV.files['electrical.json'];
+    if (m.ok === false) { body.innerHTML = nvFileError('electrical.json'); return; }
+    var lv = view.lv || { kind: 'home' };
+    body.innerHTML = lv.kind === 'plan' ? nvLPlanView(lv) : nvLHomeView();
+    nvEHydrateDrawings();
+    if (lv.kind === 'plan') body.oninput = null;
+    else nvLWireSearch();
+    body.onclick = function (e) {
+      var t = e.target.closest('[data-go-panel],[data-go-breaker],[data-go-space],[data-go-item],[data-loto],[data-lac]');
+      if (!t) return;
+      if (t.dataset.goBreaker) { var pb = t.dataset.goBreaker.split('|'); nvEgo({ kind: 'breaker', panel: pb[0], br: Number(pb[1]) }); }
+      else if (t.dataset.goPanel) nvEgo({ kind: 'panel', panel: t.dataset.goPanel });
+      else if (t.dataset.goSpace) nvEgo({ kind: 'space', space: t.dataset.goSpace });
+      else if (t.dataset.goItem) nvEgo({ kind: 'item', query: t.dataset.goItem, component: t.dataset.goItem });
+      else if (t.dataset.loto) nvLgo({ kind: 'plan', component: t.dataset.loto });
+      else if (t.dataset.lac != null) nvLPick(NV.lotoHits[Number(t.dataset.lac)]);
+    };
+  }
+};
+
+function nvLPick(h) {
+  if (!h) return;
+  var q = NV.lotoQuery.trim();
+  NV.lotoQuery = '';
+  nvLgo(h.component ? { kind: 'plan', component: h.component.note } : { kind: 'plan', query: h.query || q });
+}
+
+function nvLWireSearch() {
+  var body = document.getElementById('body');
+  var draw = function () {
+    var box = document.getElementById('lo-ac');
+    var q = NV.lotoQuery;
+    if (!q.trim()) { box.innerHTML = ''; document.getElementById('lo-home').hidden = false; return; }
+    document.getElementById('lo-home').hidden = true;
+    var hits = NV.lotoHits = nvLA().suggest(nvEix(), q, { limit: 14 });
+    hits.push({ query: q.trim() });
+    box.innerHTML = hits.map(function (h, i) {
+      if (!h.component) return '<button class="row" data-lac="' + i + '"><span class="row-main"><span class="kind">All</span> Every breaker whose label names “' + nvEsc(h.query) + '”</span></button>';
+      var c = h.component;
+      var sub = h.supply ? 'Fed from ' + h.supply.map(function (s) { return s.panel + ' br ' + s.br; }).join(', ')
+          : (c.group ? 'Group — the machines beneath it' : 'No crosswalked breaker — the schedule’s labels will be searched');
+      return '<button class="row" data-lac="' + i + '"><span class="row-main"><span class="kind item">' + (c.group ? 'Group' : 'Item') + '</span> <span class="row-id">' +
+        nvEsc(c.code) + '</span> ' + nvHighlight(c.name, q) + '<span class="row-sub">' + nvEsc(sub) + '</span></span></button>';
+    }).join('');
+  };
+  body.oninput = function (e) { if (e.target.id === 'lo-q') { NV.lotoQuery = e.target.value; draw(); } };
+  var input = document.getElementById('lo-q');
+  input.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (NV.lotoQuery.trim()) nvLPick((NV.lotoHits || [])[0]);
+  });
+  draw();
+}
+
+function nvLHomeView() {
+  var ix = nvEix();
+  var linked = ix.equipment.filter(function (r) { return ix.supply.has(r.note); })
+    .sort(function (a, b) { return a.code.localeCompare(b.code, undefined, { numeric: true }); });
+  return '<div class="search"><input type="search" id="lo-q" autocomplete="off" spellcheck="false" placeholder="The machine to isolate — name or code…" value="' + nvEsc(NV.lotoQuery) + '"></div>' +
+    '<div id="lo-ac"></div><div id="lo-home">' +
+    '<div class="md" style="font-size:14px"><p>Pick the machine you are going to work on. The page lists where it is, <b>every breaker that feeds it</b> and the panel each is in, ' +
+    'where those panels are, and — as a <b>secondary isolation</b> — the one breaker or panel upstream that every one of them hangs off, with everything else it would kill.</p>' +
+    '<p class="dim">Electrical Distribution\'s answer, arranged for isolation. A guide to where to go, not a permit: the vessel\'s LO/TO procedure governs, and every point is proven dead at the machine.</p></div>' +
+    '<section class="sec"><h3>Machines with a confirmed breaker</h3>' + linked.map(function (r) {
+      return '<button class="row" data-loto="' + nvEsc(r.note) + '"><span class="row-id">' + nvEsc(r.code) + '</span><span class="row-main">' + nvEsc(r.name) + '</span><span class="tile-chev">›</span></button>';
+    }).join('') + '<div class="dim small" style="margin-top:6px">Everything else is found by search — the schedule\'s labels are read for it, and the page says so.</div></section>' +
+    nvECaveat() + '</div>';
+}
+
+function nvLSpace(s) {
+  return '<button class="lnk" data-go-space="' + nvEsc(s.id) + '">' + nvEsc(s.id) + '</button> ' + nvEsc(s.name) + ' <span class="dim">' + nvEsc(s.deck || '') + '</span>';
+}
+
+function nvLWhereHtml(r, row) {
+  var w = r.where, lines = [];
+  if (row) lines.push('<tr><th>TM Master</th><td class="dim">Read on the Console — the phone does not carry TM Master\'s location.</td></tr>');
+  if (w.named.length) lines.push('<tr><th>Its title names</th><td>' + w.named.map(function (x) { return nvLSpace(x.space); }).join('<br>') +
+    '<div class="dim small">Read from the register title — a hint, not a survey.</div></td></tr>');
+  else if (w.fromGroup) lines.push('<tr><th>Its group names</th><td>' + w.fromGroup.named.map(function (x) { return nvLSpace(x.space); }).join('<br>') +
+    '<div class="dim small">From ' + nvEsc(w.fromGroup.group.note) + ' — a hint, not a survey.</div></td></tr>');
+  if (!lines.length) return '';
+  var ix = nvEix(), byMap = {};
+  w.named.map(function (x) { return x.space; }).concat(w.fromGroup ? w.fromGroup.named.map(function (x) { return x.space; }) : []).forEach(function (s) {
+    var map = ix.maps.filter(function (m) { return m.spaces[s.id]; })[0];
+    if (!map) return;
+    (byMap[map.name] = byMap[map.name] || []).push({ rect: map.spaces[s.id], space: s.id, label: s.id, on: true });
+  });
+  var drawings = Object.keys(byMap).map(function (name) {
+    return '<div class="drawing-cap">' + nvEsc(name) + ' — the machine\'s room</div>' + nvEDrawingHtml(ix.maps.filter(function (m) { return m.name === name; })[0], byMap[name]);
+  }).join('');
+  return '<section class="sec"><h3>Where the machine is</h3><table class="facts">' + lines.join('') + '</table>' + drawings + '</section>';
+}
+
+function nvLLoadHtml(load) {
+  if (!load || !load.panels.length) return '<span class="dim small">Kills no other panel</span>';
+  return '<details class="chain"><summary>Also kills ' + load.panels.length + ' panel' + (load.panels.length === 1 ? '' : 's') + ', ' + load.circuits + ' labelled circuits</summary>' +
+    load.panels.map(nvEPanelLink).join(' ') +
+    (load.multiFed.length ? '<div class="dim small">' + load.multiFed.map(nvEsc).join(', ') + (load.multiFed.length === 1 ? ' has' : ' have') + ' another feed and may stay live.</div>' : '') + '</details>';
+}
+
+function nvLPointCards(points) {
+  var ix = nvEix();
+  return points.map(function (pt) {
+    var p = ix.byName.get(pt.panel);
+    return '<div class="ecard"><div class="ecard-head">' + (pt.known ? nvEBreakerLink(pt.panel, pt.br) : nvEsc(pt.panel + ' br ' + pt.br) + ' <span class="tag">not in the panel mirror</span>') +
+      ' <span>“' + nvEsc(pt.label) + '”</span></div>' +
+      '<div class="small">Covers ' + pt.covers.map(nvEPanelLink).join(' ') + '</div>' +
+      (p ? '<div class="dim small">' + nvEsc(nvEL().locate(ix, p).where) + '</div>' : '') + nvLLoadHtml(pt.load) + '</div>';
+  }).join('');
+}
+
+function nvLSecondaryHtml(r) {
+  var s = r.secondary;
+  if (!s) return '';
+  var inBasis = r.panels.filter(function (x) { return x.inBasis; });
+  var further = s.further && s.further.length ? '<div class="dim small">Further up, every path also passes through ' + s.further.map(nvEPanelLink).join(' → ') + '.</div>' : '';
+  var body;
+  if (s.kind === 'single') {
+    var pt = s.points[0];
+    body = '<p>' + (s.via === 'incoming' ? nvEPanelLink(s.at) + ' carries every breaker above, and it has one feed.' : 'Every panel above hangs off ' + nvEPanelLink(s.at) + ', through one breaker.') +
+      ' Opening <b>' + nvEsc(pt.panel + ' br ' + pt.br) + '</b> isolates them all at once.</p>' + nvLPointCards(s.points) + further;
+  } else if (s.kind === 'branches') {
+    body = '<p>Every panel above hangs off ' + nvEPanelLink(s.at) + ', through ' + s.points.length + ' of its breakers. Opening all ' + s.points.length + ', on the one panel, isolates them together.</p>' + nvLPointCards(s.points) + further;
+  } else if (s.kind === 'feeds') {
+    body = '<p>' + (inBasis.length > 1 ? 'Every panel above hangs off ' + nvEPanelLink(s.at) + ', and it is fed from ' : nvEPanelLink(s.at) + ' is fed from ') +
+      s.points.length + ' places. All ' + s.points.length + ' must be opened to kill it whole.</p>' + nvLPointCards(s.points) + further;
+  } else if (s.kind === 'source') {
+    body = '<p>Every panel above hangs off ' + nvEPanelLink(s.at) + ', and the schedule records no feed to it — a switchboard, or its feed is unwritten. Its own incomer is the point; read it at the panel.</p>' +
+      nvLLoadHtml(s.load) + further;
+  } else if (s.kind === 'per-panel') {
+    body = '<p>' + (s.forced
+        ? 'These are label matches — circuits that share the machine’s words, not all of them this machine — so no point above them all is offered. Pick the breakers that are this machine first. To kill a panel whole, open its own feeds:'
+        : 'No single point upstream covers every panel. To kill each panel whole, open its own feeds:') + '</p>' +
+      ((s.multiFed || []).length ? '<div class="warn-box">' + s.multiFed.map(nvEPanelLink).join(', ') + (s.multiFed.length === 1 ? ' is' : ' are') + ' fed from more than one place — every feed must be opened.</div>' : '') +
+      nvLPointCards(s.points) +
+      ((s.noFeed || []).length ? '<div class="note-box">No feed is recorded for ' + s.noFeed.map(nvEPanelLink).join(', ') + ' — read its incomer at the panel.</div>' : '');
+  } else {
+    body = '<div class="dim">' + nvEsc(s.reason || 'No secondary point can be named.') + '</div>';
+  }
+  var unknown = (s.unknown || []).length ? '<div class="note-box">' + s.unknown.map(nvEsc).join(', ') + ' — not in the panel mirror, so nothing upstream can be said.</div>' : '';
+  var basis = r.basis === 'crosswalked' && inBasis.length < r.panels.length
+    ? '<div class="dim small">Worked over the crosswalked panels only (' + inBasis.map(function (x) { return nvEsc(x.panel); }).join(', ') + '); the label matches elsewhere are left out.</div>' : '';
+  return '<section class="sec"><h3>Secondary isolation — one point higher up</h3><div class="note-box">' + nvEsc(r.secondaryNote) + '</div>' + body + unknown + basis + '</section>';
+}
+
+// From Roundtable's jsa-creation skill: the machine AND its auxiliaries, and a
+// breaker list is not an isolation.
+function nvLAuxHtml(r) {
+  if (!r.auxiliaries.length) return '';
+  return '<section class="sec"><h3>Auxiliaries — units beneath it with a breaker of their own</h3><div class="dim small">Not counted above. Isolate them too when the job reaches them.</div>' +
+    r.auxiliaries.map(function (a) {
+      return '<div class="serves-row"><button class="lnk" data-loto="' + nvEsc(a.component.note) + '">' + nvEsc(a.component.code) + '</button> ' + nvEsc(a.component.name) + ' — ' +
+        a.supply.map(function (s) { return nvEBreakerLink(s.panel, s.br); }).join(', ') + '</div>';
+    }).join('') + '</section>';
+}
+function nvLEnergyHtml(r) {
+  return '<section class="sec"><h3>What no panel schedule shows</h3><div class="dim small">A breaker list is not an isolation. Each of these is its own point where the machine has it — nothing here says it does or does not.</div>' +
+    '<ul class="diag">' + r.otherEnergy.map(function (e) { return '<li><b>' + nvEsc(e[0]) + '</b> — ' + nvEsc(e[1]) + '</li>'; }).join('') + '</ul></section>';
+}
+
+function nvLPlanView(lv) {
+  var ix = nvEix(), A = nvLA();
+  var row = lv.component ? ix.equipByNote.get(lv.component) || ix.equipment.filter(function (r) { return r.code === lv.component; })[0] || null : null;
+  var r = A.plan(ix, { component: row, query: lv.query || lv.component });
+  var title = row ? '<span class="tid">' + nvEsc(row.code) + '</span><span class="soft">' + nvEsc(row.name) + '</span>' : '“' + nvEsc(r.query) + '”';
+  var n = r.primary.length;
+  var head = nvEHead(title, n ? n + ' breaker' + (n === 1 ? '' : 's') + ' in ' + r.panels.length + ' panel' + (r.panels.length === 1 ? '' : 's') : 'No breaker found',
+    '<button class="lnk" data-go-item="' + nvEsc(row ? row.note : r.query) + '">Open in Electrical Distribution ›</button>');
+  var where = nvLWhereHtml(r, row);
+  if (!n) {
+    var diag = (r.feeds.diagnosis || []).map(function (d) {
+      return '<li>Without ' + d.terms.map(function (a) { return '“' + nvEsc(a) + '”'; }).join(' or ') + ': ' + d.count + ' label' + (d.count === 1 ? '' : 's') + '. ' +
+        (d.dead ? 'That word is nowhere in the schedule' + (d.near.length ? '; it does use: ' + d.near.map(nvEsc).join(', ') : '') + '.' : '') +
+        (d.sample.length ? '<ul>' + d.sample.map(function (s) { return '<li>' + nvEBreakerLink(s.panel, s.br) + ' “' + nvEsc(s.label) + '”</li>'; }).join('') + '</ul>' : '') + '</li>';
+    }).join('');
+    return head + where + '<section class="sec"><h3>Primary isolation — not found</h3>' +
+      '<div class="warn-box">No breaker in the panel mirror can be named for this machine. The crosswalk has no link for it, and no breaker label names ' + nvEsc(r.feeds.searched) + '.</div>' +
+      (diag ? '<ul class="diag">' + diag + '</ul>' : '') +
+      '<p class="dim small">Search the words the label would use instead (<code>bow thruster</code>, <code>fo pump</code>) and pick <i>Every breaker whose label names …</i>. Many positions are unlabeled; the machine may hang off one of them, and then only the panel door, the starter or the drawings can say. Treat it as unknown, not as dead.</p></section>' +
+      nvLEnergyHtml(r) + (r.feeds.register.length > 1 && !row ? nvERegisterList(r.feeds.register) : '') + nvECaveat();
+  }
+  var inBasis = r.panels.filter(function (x) { return x.inBasis; });
+  var labelOnly = r.primary.every(function (x) { return x.how !== 'crosswalked'; });
+  var mixed = !labelOnly && r.primary.some(function (x) { return x.how !== 'crosswalked'; });
+  var primary = '<section class="sec"><h3>Primary isolation — open, lock and tag</h3>' +
+    (r.basis === 'crosswalked' && inBasis.length > 1 ? '<div class="warn-box">This machine is fed from ' + inBasis.length + ' panels. Every one must be isolated — opening one may not de-energise it.</div>' : '') +
+    (labelOnly ? '<div class="note-box">None of these is confirmed by the crosswalk: each was found by reading breaker labels for ' + nvEsc(r.feeds.searched) + '. Confirm at the panel that it is this machine.</div>' : '') +
+    (mixed ? '<div class="note-box">The crosswalked breakers are this machine\'s. The label matches are other circuits whose labels share its words — check each at the panel before counting it in or out.</div>' : '') +
+    r.primary.map(function (x, i) {
+      return '<div class="ecard"><div class="ecard-head"><b>' + (i + 1) + '.</b> ' + nvEBreakerLink(x.panel, x.br) + ' <span>“' + nvEsc(x.label) + '”</span> ' +
+        (x.how === 'crosswalked' ? '<span class="tag ok">crosswalked</span>' : '<span class="tag warn">label match, unconfirmed</span>') + '</div>' +
+        '<div class="dim small">' + nvEsc(x.location ? x.location.where : 'panel not in the mirror') + '</div></div>';
+    }).join('') + '</section>';
+  var panels = '<section class="sec"><h3>Where the panels are</h3>' + r.panels.map(function (x) {
+    var p = ix.byName.get(x.panel);
+    if (!p) return '<div class="ecard">Panel ' + nvEsc(x.panel) + ' — not in the panel mirror</div>';
+    return '<div class="ecard"><div class="ecard-head">' + nvEPanelLink(p.name) + ' <span class="dim small">br ' + x.brs.join(', ') + ' · ' + nvEsc(p.system || '') + '</span></div>' +
+      nvELocationHtml(p) + (p.locationOnly ? '<div class="warn-box">Location only — no schedule sheet lists its breakers. Read the panel door.</div>' : '') + '</div>';
+  }).join('') + '</section>';
+  return head + where + primary + nvLAuxHtml(r) + panels + nvLSecondaryHtml(r) + nvLEnergyHtml(r) +
+    (r.feeds.register.length > 1 && !row ? nvERegisterList(r.feeds.register) : '') + nvECaveat();
 }
 
 // ════════════════════════════════════════════════════════════

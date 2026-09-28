@@ -853,20 +853,25 @@ a.eqopen { color: #0a5a8a; text-decoration: none; cursor: pointer; }
     parts.push(requiresHtml(fm.requires_ksa, ctx));
     parts.push(picturesHtml(opts.equipment, format, ctx));
 
-    if (!stub) {
+    // Editing on the page (docs/card-editor.md §7) draws a stub's sections as
+    // well: a stub is exactly the card somebody opens the editor to write.
+    const ed = opts.editable ? editState(opts) : null;
+    if (!stub || ed) {
       const split = K ? K.bodySections(body) : { preamble: body, sections: [] };
       if (split.preamble) parts.push(`<section class="sec">${md(split.preamble, ctx)}</section>`);
-      for (const s of split.sections) {
-        if (!wantSection(rec, s.heading, format)) continue;
+      split.sections.forEach((s, k) => {
+        if (!wantSection(rec, s.heading, format)) return;
+        if (ed) { parts.push(editableSectionHtml(s, k, ed, ctx)); return; }
         // The one section a job card carries is its decomposition table, and on
         // the card that table is trimmed to Seq / Task / ✓.
         const sctx = (format === 'card' && /^task decomposition/i.test(String(s.heading).trim()))
           ? Object.assign({}, ctx, { decompose: true })
           : ctx;
         const html = md(s.text, sctx);
-        if (!html.trim()) continue;
+        if (!html.trim()) return;
         parts.push(`<section class="sec"><h2>${inline(s.heading, ctx)}</h2>${html}</section>`);
-      }
+      });
+      if (ed) parts.push(addSectionHtml());
       // Sources in frontmatter (the knowledge and skill notes) are the evidence
       // behind the summary. The sheet carries them; the card does not.
       if (format === 'sheet') {
@@ -878,13 +883,13 @@ a.eqopen { color: #0a5a8a; text-decoration: none; cursor: pointer; }
     }
 
     parts.push(equipmentDocsHtml(opts.equipment, format, ctx));
-    if (opts.issuedLine) parts.push(issuedHtml(format));
+    if (opts.issuedLine && !ed) parts.push(issuedHtml(format));
 
     const label = shortId(rec.id) + ' — ' + plainTitle(rec.title);
     return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <title>${esc(label)}</title>
-<style>${styles(format, setup)}</style>
+<style>${styles(format, setup)}${ed ? EDIT_STYLES : ''}</style>
 </head><body class="fmt-${format}">
 <table class="frame">
   <thead><tr><td></td></tr></thead>
@@ -897,6 +902,82 @@ a.eqopen { color: #0a5a8a; text-decoration: none; cursor: pointer; }
 <div class="foot">${footerText(rec, fm, opts)}</div>
 </body></html>`;
   }
+
+  // ── Editing on the page ────────────────────────────────────────────────────
+  //
+  // The Chief's door (docs/card-editor.md §7). Each section of the sheet gets
+  // Edit and + Picture beside its heading; Edit swaps that section, where it
+  // stands on the page, for its own markdown in a text box. Nothing in the
+  // frame runs script — the screen outside wires the buttons by data-ed — and
+  // the section index is the handout's own (ksa-view bodySections), which
+  // navipedia-edit.js splits the file by the same rule to put the text back.
+  //
+  // opts.editable: true; opts.editingSec: the index open in a text box, or
+  // null; opts.editingText: what goes in it; opts.changed: indices that differ
+  // from the file on disk.
+  function editState(opts) {
+    return {
+      open: opts.editingSec == null ? null : Number(opts.editingSec),
+      text: opts.editingText == null ? null : String(opts.editingText),
+      changed: new Set((opts.changed || []).map(Number))
+    };
+  }
+
+  function editableSectionHtml(s, k, ed, ctx) {
+    const changed = ed.changed.has(k);
+    const tools = `<span class="ed-tools">
+        ${changed ? '<span class="ed-tag">changed</span>' : ''}
+        ${ed.open === k ? '' : `<button class="ed-btn" data-ed="edit" data-sec="${k}">Edit</button>`}
+        <button class="ed-btn" data-ed="pic" data-sec="${k}" title="Add a picture to this section">+ Picture</button>
+      </span>`;
+    let body;
+    if (ed.open === k) {
+      const text = ed.text == null ? s.text : ed.text;
+      body = `<textarea class="ed-text" data-sec="${k}" spellcheck="true">${esc(text)}</textarea>
+        <div class="ed-row">
+          <button class="ed-btn ed-primary" data-ed="done" data-sec="${k}">Done</button>
+          <button class="ed-btn" data-ed="cancel" data-sec="${k}">Cancel</button>
+          <span class="ed-hint">Markdown, as the vault writes it. A picture is <code>![[file name.jpg]]</code> on its
+            own line with an <em>*italic caption*</em> under it. Nothing is saved until Save to vault.</span>
+        </div>`;
+    } else {
+      const html = md(s.text, ctx);
+      body = html.trim() ? html : '<p class="ed-empty">Nothing written here yet.</p>';
+    }
+    return `<section class="sec ed-sec${changed ? ' ed-changed' : ''}${ed.open === k ? ' ed-open' : ''}" data-sec="${k}">
+      <h2>${inline(s.heading, ctx)}${tools}</h2>${body}</section>`;
+  }
+
+  function addSectionHtml() {
+    return `<div class="ed-add">
+      <input class="ed-new-heading" type="text" placeholder="New section heading">
+      <button class="ed-btn" data-ed="addsec">Add section</button>
+    </div>`;
+  }
+
+  const EDIT_STYLES = `
+.ed-sec { position: relative; border-radius: 3px; outline: 1px dashed transparent; outline-offset: 4px; }
+.ed-sec:hover { outline-color: #b9c9d6; }
+.ed-sec.ed-changed { outline: 1px solid #d9a441; background: #fffaf0; }
+.ed-sec.ed-open { outline: 2px solid #0a5a8a; background: #f5f9fc; }
+.sec > h2 { display: flex; align-items: baseline; gap: 0.6em; }
+.ed-tools { margin-left: auto; display: inline-flex; gap: 0.35em; align-items: baseline;
+  text-transform: none; letter-spacing: 0; font-weight: 400; }
+.ed-tag { font-size: 0.95em; color: #8a5300; font-weight: 700; }
+.ed-btn { font: inherit; font-size: 1em; padding: 0.05em 0.6em; border: 1px solid #9fb3c3; border-radius: 3px;
+  background: #fff; color: #0a5a8a; cursor: pointer; }
+.ed-btn:hover { background: #eaf2f8; }
+.ed-primary { background: #0a5a8a; color: #fff; border-color: #0a5a8a; }
+.ed-primary:hover { background: #084a72; }
+.ed-text { display: block; width: 100%; min-height: 9em; font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.95em; line-height: 1.45; padding: 0.5em 0.6em; border: 1px solid #9fb3c3; border-radius: 3px;
+  resize: vertical; background: #fff; color: #161616; }
+.ed-row { display: flex; gap: 0.5em; align-items: center; margin: 0.4em 0 0.6em; flex-wrap: wrap; }
+.ed-hint { font-size: 0.82em; color: #666; flex: 1; min-width: 12em; }
+.ed-empty { color: #888; font-style: italic; }
+.ed-add { display: flex; gap: 0.5em; margin: 1em 0 0.4em; padding-top: 0.6em; border-top: 1px dashed #ccc; }
+.ed-new-heading { flex: 1; font: inherit; padding: 0.2em 0.5em; border: 1px solid #9fb3c3; border-radius: 3px; }
+`;
 
   // A filename a mailbox or a folder of handouts can tell apart.
   function fileName(rec, format) {

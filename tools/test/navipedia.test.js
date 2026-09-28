@@ -45,14 +45,14 @@ const sandbox = {
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
-for (const f of ['ksa-view.js', 'navipedia-cards-print.js', 'jsa-form.js', 'electrical-lookup.js', 'diagnostics-ladder.js', 'diagnostics-report.js']) {
+for (const f of ['ksa-view.js', 'navipedia-cards-print.js', 'jsa-form.js', 'electrical-lookup.js', 'loto-assist.js', 'diagnostics-ladder.js', 'diagnostics-report.js']) {
   vm.runInContext(fs.readFileSync(path.join(REPO, 'utils', f), 'utf8'), sandbox, { filename: f });
 }
 vm.runInContext(src, sandbox, { filename: 'navipedia.html' });
 const S = sandbox;
 
 console.log('\nthe page loads');
-check('with every Console module it draws with', ['ksaView', 'navipediaCardsPrint', 'jsaForm', 'electricalLookup', 'diagnosticsLadder', 'diagnosticsReport']
+check('with every Console module it draws with', ['ksaView', 'navipediaCardsPrint', 'jsaForm', 'electricalLookup', 'lotoAssist', 'diagnosticsLadder', 'diagnosticsReport']
   .every(k => S[k]));
 
 // ── Read-only ───────────────────────────────────────────────────────────────
@@ -61,6 +61,15 @@ check('the page never sends a write', !/method\s*:\s*['"](PUT|POST|PATCH|DELETE)
 // Button labels, not prose: the page's own header comment lists what it lacks.
 check('and draws none of the Console\'s authoring buttons',
   !/>\s*(Edit|Mark reviewed|New map…?|New trail…?|New JSA…?|Save PDF…?|Print…?|Sign…?|Upkeep|Make workbook…?)\s*</.test(page));
+
+// ── Fire & Emergency, LO/TO Assistance ──────────────────────────────────────
+console.log('\nfire & emergency, lo/to');
+const tiles = [].concat.apply([], S.NV_SECTIONS.map(g => g[1].map(t => t[0])));
+check('the home screen offers both', tiles.includes('fire') && tiles.includes('loto'));
+check('Fire & Emergency opens the Console\'s map by name', S.NV_RANGE_ENTRY.fire === 'Fire & Emergency Systems');
+check('a file:/// link on S: is read as a path', S.nvFileUrlPath("file:///S:/Engineer's%20Files/Blackouts/Part%201.pdf") === "S:\\Engineer's Files\\Blackouts\\Part 1.pdf");
+check('and anything else is not a file link', S.nvFileUrlPath('https://example.com/a.pdf') === null);
+check('a LO/TO page deep-links', S.nvHashFor({ v: 'loto', lv: { kind: 'plan', component: '702.005 FO' } }) === '#loto=702.005%20FO');
 
 // ── The map reader (navipedia.js npdMarkdown, ported) ───────────────────────
 console.log('\nthe map reader');
@@ -123,7 +132,7 @@ if (!CON) {
 
   // ── The mirrored modules ──────────────────────────────────────────────────
   console.log('\nmirrored from the Console');
-  for (const f of ['ksa-view.js', 'navipedia-cards-print.js', 'jsa-form.js', 'electrical-lookup.js', 'diagnostics-ladder.js', 'diagnostics-report.js']) {
+  for (const f of ['ksa-view.js', 'navipedia-cards-print.js', 'jsa-form.js', 'electrical-lookup.js', 'loto-assist.js', 'diagnostics-ladder.js', 'diagnostics-report.js']) {
     check(f + ' is byte-identical with the Console\'s',
       fs.readFileSync(path.join(REPO, 'utils', f)).equals(fs.readFileSync(path.join(CON, 'src', 'renderer', 'js', f))));
   }
