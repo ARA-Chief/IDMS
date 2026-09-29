@@ -8,6 +8,13 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.35 — 2026-09-28
+- **Check all, and Undo, in IDMS Notes.** A list with more than one open
+  note has a Check all button at the top: it shows you every note it will
+  tick before it does anything. After any tick, single or all, an Undo
+  button stays up for 30 seconds in case it was the wrong one. Works the
+  same in the Notes window and on the phone.
+
 ## 1.34 — 2026-09-27
 
 - **Navipedia → Fire & Emergency.** Fire detectors by space, the fire main
