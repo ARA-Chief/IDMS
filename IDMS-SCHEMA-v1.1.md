@@ -88,7 +88,7 @@ Increment this value (to `2`, `3`, etc.) whenever a field is added, removed, or 
   "users": [
     {
       "username": "tploch",
-      "password": "araho24",
+      "password": "<password>",
       "name": "T. Ploch",
       "role": "Chief Engineer",
       "permission_tier": "admin",
