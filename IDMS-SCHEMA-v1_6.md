@@ -115,7 +115,7 @@ Increment this value (to `2`, `3`, etc.) whenever a field is added, removed, or 
     {
       "user_id":         "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
       "username":        "tploch",
-      "password":        "araho24",
+      "password":        "<password>",
       "name":            "Tyler Ploch",
       "role":            "Chief Engineer",
       "permission_tier": "admin",

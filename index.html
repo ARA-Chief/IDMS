@@ -2535,13 +2535,13 @@ var CONFIG = {
   "version": "1.0",
   "departments": ["Factory", "Engine Room", "Deck"],
   "users": [
-    { "username": "admin",    "password": "araho24", "role": "Admin",            "departments": ["Factory", "Engine Room", "Deck"] },
-    { "username": "tploch",   "password": "araho24", "role": "Chief Engineer",   "departments": ["Factory", "Engine Room"] },
-    { "username": "wostara",  "password": "araho24", "role": "Chief Engineer",   "departments": ["Factory", "Engine Room"] },
-    { "username": "spotchik", "password": "araho24", "role": "1st Engineer",     "departments": ["Factory", "Engine Room"] },
-    { "username": "psimes",   "password": "araho24", "role": "1st Engineer",     "departments": ["Factory", "Engine Room"] },
-    { "username": "rgarcia",  "password": "araho24", "role": "Factory Engineer", "departments": ["Factory"] },
-    { "username": "tlee",     "password": "araho24", "role": "Freezer Tech",     "departments": ["Factory"] }
+    { "username": "admin",    "role": "Admin",            "departments": ["Factory", "Engine Room", "Deck"] },
+    { "username": "tploch",   "role": "Chief Engineer",   "departments": ["Factory", "Engine Room"] },
+    { "username": "wostara",  "role": "Chief Engineer",   "departments": ["Factory", "Engine Room"] },
+    { "username": "spotchik", "role": "1st Engineer",     "departments": ["Factory", "Engine Room"] },
+    { "username": "psimes",   "role": "1st Engineer",     "departments": ["Factory", "Engine Room"] },
+    { "username": "rgarcia",  "role": "Factory Engineer", "departments": ["Factory"] },
+    { "username": "tlee",     "role": "Freezer Tech",     "departments": ["Factory"] }
   ]
 };
 
@@ -2726,6 +2726,49 @@ var _configCache     = null;
 var _configCacheTime = 0;
 var CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+// ── OFFLINE ROSTER CACHE ─────────────────
+// The last roster fetched from OneDrive, kept on the phone so crew can still
+// sign in with no signal. Passwords are stored as SHA-256 of
+// "username:password", never as typed.
+var ROSTER_CACHE_KEY = 'idms.rosterCache.v1';
+
+function hashCredential(username, password) {
+  if (!(window.crypto && crypto.subtle && window.TextEncoder)) return Promise.resolve(null);
+  var bytes = new TextEncoder().encode(String(username).toLowerCase() + ':' + password);
+  return crypto.subtle.digest('SHA-256', bytes).then(function(buf) {
+    return Array.prototype.map.call(new Uint8Array(buf), function(b) {
+      return ('0' + b.toString(16)).slice(-2);
+    }).join('');
+  });
+}
+
+function saveRosterCache(config) {
+  try {
+    var roster = (config && (config.crew || config.users)) || [];
+    Promise.all(roster.map(function(entry) {
+      var copy = {};
+      for (var k in entry) { if (k !== 'password') copy[k] = entry[k]; }
+      if (!entry.password || !entry.username) return Promise.resolve(copy);
+      return hashCredential(entry.username, entry.password).then(function(h) {
+        if (h) copy.passwordHash = h;
+        return copy;
+      });
+    })).then(function(safe) {
+      var out = {};
+      for (var k in config) { if (k !== 'crew' && k !== 'users') out[k] = config[k]; }
+      out[config.crew ? 'crew' : 'users'] = safe;
+      try { localStorage.setItem(ROSTER_CACHE_KEY, JSON.stringify(out)); } catch (e) {}
+    }).catch(function() {});
+  } catch (e) {}
+}
+
+function loadRosterCache() {
+  try {
+    var raw = localStorage.getItem(ROSTER_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
 function loadConfig() {
   // Return cached config if still fresh
   if (_configCache && (Date.now() - _configCacheTime) < CONFIG_CACHE_TTL) {
@@ -2760,14 +2803,19 @@ function loadConfig() {
       _configCacheTime = Date.now();
       CONFIG           = data;
       endNetworkOp(true);
+      saveRosterCache(data);
       return data;
     })
     .catch(function(err) {
-      console.warn('Remote config fetch failed, using bundled fallback:', err);
+      // No passwords ship with the app or sit in the public repo any more, so
+      // the offline fallback is the last roster this phone fetched, with each
+      // password kept only as a hash (see saveRosterCache).
+      var cached = loadRosterCache();
+      console.warn('Remote config fetch failed, using ' + (cached ? 'cached roster' : 'bundled fallback') + ':', err);
       endNetworkOp(false);
-      _configCache     = CONFIG;
+      _configCache     = cached || CONFIG;
       _configCacheTime = Date.now();
-      return CONFIG;
+      return _configCache;
     });
 }
 
@@ -2795,14 +2843,17 @@ function submitLogin() {
   // made in the Console take effect immediately rather than waiting up to 5 min.
   _configCache = null;
 
-  loadConfig().then(function(config) {
+  Promise.all([loadConfig(), hashCredential(username, password)]).then(function(results) {
+    var config = results[0];
+    var typedHash = results[1];
     // Support both crewconfig format (config.crew) and legacy userconfig (config.users)
     var roster = config.crew || config.users || [];
     var match = null;
     for (var i = 0; i < roster.length; i++) {
       var entry = roster[i];
-      if ((entry.username || '').toLowerCase() === username &&
-          entry.password === password) {
+      if ((entry.username || '').toLowerCase() !== username) continue;
+      if ((entry.password && entry.password === password) ||
+          (!entry.password && entry.passwordHash && typedHash && entry.passwordHash === typedHash)) {
         match = entry; break;
       }
     }
@@ -11821,7 +11872,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.34';
+var PWA_VERSION  = '1.35';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {

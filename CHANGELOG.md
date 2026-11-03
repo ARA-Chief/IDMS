@@ -8,6 +8,13 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.35 — 2026-11-03
+
+- **Signing in with no signal uses the last crew list this phone saw.**
+  The app no longer carries anyone's password inside it. Once you have
+  signed in with signal, the phone remembers the crew list (passwords kept
+  scrambled, not as typed), so the next sign-in works offline too.
+
 ## 1.34 — 2026-09-27
 
 - **Navipedia → Fire & Emergency.** Fire detectors by space, the fire main

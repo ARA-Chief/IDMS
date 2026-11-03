@@ -9,7 +9,6 @@
   "users": [
     {
       "username": "admin",
-      "password": "araho24",
       "role": "Admin",
       "departments": [
         "Factory",
@@ -28,7 +27,6 @@
     },
     {
       "username": "tploch",
-      "password": "araho24",
       "role": "Chief Engineer",
       "departments": [
         "Factory",
@@ -46,7 +44,6 @@
     },
     {
       "username": "wostara",
-      "password": "araho24",
       "role": "Chief Engineer",
       "departments": [
         "Factory",
@@ -56,15 +53,14 @@
       "name": "William Ostara",
       "permission_tier": "admin",
       "status": "active",
-      "email": "wm.ostara@gmail.com",
-      "phone": "+1 206 451 0549 or +44 07535 271858",
-      "location": "Plymouth, UK",
+      "email": "",
+      "phone": "",
+      "location": "",
       "resources_changelog": [],
       "action_overrides": {}
     },
     {
       "username": "spotchik",
-      "password": "araho24",
       "role": "1st Engineer",
       "departments": [
         "Factory",
@@ -82,7 +78,6 @@
     },
     {
       "username": "psimes",
-      "password": "araho24",
       "role": "1st Engineer",
       "departments": [
         "Factory",
@@ -100,7 +95,6 @@
     },
     {
       "username": "rgarcia",
-      "password": "araho24",
       "role": "Factory Engineer",
       "departments": [
         "Factory",
