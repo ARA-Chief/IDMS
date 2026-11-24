@@ -18,6 +18,10 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
   step table with a ✓ column prints a box to tick on every row, the same as
   a step list. SOP-0431 Dry dock breaker isolation is laid out this way, one
   table per room.
+- **Navipedia: an SOP's Card is a to-do list.** The half-sheet card
+  now prints only the hazards, the required competency, the route and the
+  steps; the equipment, tools and other facts stay on the full sheet. A
+  checklist split into one table per room keeps its columns lined up.
 
 ## 1.34 — 2026-09-27
 
