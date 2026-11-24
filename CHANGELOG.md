@@ -14,6 +14,10 @@ the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
   tick before it does anything. After any tick, single or all, an Undo
   button stays up for 30 seconds in case it was the wrong one. Works the
   same in the Notes window and on the phone.
+- **Navipedia: a checklist written as a table gets tick boxes.** A card
+  step table with a ✓ column prints a box to tick on every row, the same as
+  a step list. SOP-0431 Dry dock breaker isolation is laid out this way, one
+  table per room.
 
 ## 1.34 — 2026-09-27
 

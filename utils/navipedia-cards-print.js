@@ -267,6 +267,19 @@
     }
     const head = cells(rows[0]);
     const body = rows.slice(2).map(cells);
+    // A column headed ✓ is a tick column: a step table written as a table (a
+    // checklist with more columns than the yaml fence carries) gets the same
+    // box to tick as a yaml step, and a "Step" first column the step's width.
+    const tick = head.map(h => String(h).trim() === '✓');
+    if (tick.some(Boolean)) {
+      const idCol = /^step$/i.test(String(head[0]).trim());
+      const cls = (i, base) => (tick[i] ? 'c-box' : (i === 0 && idCol ? 'c-id' : base));
+      return `<table class="grid steps">
+      <thead><tr>${head.map((h, i) => `<th class="${cls(i, '')}">${inline(h, ctx)}</th>`).join('')}</tr></thead>
+      <tbody>${body.map(r => `<tr>${head.map((_, i) =>
+        `<td class="${cls(i, '')}">${tick[i] ? BOX : inline(r[i] || '', ctx)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>`;
+    }
     // A fill-in table — the Record section, a blank Entry column — prints with
     // room to write in. Blank cells are the point of printing it.
     const blanks = body.length && body.every(r => r.slice(1).every(c => !c));
