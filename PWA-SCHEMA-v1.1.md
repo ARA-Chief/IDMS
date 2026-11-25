@@ -535,6 +535,13 @@ All keys are prefixed `fw_` (field web) to avoid collision with MSAL's own keys.
 | `fw_re_prefs_{username}` | `JSON object` | Per user | Cached copy of `userprefs-{username}.json` for the rounds entry module. Used as fallback when the OneDrive fetch fails. Keys: `keypad_side`, `colour_mode`. |
 | `fw_incin_events` | `JSON { v: 1, files: { [filename]: event } }` | Global | Immutable incinerator event files already read from `data/incinerator/events/`, keyed by filename (v1.10). A refresh fetches only files not present here; files this device writes are added at write time. Entries the folder listing no longer has are dropped after 24 h. Never read without a fresh listing — it is a fetch cache, not a source of state. |
 
+**`procurement.html` (Inventory) keys** — not `fw_`-prefixed; that page predates the convention being applied to it.
+
+| Key | Value type | Scope | Description |
+|-----|-----------|-------|-------------|
+| `pc_events_cache_{YYYY}` | `JSON array` | Global | The procurement event stream as last read. A fetch cache; events still in the outbox may appear in it with `_pending`. |
+| `pc_outbox_{username}` | `JSON array of { fn, path, body, queued_at, error? }` | Per user | Procurement events made with no signal (receipts from Receive and *Arrived without an order*), waiting to be PUT. `body` is the exact event JSON; `fn` its fixed filename, so a resend 412s into a no-op. `error` is an HTTP status OneDrive refused it with. Emptied as each send succeeds. See IDMS-SCHEMA §42.9a. |
+
 **MSAL keys** are also stored in `localStorage` under Microsoft-controlled prefixes (e.g. `msal.{clientId}.cache.*`). These are managed exclusively by the MSAL library and must not be read or modified by IDMS code.
 
 ---
