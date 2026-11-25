@@ -7885,7 +7885,8 @@ Envelope is the standard one (`docs/architecture.md`, identical to §41.4):
 | `item_policy_set` | `{item_id, min_qty?, max_qty?, reorder_qty?, sfi_code?, barcode?, notes?}` | IDMS's own reorder policy over a mirrored item (§42.14). Sparse: an absent key is unchanged, an explicit `null` clears back to whatever TM Master says. Never a name, a supplier or a part number — those are TM Master's to state. |
 | `item_change_proposed` | `{item_id, proposal_id, fields, reason?}` | A correction to a field TM Master owns. Recorded against the item and shown with its author, **never applied** (§42.14). An officer makes the change in TM Master and the next export carries it back. |
 | `item_archived` / `item_unarchived` | `{item_id, reason?}` | Hides from pickers and the default register view; stock history and order references survive (rule 3). Archiving an item still holding stock is allowed but warned. |
-| `stock_movement` | see §42.7 | The only event that changes a quantity. `kind` discriminates receipt / issue / adjustment / transfer / count. |
+| `stock_movement` | see §42.7 | The only event that changes a quantity. `kind` discriminates receipt / issue / adjustment / transfer / count. A receipt against a TM Master order line also carries `tm_order_no`, `tm_order_line_no`, `tm_item_name` (§42.9a). |
+| `tm_order_line_received` | `{tm_order_no, tm_order_line_no, tm_item_name?, qty, note?}` | A TM order line received with no stock movement (§42.9a). Ignored by the reducer. |
 | `count_session_opened` | `{session_id, location_id, scope?, expected_items?, note?}` | Opens a sweep of one space (§42.7a). Moves nothing. `scope` is `"here"` (default) or `"deep"`. |
 | `count_session_closed` | `{session_id, confirmed?, expected_items?, note?}` | Closes it. `confirmed` is the `item_id`s seen and found correct — they file no movement, so this is the only record they were looked at. |
 | `count_session_abandoned` | `{session_id, reason?}` | Gives up the claim that the space was swept. Counts already filed under it stand. |
@@ -8168,6 +8169,30 @@ lines[]: { line_id, item_id?, description?, qty_ordered, unit?, unit_price?, req
 A short shipment is simply a smaller quantity: the line goes `partial` and stays on the outstanding list. Nothing needs to be said about the rest, and nobody has to remember to come back and close anything.
 
 **Idempotency.** A receipt commit interrupted part-way leaves the lines it already wrote; re-running it shows the reduced outstanding quantities, so the retry receives the remainder rather than doubling the delivery. Movement events are individually `If-None-Match: *` guarded on their own `movement_id`, so a retried *identical* write 412s into a no-op.
+
+### 42.9a Receiving against TM Master's open order lines (phone: Inventory › Receive)
+
+The orders that actually arrive are TM Master's, not IDMS-raised ones. The Console pulls every order line still to come off TM's Purchasing screen and publishes `data/procurement/open-order-lines.json` (read-only here; the Console's `docs/procurement-registry.md` §14.9 owns its shape). The phone's **Receive** screen (`procurement.html`, logic in `utils/receive-lines.js`, PWA-only) walks the hold with it:
+
+- **By item, not by order.** One search over lines with `outstanding > 0`, excluding `ServiceOrder`s and non-goods (Tax, freight, duty, tariffs, surcharges, packing, pasted-in invoices — by line name and component). Matches item name, maker's part no, supplier's ref, order no, supplier, and the register's own name/part no for the tied item. Results group per catalogue item; lines with no single item group per name.
+- **Oldest order first.** Picking a group lists every open line for it, sorted by the order's `approved` date (TM's `M/D/YYYY` text). One quantity fills the oldest line first and overflows to the next; `−`/`+` on a line moves one unit between lines with the total kept; each line's box can also be typed. More than everything outstanding is allowed, put on the newest line, called out on screen and confirmed.
+- **Stowage** defaults to the item's own `default_location_id`, else the location holding most of it, else `pcReceivingDefault()`.
+- **Ask, don't guess.** TM's line grid gives the item *name*, and 520 catalogue names are shared. `match: "ambiguous"` lines make the person choose one of `candidates` before saving. `match: "none"` lines that are real goods are either received into a register item the person picks, or recorded with **no stock movement** (`tm_order_line_received`).
+- **"Still to come"** for a line = the file's `outstanding` − every IDMS receipt already recorded against that `tm_order_no` + `tm_order_line_no` (outbox ones included). Nothing books IDMS receipts into TM yet, so all of them are subtracted. *When a TM booking driver exists this must subtract only receipts not yet booked, or a receipt booked in TM and reflected in the next pull would be subtracted twice.*
+
+**Payload fields.** A receipt made here is the ordinary `stock_movement`, `kind: "receipt"` (§42.7), plus:
+
+| Field | Meaning |
+|---|---|
+| `tm_order_no` | TM Master order number, e.g. `ARA-312-A-2026/4/2`. |
+| `tm_order_line_no` | The line number on that order (number, as in the file). |
+| `tm_item_name` | The line's item name as TM wrote it — so a booking driver can check it is booking onto the line it thinks, should TM renumber. |
+
+No `po_id` / `po_line_id`: these are not IDMS orders. `procurement-reduce.js` does not read the `tm_*` fields and does not need to — a receipt carrying them reduces exactly like one without (proven in `tools/test/receive-lines.test.js`); the raw event keeps them for the booking driver. No `unit_cost` is written: the file's `unit_price` carries no currency.
+
+**New event `tm_order_line_received`** `{tm_order_no, tm_order_line_no, tm_item_name?, qty, note?}` — a TM line marked as arrived with nothing put on a shelf (a line with no register item). Moves no stock; the reducer ignores it (unknown event types fall through). It exists so the line stops showing as still to come and so the TM booking driver can book it.
+
+**The outbox.** The cargo hold has no signal. Receive and *Arrived without an order* write with `pcAppendEvent(..., { outbox: true })`: the event (filename and `event_id` fixed at creation) is stored in `localStorage` under `pc_outbox_{username}` and pushed into the in-memory event list at once, marked `_pending`, so every screen counts it. It is PUT when signal returns — on the `online` event, after every 60 s sync tick, or *Send now* — with the usual `If-None-Match: *`, so a resend 412s into a no-op and can never double-book. A network error, 5xx, 429 or 401 stops the flush and keeps the rest; any other 4xx is kept with its status and shown as refused. On reload the outbox is merged back into the event list whether or not the event cache was written. While anything waits, Receive shows a banner, each affected line lists the receipt as "on this phone, not sent yet", the nav shows the count and the sync dot is amber. Other event writers still PUT directly. *Limits:* there is no service worker, so the page itself (and MSAL from its CDN) must already be loaded — it keeps working with no signal, but cannot be cold-opened without one; and the order-lines file must have downloaded once (it is fetched in the background at sign-in and kept in IndexedDB under `order_lines`, eTag-checked like the catalogue).
 
 ### 42.10 Reorder, low stock and counting
 
