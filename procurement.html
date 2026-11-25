@@ -337,6 +337,9 @@
   .rcv-why { color: var(--accent); }
   .ci-line.click { cursor: pointer; }
   .ci-line.rcv-hl { box-shadow: inset 3px 0 0 var(--accent); }
+  .rcv-complete { border: 1px solid rgba(0,255,153,.3); background: rgba(0,255,153,.08); color: var(--text-secondary);
+    border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 10px; font-size: 13.5px; line-height: 1.5; }
+  .rcv-complete b { color: var(--success); }
 
   /* ── Item picker (a searchable input, not a 14,000-option select) ── */
   .picker { position: relative; flex: 3; min-width: 170px; }
@@ -4436,7 +4439,8 @@ function pcRcvLineHay(l) {
 }
 
 var RCV_STATUS_TAG = { 'On Order': '', 'Partly received': 'warn', 'Partly received by agent': 'warn',
-  'Received by agent': 'accent', 'Received at Warehouse': 'accent', 'Received by forwarder': 'accent' };
+  'Received by agent': 'accent', 'Received at Warehouse': 'accent', 'Received by forwarder': 'accent',
+  'Finished': 'good', 'Completely received': 'good', 'Received': 'good' };
 
 // The requisition comes first: its number, name and department, then how much
 // of it is still to come. A search that found the order through one of its
@@ -4468,7 +4472,7 @@ function pcRcvResultsHtml(built, q) {
           '</div>' + why + '</td>' +
         '<td class="num">' + (o.to_come > 0
           ? o.lines_open + ' of ' + o.lines.length + ' line' + (o.lines.length === 1 ? '' : 's')
-          : 'all in') + '</td></tr>';
+          : o.complete ? 'complete in TM' : 'all in') + '</td></tr>';
     }).join('') + '</tbody></table></div></div>' +
     (hits.length > cap ? '<div class="sub muted">' + (hits.length - cap) +
       ' more — add a word to narrow it.</div>' : '');
@@ -4530,12 +4534,19 @@ function pcRcvOrder(o) {
   var extras = o.extras.length ? '<div class="sub muted" style="margin:4px 2px 12px">Also on the order, nothing to ' +
     'put away: ' + o.extras.map(function (x) { return pcEsc(x.item_name); }).join(', ') + '</div>' : '';
   var anyHere = o.lines.some(function (l) { return (l.recorded || 0) > (l.in_tm || 0); });
-  document.getElementById('body').innerHTML = pcRcvOutboxBanner() +
-    '<div class="card" style="padding:0">' + (rows || '<div class="empty">No lines on this order.</div>') + '</div>' +
+  // An order TM already has in full. Most of these come with no lines (the
+  // Console copies only the list of Received and Finished orders), and that
+  // is the answer somebody holding a box from it needs: it is received.
+  var done = o.complete ? '<div class="rcv-complete"><b>Received in full in TM Master</b> — this order is ' +
+      pcEsc(o.status || 'complete') + '. Nothing on it is still to come, so there is nothing to check in.' +
+      (o.lines.length ? '' : ' TM\'s lines for completed orders are not copied to the phone.') + '</div>' : '';
+  var lineCard = rows ? '<div class="card" style="padding:0">' + rows + '</div>'
+    : o.complete ? '' : '<div class="card"><div class="empty">No lines on this order.</div></div>';
+  document.getElementById('body').innerHTML = pcRcvOutboxBanner() + done + lineCard +
     extras +
-    '<div class="sub muted">Received is what TM Master has' +
-      (anyHere ? '; <span style="color:var(--warning)">+n</span> is checked in here and not in TM yet' : '') +
-      '. Pulled ' + pcEsc(pcRcvPulled()) + '.</div>';
+    '<div class="sub muted">' + (rows ? 'Received is what TM Master has' +
+      (anyHere ? '; <span style="color:var(--warning)">+n</span> is checked in here and not in TM yet' : '') + '. ' : '') +
+      'Pulled ' + pcEsc(pcRcvPulled()) + '.</div>';
 }
 
 function pcRcvOpenLine(i) {
