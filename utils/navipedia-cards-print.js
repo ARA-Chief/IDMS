@@ -267,6 +267,23 @@
     }
     const head = cells(rows[0]);
     const body = rows.slice(2).map(cells);
+    // A column headed ✓ is a tick column: a step table written as a table (a
+    // checklist with more columns than the yaml fence carries) gets the same
+    // box to tick as a yaml step, and a "Step" first column the step's width.
+    const tick = head.map(h => String(h).trim() === '✓');
+    if (tick.some(Boolean)) {
+      const idCol = /^step$/i.test(String(head[0]).trim());
+      // Fixed layout, so a card split into one table per room keeps its
+      // columns in the same place from table to table; the column after Step
+      // is the action and takes the room the others leave.
+      const main = idCol ? 1 : 0;
+      const cls = (i, base) => (tick[i] ? 'c-box' : (i === 0 && idCol ? 'c-id' : (i === main ? 'c-main' : base)));
+      return `<table class="grid steps ticklist">
+      <thead><tr>${head.map((h, i) => `<th class="${cls(i, '')}">${inline(h, ctx)}</th>`).join('')}</tr></thead>
+      <tbody>${body.map(r => `<tr>${head.map((_, i) =>
+        `<td class="${cls(i, '')}">${tick[i] ? BOX : inline(r[i] || '', ctx)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>`;
+    }
     // A fill-in table — the Record section, a blank Entry column — prints with
     // room to write in. Blank cells are the point of printing it.
     const blanks = body.length && body.every(r => r.slice(1).every(c => !c));
@@ -460,7 +477,7 @@
   // Headings are matched by prefix, lower-cased, so "Assessment criteria, per
   // level" and "LO/TO list" match without the lanes agreeing on punctuation.
   const CARD_SECTIONS = {
-    SOP:  ['procedure', 'sequence'],
+    SOP:  ['route', 'procedure', 'sequence'],
     JOB:  ['task decomposition'],
     TASK: ['atomic steps'],
     KSA:  ['purpose', 'expectations', 'assessment criteria', 'common errors'],
@@ -773,6 +790,9 @@ mark { background: #fff2a8; }
 .grid.fill td:first-child { width: 42%; background: #f6f6f6; font-weight: 600; }
 .steps .c-id { width: 3.6em; font-weight: 700; white-space: nowrap; }
 .steps .c-box { width: 2.4em; text-align: center; }
+.ticklist { table-layout: fixed; }
+.ticklist .c-main { width: 38%; }
+.ticklist td { overflow-wrap: anywhere; }
 .steps .sub-step { padding-left: 1.6em; }
 .step-card { font-size: 0.86em; color: #555; margin-top: 0.15em; }
 .box { display: inline-block; width: 1.05em; height: 1.05em; border: 1.2px solid #333; border-radius: 1px; vertical-align: middle; }
@@ -846,7 +866,11 @@ a.eqopen { color: #0a5a8a; text-decoration: none; cursor: pointer; }
         resolve, and its body has not been authored.</div>`);
     }
 
-    parts.push(fieldsHtml(rec, fm, format, ctx));
+    // An SOP's card is a to-do list to carry round the ship: the hazards, the
+    // competency, the route and the steps. The facts table and the machine's
+    // documents are the sheet's; its two pictures stay (equipment-pictures.md).
+    const lean = format === 'card' && rec.family === 'SOP';
+    if (!lean) parts.push(fieldsHtml(rec, fm, format, ctx));
     parts.push(hazardsHtml(fm.hazards, ctx));
     if (rec.family === 'KSA') parts.push(hazardsHtml(fm.preconditions, ctx, 'Before starting'));
     if (format === 'sheet' || COMPETENCY.includes(rec.family)) parts.push(levelsHtml(fm.levels, ctx));
@@ -882,7 +906,7 @@ a.eqopen { color: #0a5a8a; text-decoration: none; cursor: pointer; }
       }
     }
 
-    parts.push(equipmentDocsHtml(opts.equipment, format, ctx));
+    if (!lean) parts.push(equipmentDocsHtml(opts.equipment, format, ctx));
     if (opts.issuedLine && !ed) parts.push(issuedHtml(format));
 
     const label = shortId(rec.id) + ' — ' + plainTitle(rec.title);

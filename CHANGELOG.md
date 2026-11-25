@@ -8,6 +8,28 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.35 — 2026-11-25
+- **Inventory: Receive — check a delivery in by the part, not the order.**
+  Search for what is in front of you by name, part number or order number;
+  it shows every open TM order that part is on, oldest first, and fills the
+  oldest one first. Where TM's line could be one of several items you pick
+  which; a free-text line can go to an item you choose. Works with no
+  signal: a receipt is kept on the phone, marked waiting, and sent when the
+  connection comes back. Arrived without an order is still there.
+- **Check all, and Undo, in IDMS Notes.** A list with more than one open
+  note has a Check all button at the top: it shows you every note it will
+  tick before it does anything. After any tick, single or all, an Undo
+  button stays up for 30 seconds in case it was the wrong one. Works the
+  same in the Notes window and on the phone.
+- **Navipedia: a checklist written as a table gets tick boxes.** A card
+  step table with a ✓ column prints a box to tick on every row, the same as
+  a step list. SOP-0431 Dry dock breaker isolation is laid out this way, one
+  table per room.
+- **Navipedia: an SOP's Card is a to-do list.** The half-sheet card
+  now prints only the hazards, the required competency, the route and the
+  steps; the equipment, tools and other facts stay on the full sheet. A
+  checklist split into one table per room keeps its columns lined up.
+
 ## 1.34 — 2026-09-27
 
 - **Navipedia → Fire & Emergency.** Fire detectors by space, the fire main

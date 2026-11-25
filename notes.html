@@ -253,6 +253,24 @@
 
   #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--border-accent); color: var(--text-primary); padding: 9px 16px; border-radius: var(--radius-md); font-size: 13px; display: none; z-index: 70; max-width: 90vw; }
 
+  /* Undo for the last tick, and the Check all confirmation. The undo bar sits
+     above the toast so an error from the undo itself is still readable. */
+  #undo-bar { position: fixed; bottom: 62px; left: 50%; transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--border-accent); color: var(--text-primary); padding: 7px 8px 7px 16px; border-radius: var(--radius-md); font-size: 13px; display: none; align-items: center; gap: 10px; z-index: 71; max-width: 92vw; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  #undo-bar.open { display: flex; }
+  #undo-bar .ub-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #undo-bar .ub-undo { background: var(--accent); color: #04263a; border: none; border-radius: var(--radius-sm); font-weight: 600; font-size: 13px; padding: 6px 14px; cursor: pointer; font-family: var(--font); }
+  #undo-bar .ub-x { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 4px 6px; }
+  #checkall-modal { display: none; position: fixed; inset: 0; background: rgba(4,10,20,.75); z-index: 65; align-items: center; justify-content: center; padding: 16px; }
+  #checkall-modal.open { display: flex; }
+  #checkall-modal .ca-box { background: var(--bg-2); border: 1px solid var(--border-accent); border-radius: var(--radius-md); width: min(460px, 100%); max-height: 86vh; display: flex; flex-direction: column; padding: 18px; gap: 12px; }
+  #checkall-modal h3 { font-size: 16px; font-weight: 600; }
+  #checkall-modal .ca-sub { color: var(--text-secondary); font-size: 13px; }
+  #checkall-modal ul { list-style: none; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 0; margin: 0; }
+  #checkall-modal li { padding: 6px 12px; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+  #checkall-modal li:last-child { border-bottom: none; }
+  #checkall-modal li .ca-meta { color: var(--text-muted); font-size: 12px; margin-left: 6px; }
+  #checkall-modal .ca-actions { display: flex; gap: 10px; }
+
   /* ── Responsive ───────────────────────────────────────── */
   /* Built to be narrowed into a side panel and left open all day, so the
      sidebar hides on demand at any width and folds away on its own once the
@@ -319,6 +337,8 @@
       <h2 id="loc-title"></h2>
       <span class="loc" id="loc-sub"></span>
       <span class="spacer"></span>
+      <button class="icon-btn" id="btn-check-all" onclick="ntCheckAllAsk()" style="display:none"
+              title="Tick every open note in this list — you are shown them first">✓ Check all</button>
       <button class="icon-btn" onclick="ntSyncNow()" title="Refresh from OneDrive">↻ Sync</button>
     </div>
     <div id="reauth-bar">
@@ -346,6 +366,20 @@
 
 <div id="lightbox" onclick="this.classList.remove('open')"><img id="lightbox-img" alt=""></div>
 <div id="toast"></div>
+<div id="undo-bar"><span class="ub-text" id="undo-text"></span>
+  <button class="ub-undo" onclick="ntUndoCheck()">Undo</button>
+  <button class="ub-x" onclick="ntDismissUndo()" title="Dismiss">✕</button></div>
+<div id="checkall-modal" onclick="if(event.target===this)ntCheckAllClose()">
+  <div class="ca-box">
+    <h3 id="ca-title"></h3>
+    <div class="ca-sub" id="ca-sub"></div>
+    <ul id="ca-list"></ul>
+    <div class="ca-actions">
+      <button class="btn ghost" onclick="ntCheckAllClose()">Cancel</button>
+      <button class="btn" id="ca-go" onclick="ntCheckAllGo()"></button>
+    </div>
+  </div>
+</div>
 <input type="file" id="photo-input" accept="image/*" style="display:none">
 <input type="file" id="file-input" multiple style="display:none">
 
@@ -2033,6 +2067,11 @@ function ntRenderList() {
   // honest answer to where.
   var qa = document.getElementById('quick-add');
   if (qa) qa.style.display = NT.view.kind === 'recent' ? 'none' : '';
+  // Check all clears the list you are standing in. Not on Recents: it pools
+  // every list aboard, so "all" there would reach into places nobody is
+  // looking at.
+  var ca = document.getElementById('btn-check-all');
+  if (ca) ca.style.display = NT.view.kind !== 'recent' && open.length > 1 ? '' : 'none';
   // The window sits in a taskbar all day, so its title says where it is and
   // how much is waiting rather than just "IDMS Notes".
   var waiting = open.filter(function (n) {
@@ -2742,9 +2781,103 @@ async function ntQuickAdd() {
 async function ntToggleComplete(id) {
   var n = NT.notes[id];
   if (!n) return;
+  var to = !n.completed;
   try {
-    await ntAppendEvent(n.completed ? 'note_uncompleted' : 'note_completed', { note_id: id });
+    await ntAppendEvent(to ? 'note_completed' : 'note_uncompleted', { note_id: id });
+    ntOfferUndo([id], to, (to ? 'Checked “' : 'Unchecked “') + n.title + '”');
   } catch (e) { ntToast('Could not save — ' + ntWhyFailed(e)); }
+}
+
+// ── Check all, and Undo ─────────────────────────────────────
+// Both are ordinary note_completed / note_uncompleted events, one per note —
+// the same events a single tick writes, so nothing downstream (the Console,
+// the alert sync, Offload) has anything new to read. Undo writes the opposite
+// event for each note the last tick changed, and skips any that somebody else
+// has flipped back in the meantime.
+
+var NT_UNDO_MS = 30000;
+
+function ntOfferUndo(ids, completed, label) {
+  NT.lastCheck = { ids: ids.slice(), completed: completed };
+  document.getElementById('undo-text').textContent = label;
+  var bar = document.getElementById('undo-bar');
+  bar.classList.add('open');
+  clearTimeout(bar._h);
+  bar._h = setTimeout(ntDismissUndo, NT_UNDO_MS);
+}
+
+function ntDismissUndo() {
+  var bar = document.getElementById('undo-bar');
+  bar.classList.remove('open');
+  clearTimeout(bar._h);
+  NT.lastCheck = null;
+}
+
+async function ntUndoCheck() {
+  var last = NT.lastCheck;
+  ntDismissUndo();
+  if (!last) return;
+  var back = last.completed ? 'note_uncompleted' : 'note_completed';
+  var failed = 0;
+  for (var i = 0; i < last.ids.length; i++) {
+    var n = NT.notes[last.ids[i]];
+    if (!n || !!n.completed !== last.completed) continue;
+    try { await ntAppendEvent(back, { note_id: n.note_id }); }
+    catch (e) { failed++; ntToast('Could not undo — ' + ntWhyFailed(e)); }
+  }
+  if (!failed) ntToast(last.ids.length === 1 ? 'Undone' : 'Undone — ' + last.ids.length + ' notes');
+}
+
+function ntCheckAllTargets() {
+  if (NT.view.kind === 'recent') return [];
+  return ntVisibleNotes().filter(function (n) { return !n.completed; });
+}
+
+function ntCheckAllAsk() {
+  var list = ntCheckAllTargets();
+  if (!list.length) return;
+  NT.checkAllIds = list.map(function (n) { return n.note_id; });
+  document.getElementById('ca-title').textContent =
+    'Check all ' + list.length + ' open notes in ' + document.getElementById('loc-title').textContent + '?';
+  document.getElementById('ca-sub').textContent =
+    'Each of these is marked complete. Undo is offered for ' + (NT_UNDO_MS / 1000) +
+    ' seconds afterwards, and any of them can be unticked from Completed later.';
+  document.getElementById('ca-list').innerHTML = list.map(function (n) {
+    var who = n.assignees.length
+      ? '→ ' + n.assignees.map(function (a) { return ntShortName(a.crew_id); }).join(', ')
+      : ntShortName(n.author) + ' · ' + ntWhen(n.created);
+    return '<li>' + ntEsc(n.title) + '<span class="ca-meta">' + ntEsc(who) + '</span></li>';
+  }).join('');
+  var go = document.getElementById('ca-go');
+  go.textContent = 'Check ' + list.length;
+  go.disabled = false;
+  document.getElementById('checkall-modal').classList.add('open');
+}
+
+function ntCheckAllClose() {
+  document.getElementById('checkall-modal').classList.remove('open');
+  NT.checkAllIds = null;
+}
+
+async function ntCheckAllGo() {
+  // The list shown is the list ticked — not whatever the view holds by the
+  // time the button is pressed, which a sync may have changed underneath.
+  var ids = (NT.checkAllIds || []).slice();
+  document.getElementById('ca-go').disabled = true;
+  var done = [];
+  for (var i = 0; i < ids.length; i++) {
+    var n = NT.notes[ids[i]];
+    if (!n || n.completed) continue;
+    try {
+      await ntAppendEvent('note_completed', { note_id: n.note_id });
+      done.push(n.note_id);
+    } catch (e) {
+      ntToast('Stopped after ' + done.length + ' — ' + ntWhyFailed(e));
+      break;
+    }
+  }
+  ntCheckAllClose();
+  if (done.length) ntOfferUndo(done, true, 'Checked ' + done.length + (done.length === 1 ? ' note' : ' notes'));
 }
 
 async function ntToggleStar(id) {

@@ -314,6 +314,24 @@
     color: var(--accent); border: 1px solid var(--border-accent); border-radius: 3px;
     padding: 1px 5px; margin-left: 6px; background: var(--accent-glow); }
 
+  /* ── Receive (§42.9a) ─────────────────────────────────── */
+  .rcv-find .field { margin-bottom: 0; font-size: 16px; }
+  .rcv-banner { border: 1px solid rgba(255,170,0,.35); background: rgba(255,170,0,.10);
+    border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px; font-size: 13px;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .rcv-banner .grow { flex: 1; min-width: 180px; }
+  .rcv-step { flex: 0 0 auto; min-width: 42px; min-height: 40px; font-size: 18px; line-height: 1; }
+  .rcv-alloc { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .rcv-alloc input { width: 84px; margin-bottom: 0; text-align: right; font-size: 16px; padding: 8px; }
+  .rcv-receipts { flex: 1 1 100%; font-size: 12px; color: var(--text-muted); }
+  .rcv-receipts .pend { color: var(--warning); }
+  .rcv-pick { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    margin-bottom: 6px; cursor: pointer; font-size: 13.5px; }
+  .rcv-pick.on { border-color: var(--border-accent); background: var(--accent-glow); }
+  .rcv-total { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .rcv-total > div { flex: 1 1 140px; }
+  .rcv-total .field { margin-bottom: 0; }
+
   /* ── Item picker (a searchable input, not a 14,000-option select) ── */
   .picker { position: relative; flex: 3; min-width: 170px; }
   .picker-results { position: absolute; z-index: 20; left: 0; right: 0; top: 100%;
@@ -445,6 +463,8 @@
 <script src="utils/proc-query.js"></script>
 <script src="utils/stock-search.js"></script>
 <script src="utils/contacts-reduce.js"></script>
+<!-- Receive against TM Master's open order lines (§42.9a). PWA-only. -->
+<script src="utils/receive-lines.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════
 // IDMS Inventory — standalone page, schema §42. Called Procurement until
@@ -498,7 +518,13 @@ var PC = {
   contactsDoc: null,       // contacts.json as it came off OneDrive
   contacts: null,          // reduced: { contacts, order } — baseline + contact_* events
   contactStatus: 'none',   // none | loading | fresh | stale | failed
-  ctc: null                // the Contacts screen's own view state
+  ctc: null,               // the Contacts screen's own view state
+
+  // §42.9a — TM Master's open order lines, published by the Console.
+  orderLinesDoc: null,     // open-order-lines.json as it came off OneDrive
+  olStatus: 'none',        // none | loading | cached | fresh | stale | failed
+  rcv: null,               // the Receive screen's own view state
+  _flushing: false         // the outbox is being sent
 };
 
 var REGISTER_CAP = 300;    // rows rendered at once; 14,487 will not go on a page
@@ -747,6 +773,9 @@ async function pcEnterApp() {
   pcLoadCache();
   pcRenderAll();
   pcLoadCatalogue().then(pcRenderAll);
+  // Fetched behind the catalogue rather than when Receive is first opened: the
+  // place it is wanted is the cargo hold, which is the place with no signal.
+  pcLoadOrderLines().then(function () { if (PC.view === 'receive') pcRenderAll(); });
   pcSyncNow();
   setInterval(pcSyncNow, 60000);
 }
@@ -890,6 +919,38 @@ async function pcEnsureDetail() {
     PC.detail = (cached && cached.doc) || null;
   }
   return PC.detail;
+}
+
+// ── TM Master's open order lines (§42.9a) ───────────────────
+// Published by the Console (tools/tm-automation/pull-order-lines.js, its
+// docs/procurement-registry.md §14.9) beside the catalogue. Read exactly the
+// way the catalogue is: the IndexedDB copy first, so Receive works in the hold
+// from the last copy, then one metadata request to see whether OneDrive has a
+// newer pull, and the ~600 KB only if it does. Read-only — nothing here writes
+// the file; receipts are events.
+function pcOrderLinesPath() { return ONEDRIVE_BASE + '/data/procurement/open-order-lines.json'; }
+
+async function pcLoadOrderLines() {
+  if (PC.olStatus === 'loading') return;
+  var was = PC.olStatus;
+  PC.olStatus = 'loading';
+  var cached = null;
+  try { cached = await pcIdbGet('order_lines'); } catch (e) {}
+  if (cached && cached.doc) PC.orderLinesDoc = cached.doc;
+
+  var etag = null;
+  try { etag = await pcCatEtag(pcOrderLinesPath()); } catch (e) {}
+  if (etag === null) { PC.olStatus = cached ? 'stale' : 'failed'; return; }
+  if (cached && cached.etag === etag) { PC.olStatus = 'fresh'; return; }
+  try {
+    var doc = await pcGetJson(pcOrderLinesPath());
+    if (!doc || !Array.isArray(doc.orders)) { PC.olStatus = cached ? 'stale' : 'failed'; return; }
+    PC.orderLinesDoc = doc;
+    PC.olStatus = 'fresh';
+    try { await pcIdbPut('order_lines', { etag: etag, doc: doc }); } catch (e) {}
+  } catch (e) {
+    PC.olStatus = cached ? 'stale' : (was === 'none' ? 'failed' : was);
+  }
 }
 
 // ── The contact book (§42.16) ───────────────────────────────
@@ -1084,14 +1145,109 @@ function pcCacheKey(year) { return 'pc_events_cache_' + year; }
 function pcLoadCache() {
   try {
     var raw = localStorage.getItem(pcCacheKey(new Date().getFullYear()));
-    if (!raw) return;
-    var evs = JSON.parse(raw);
-    if (!Array.isArray(evs)) return;
-    PC.events = evs;
-    evs.forEach(function (e) { if (e._fn) PC.loadedNames[e._fn] = true; });
-    pcReduce();
+    var evs = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(evs)) {
+      PC.events = evs;
+      evs.forEach(function (e) { if (e._fn) PC.loadedNames[e._fn] = true; });
+    }
   } catch (e) {}
+  // Always, cache or no cache: what is in the outbox is real and must show.
+  pcOutboxMerge();
+  pcReduce();
 }
+
+// ── The outbox (§42.9a) ─────────────────────────────────────
+// A receipt made in the cargo hold has no signal to go to. It is kept on the
+// phone the moment it is made — in the event list at once, so every screen
+// counts it, and in this outbox until OneDrive has it. The file name (and so
+// the event_id) is fixed when the event is made, and the PUT carries
+// If-None-Match: *, so sending it twice is a 412 and a no-op: a resend can never
+// book a delivery twice. Same idea as index.html's fw_obs_queue_ — localStorage,
+// per user, so it survives a reload and a phone left in a pocket.
+function pcOutboxKey() { return 'pc_outbox_' + ((PC.user && PC.user.username) || 'unknown'); }
+
+function pcOutboxRead() {
+  try {
+    var v = JSON.parse(localStorage.getItem(pcOutboxKey()) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+
+function pcOutboxWrite(box) {
+  localStorage.setItem(pcOutboxKey(), JSON.stringify(box));   // throws on quota; callers decide
+}
+
+function pcOutboxCount() { return pcOutboxRead().length; }
+
+// After a reload: anything still in the outbox is put back in the event list
+// (the cache may have been written before it, or not at all) and marked
+// pending; anything the cache remembers as pending that the outbox no longer
+// holds has been sent since.
+function pcOutboxMerge() {
+  var box = pcOutboxRead(), inBox = {};
+  box.forEach(function (b) {
+    inBox[b.fn] = true;
+    if (PC.loadedNames[b.fn]) return;
+    var ev = JSON.parse(b.body);
+    ev._fn = b.fn;
+    PC.events.push(ev);
+    PC.loadedNames[b.fn] = true;
+  });
+  PC.events.forEach(function (e) {
+    if (inBox[e._fn]) e._pending = true; else delete e._pending;
+  });
+  PC.events.sort(function (a, b) { return (a._fn || '') < (b._fn || '') ? -1 : 1; });
+}
+
+function pcPutEvent(path, body) {
+  return pcFetch(pcGraphUrl(path), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
+    body: body
+  });
+}
+
+// Send what is waiting, oldest first. Stops at the first sign of no network
+// (a throw, a 5xx, a 429) and leaves the rest for the next try; a refusal that
+// retrying cannot fix (a 4xx) is kept, with its status, and shown on Receive
+// rather than silently thrown away.
+async function pcOutboxFlush() {
+  if (PC._flushing || !PC.user) return;
+  var box = pcOutboxRead();
+  if (!box.length) { pcSetPill(PC._pillCls); return; }
+  PC._flushing = true;
+  var sent = 0;
+  try {
+    for (var i = 0; i < box.length; i++) {
+      var b = box[i], resp;
+      try { resp = await pcPutEvent(b.path, b.body); } catch (e) { break; }
+      if (resp.ok || resp.status === 412) {
+        var now = pcOutboxRead().filter(function (x) { return x.fn !== b.fn; });
+        try { pcOutboxWrite(now); } catch (e) {}
+        PC.events.forEach(function (e) { if (e._fn === b.fn) delete e._pending; });
+        sent++;
+      } else if (resp.status >= 500 || resp.status === 429 || resp.status === 401) {
+        break;
+      } else {
+        var keep = pcOutboxRead();
+        keep.forEach(function (x) { if (x.fn === b.fn) x.error = resp.status; });
+        try { pcOutboxWrite(keep); } catch (e) {}
+      }
+    }
+  } finally {
+    PC._flushing = false;
+  }
+  if (sent) {
+    if (PC._pillCls === 'err') PC._pillCls = 'ok';   // OneDrive just answered; the sync tick will confirm
+    pcSaveCache(); pcReduce();
+    var a = document.activeElement;
+    if (!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) pcRenderAll();
+    else pcRenderNav();
+  }
+  pcSetPill(PC._pillCls);
+}
+
+window.addEventListener('online', function () { pcOutboxFlush(); });
 
 function pcSaveCache() {
   try {
@@ -1099,9 +1255,16 @@ function pcSaveCache() {
   } catch (e) {}   // quota — the stream re-reads from Graph next sync
 }
 
+// Amber while anything is waiting in the outbox, whatever the last sync said:
+// "synced" is not true of a phone holding receipts OneDrive has not seen.
 function pcSetPill(cls) {
+  PC._pillCls = cls || '';
   var p = document.getElementById('sync-pill');
-  if (p) p.className = 'sync-pill ' + (cls || '');
+  if (!p) return;
+  var n = PC.user ? pcOutboxCount() : 0;
+  p.className = 'sync-pill ' + ((n && cls === 'ok') ? 'warn' : (cls || ''));
+  p.title = n ? n + ' receipt' + (n === 1 ? '' : 's') + ' saved on this phone, waiting to send'
+              : 'Sync status';
 }
 
 async function pcSyncNow() {
@@ -1141,6 +1304,8 @@ async function pcSyncNow() {
   } finally {
     PC._syncing = false;
   }
+  // Every sync tick is also a chance to empty the outbox.
+  pcOutboxFlush();
 }
 
 function pcUuid() {
@@ -1170,12 +1335,32 @@ async function pcAppendEvent(eventType, payload, opts) {
     timestamp:  nowIso,
     payload:    payload
   };
+  var body = JSON.stringify(eventObj, null, 2);
 
-  var resp = await pcFetch(pcGraphUrl(path), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
-    body: JSON.stringify(eventObj, null, 2)
-  });
+  // opts.outbox: keep it on the phone first, send when there is signal (§42.9a).
+  // If the phone will not hold it either (storage full), fall through to the
+  // direct PUT, which at least fails out loud.
+  if (opts.outbox) {
+    var queued = false;
+    try {
+      var box = pcOutboxRead();
+      box.push({ fn: filename, path: path, body: body, queued_at: nowIso });
+      pcOutboxWrite(box);
+      queued = true;
+    } catch (e) {}
+    if (queued) {
+      eventObj._fn = filename;
+      eventObj._pending = true;
+      PC.events.push(eventObj);
+      PC.loadedNames[filename] = true;
+      if (!opts.defer) { pcSaveCache(); pcReduce(); pcRenderAll(); }
+      pcSetPill(PC._pillCls);
+      if (!opts.defer) pcOutboxFlush();
+      return eventObj;
+    }
+  }
+
+  var resp = await pcPutEvent(path, body);
   if (resp.status !== 412 && !resp.ok) throw new Error('Event PUT → ' + resp.status);
 
   eventObj._fn = filename;
@@ -1302,6 +1487,9 @@ var VIEWS = [
   // pick a space, see what is stowed there, correct it standing in front of it.
   { id: 'location',   label: 'Stock' },
   { id: 'low',        label: 'Low stock' },
+  // Walk the hold with TM Master's open order lines: find the part, check it
+  // in against every order it is on (§42.9a).
+  { id: 'receive',    label: 'Receive' },
   { id: 'checkin',    label: 'Check in' },
   { id: 'reqs',       label: 'Requisitions' },
   { id: 'orders',     label: 'Orders' },
@@ -1342,7 +1530,7 @@ function pcCounts() {
     });
   }
   return { items: items.length, low: low, openPos: openPos, pendingReqs: pendingReqs,
-           ex: ex, unswept: unswept };
+           ex: ex, unswept: unswept, outbox: pcOutboxCount() };
 }
 
 function pcRenderNav() {
@@ -1351,13 +1539,14 @@ function pcRenderNav() {
     register: String(c.items),
     location: c.unswept ? String(c.unswept) : '',
     low: c.low ? String(c.low) : '',
+    receive: c.outbox ? String(c.outbox) : '',
     checkin: c.openPos ? String(c.openPos) : '',
     reqs: c.pendingReqs ? String(c.pendingReqs) : '',
     orders: c.openPos ? String(c.openPos) : '',
     exceptions: c.ex ? String(c.ex) : '',
     settings: ''
   };
-  var cls = { low: 'alert', exceptions: 'bad', reqs: 'alert' };
+  var cls = { low: 'alert', exceptions: 'bad', reqs: 'alert', receive: 'alert' };
   document.getElementById('nav').innerHTML =
     '<div class="nav-head">Inventory</div>' +
     VIEWS.map(function (v) {
@@ -1373,7 +1562,8 @@ function pcRenderAll() {
   if (!document.getElementById('screen-app').classList.contains('active')) return;
   pcRenderNav();
   var fn = {
-    register: pcViewRegister, location: pcViewLocation, low: pcViewLow, checkin: pcViewCheckin,
+    register: pcViewRegister, location: pcViewLocation, low: pcViewLow,
+    receive: pcViewReceive, checkin: pcViewCheckin,
     reqs: pcViewReqs, orders: pcViewOrders, contacts: pcViewContacts,
     exceptions: pcViewExceptions, settings: pcViewSettings
   }[PC.view] || pcViewRegister;
@@ -4108,6 +4298,471 @@ async function pcPoClose(poId) {
   } catch (e) { pcToast(pcErrText(e)); }
 }
 
+// ── View: Receive (§42.9a) ──────────────────────────────────
+// Walking the cargo hold with the part in your hand: search for what is on the
+// box, pick it, see every TM Master order line it is still owed on — oldest
+// order first — and type how many are here. The quantity fills the oldest line
+// first and overflows to the next; a tap moves units between lines. Every
+// receipt carries tm_order_no + tm_order_line_no so it can later be booked into
+// TM against that line (receive-into-order), never as a bare stock push.
+//
+// TM's line grid gives the item's NAME, not its number, and 520 names in the
+// catalogue are shared. A line the Console could not tie to one item is
+// 'ambiguous' (the person says which of the candidates it is) or 'none' (they
+// pick it from the register, or record the line as received with no stock to
+// put away). Guessing would put stock on the wrong shelf; asking costs a tap.
+//
+// Receipts go through the outbox, so the hold having no signal does not matter.
+
+var RCV_CAP = 40;   // search results drawn at once
+
+function rcvState() {
+  if (!PC.rcv) PC.rcv = { q: '', sel: null, qty: '', alloc: null, loc: null,
+                          pick: {}, pickQ: '', note: '', hits: [] };
+  return PC.rcv;
+}
+
+function pcRcvBuilt() {
+  if (!PC.orderLinesDoc) return null;
+  return receiveLines.build(PC.orderLinesDoc, PC.events);
+}
+
+// The register's own name and part number for an item group, so a search for
+// what the register calls it finds a line TM spells differently.
+function pcRcvExtraHay(g) {
+  if (g.kind !== 'item') return g.candidates.join(' ');
+  var it = PC.state.items[g.item_id];
+  return it ? (it.name || '') + ' ' + (it.part_number || '') + ' ' + (it.stock_tag || '') : '';
+}
+
+// Where it normally lives: the item's own default, else wherever most of it
+// already is, else where deliveries land.
+function pcUsualPlace(itemId) {
+  var it = itemId && PC.state.items[itemId];
+  if (it) {
+    if (it.default_location_id && pcLocKnown(it.default_location_id)) return it.default_location_id;
+    var best = null, bestQ = 0;
+    Object.keys(it.by_location || {}).forEach(function (k) {
+      if (k === SLOC_UNPLACED || k === 'discontinued') return;
+      if (it.by_location[k] > bestQ) { best = k; bestQ = it.by_location[k]; }
+    });
+    if (best) return best;
+  }
+  return pcReceivingDefault();
+}
+
+function pcRcvPulled() {
+  var d = PC.orderLinesDoc;
+  if (!d || !d.pulled_at) return '';
+  var t = new Date(d.pulled_at);
+  return isNaN(t.getTime()) ? String(d.pulled_at)
+    : t.toISOString().slice(0, 10) + ' ' + t.toISOString().slice(11, 16) + ' UTC';
+}
+
+function pcRcvOutboxBanner() {
+  var box = pcOutboxRead();
+  if (!box.length) return '';
+  var bad = box.filter(function (b) { return b.error; });
+  return '<div class="rcv-banner"><div class="grow"><b>' + box.length + ' receipt' +
+    (box.length === 1 ? '' : 's') + ' saved on this phone, not sent yet.</b> ' +
+    'They already count below — do not check them in again. They go by themselves when there is signal.' +
+    (bad.length ? '<div class="sub" style="color:var(--danger)">' + bad.length +
+      ' refused by OneDrive (' + bad.map(function (b) { return b.error; }).join(', ') +
+      ') — they stay here until somebody looks.</div>' : '') +
+    '</div><button class="icon-btn" onclick="pcRcvSendNow()">Send now</button></div>';
+}
+
+async function pcRcvSendNow() {
+  await pcOutboxFlush();
+  var n = pcOutboxCount();
+  pcToast(n ? n + ' still waiting — no signal yet.' : 'All sent.');
+  pcRenderAll();
+}
+
+function pcViewReceive() {
+  var s = rcvState();
+  var built = pcRcvBuilt();
+  if (built && s.sel && built.byGroup[s.sel]) return pcRcvGroup(built.byGroup[s.sel]);
+  s.sel = null;
+
+  var noOrder = '<button class="icon-btn" onclick="pcCheckinNoPo()">Arrived without an order</button>';
+  if (!built) {
+    pcHead('Receive', 'TM Master order lines', noOrder);
+    if (PC.olStatus === 'none' || PC.olStatus === 'loading') {
+      if (PC.olStatus === 'none') pcLoadOrderLines().then(pcRenderAll);
+      document.getElementById('body').innerHTML = pcRcvOutboxBanner() +
+        '<div class="empty"><b>Loading the open order lines…</b></div>';
+    } else {
+      document.getElementById('body').innerHTML = pcRcvOutboxBanner() +
+        '<div class="empty"><b>No copy of the open order lines on this phone yet</b>' +
+        'It downloads the first time this page has signal, and then works without it. ' +
+        'Stores with no order behind them can still be checked in with the button above.<br><br>' +
+        '<button class="icon-btn" onclick="PC.olStatus=\'none\';pcRenderAll()">Try again</button></div>';
+    }
+    return;
+  }
+
+  var toCome = built.lines.filter(function (l) { return l.to_come > 0; });
+  var orders = {};
+  toCome.forEach(function (l) { orders[l.order_no] = true; });
+  pcHead('Receive', toCome.length + ' lines to come on ' + Object.keys(orders).length +
+    ' TM orders · pulled ' + pcRcvPulled() + (PC.olStatus === 'stale' ? ' (offline copy)' : ''), noOrder);
+
+  document.getElementById('body').innerHTML = pcRcvOutboxBanner() +
+    '<div class="rcv-find" style="margin-bottom:12px">' +
+      '<input class="field" id="rcv-q" type="search" autocomplete="off" ' +
+        'placeholder="What is on the box — name, part no, supplier ref, order no" ' +
+        'value="' + pcEsc(s.q) + '" oninput="pcRcvSearch(this.value)">' +
+    '</div>' +
+    '<div id="rcv-results">' + pcRcvResultsHtml(built, s.q) + '</div>';
+}
+
+function pcRcvSearch(v) {
+  var s = rcvState();
+  s.q = v;
+  clearTimeout(pcRcvSearch._t);
+  pcRcvSearch._t = setTimeout(function () {
+    var el = document.getElementById('rcv-results');
+    if (el) el.innerHTML = pcRcvResultsHtml(pcRcvBuilt(), s.q);
+  }, 120);
+}
+
+function pcRcvResultsHtml(built, q) {
+  var s = rcvState();
+  if (!built) return '';
+  if (!String(q || '').trim()) {
+    s.hits = [];
+    return '<div class="empty"><b>Search for the part in front of you</b>' +
+      'Every open TM Master order line it is on comes up together, oldest order first. ' +
+      'Freight, tax, duty and service orders are left out — nothing to put on a shelf.</div>';
+  }
+  var hits = receiveLines.search(built, q, { extraHay: pcRcvExtraHay });
+  s.hits = hits.slice(0, RCV_CAP);
+  if (!hits.length) {
+    return '<div class="empty"><b>Not on any open order</b>Nothing still to come matches that. ' +
+      'If it is here anyway, use <i>Arrived without an order</i>.</div>';
+  }
+  return s.hits.map(function (g, i) {
+    var it = g.kind === 'item' ? PC.state.items[g.item_id] : null;
+    var unit = g.lines[0].uom || (it && it.unit) || '';
+    var nOrders = {};
+    g.lines.forEach(function (l) { nOrders[l.order_no] = true; });
+    var parts = [];
+    g.lines.forEach(function (l) {
+      if (l.makers_part_no && parts.indexOf(l.makers_part_no) === -1) parts.push(l.makers_part_no);
+    });
+    var tag = g.kind === 'ambiguous'
+      ? ' <span class="tag warn">which item? ' + g.candidates.length + ' share this name</span>'
+      : g.kind === 'none' ? ' <span class="tag">not tied to an item</span>' : '';
+    return '<div class="card click" onclick="pcRcvOpenHit(' + i + ')">' +
+      '<div class="row"><div class="grow">' +
+        '<div class="ttl">' + pcEsc(it ? it.name : g.name) + tag +
+          (g.pending ? ' <span class="tag warn">' + g.pending + ' waiting to send</span>' : '') + '</div>' +
+        '<div class="sub">' + (g.item_id ? pcEsc(g.item_id) + ' · ' : '') +
+          Object.keys(nOrders).length + ' order' + (Object.keys(nOrders).length === 1 ? '' : 's') +
+          (parts.length ? ' · maker\'s no ' + pcEsc(parts.slice(0, 3).join(', ')) : '') +
+          (it && !it.stock_unknown ? ' · ' + pcFmtQty(it.on_hand, it.unit) + ' ' + pcEsc(it.unit) + ' on hand' : '') +
+        '</div>' +
+      '</div><div style="text-align:right"><div class="qty' + (g.to_come > 0 ? '' : ' muted') + '">' +
+        pcFmtQty(g.to_come) + '</div><div class="sub nowrap">' +
+        (g.to_come > 0 ? 'to come' : 'all in') + (unit ? ' · ' + pcEsc(unit) : '') + '</div></div></div></div>';
+  }).join('') + (hits.length > RCV_CAP
+    ? '<div class="sub muted">' + (hits.length - RCV_CAP) + ' more — add a word to narrow it.</div>' : '');
+}
+
+function pcRcvOpenHit(i) {
+  var s = rcvState();
+  var g = s.hits[i];
+  if (!g) return;
+  s.sel = g.key; s.qty = ''; s.alloc = null; s.loc = null; s.note = ''; s.pickQ = '';
+  pcRenderAll();
+}
+
+function pcRcvBack() {
+  var s = rcvState();
+  s.sel = null; s.qty = ''; s.alloc = null;
+  pcRenderAll();
+}
+
+// What the group's quantity goes into: the line's own item, the candidate or
+// register item somebody picked, or '__nostock' (received, nothing to put away).
+function pcRcvTarget(g) {
+  if (g.kind === 'item') return g.item_id;
+  return rcvState().pick[g.key] || null;
+}
+
+function pcRcvGroup(g) {
+  var s = rcvState();
+  if (!s.alloc || s.alloc.length !== g.lines.length) s.alloc = g.lines.map(function () { return 0; });
+  var target = pcRcvTarget(g);
+  var it = target && target !== '__nostock' ? PC.state.items[target] : null;
+  if (!s.loc) s.loc = pcUsualPlace(it ? it.item_id : null);
+
+  pcHead(it ? it.name : g.name,
+    g.lines.length + ' open line' + (g.lines.length === 1 ? '' : 's') + ', oldest order first',
+    '<button class="icon-btn" onclick="pcRcvBack()">← Search</button>');
+
+  var choose = '';
+  if (g.kind === 'ambiguous') {
+    choose = '<div class="card"><div class="ttl">Which item is it?</div>' +
+      '<div class="sub" style="margin-bottom:10px">TM\'s order line says <b>' + pcEsc(g.name) +
+        '</b>, and ' + g.candidates.length + ' items in the register carry that name. ' +
+        'Check the box against these and pick the one it is.</div>' +
+      g.candidates.map(function (c) {
+        var ci = PC.state.items[c];
+        return '<div class="rcv-pick' + (target === c ? ' on' : '') + '" onclick="pcRcvPick(&quot;' +
+          pcEsc(c) + '&quot;)"><b>' + pcEsc(ci ? ci.name : c) + '</b><div class="sub">' + pcEsc(c) +
+          (ci && ci.part_number ? ' · part no ' + pcEsc(ci.part_number) : '') +
+          (ci && ci.maker ? ' · ' + pcEsc(ci.maker) : '') +
+          (ci ? ' · usually ' + pcEsc(pcLocName(pcUsualPlace(c))) : ' · not in the register on this phone') +
+          '</div></div>';
+      }).join('') + '</div>';
+  } else if (g.kind === 'none') {
+    choose = '<div class="card"><div class="ttl">This line is not tied to an item in the register</div>' +
+      '<div class="sub" style="margin-bottom:10px">TM\'s line says <b>' + pcEsc(g.name) + '</b>. ' +
+        'Pick the register item it is so the stock goes on a shelf, or record the line as received ' +
+        'with nothing to put away.</div>' +
+      '<div class="picker" style="margin-bottom:8px">' +
+        '<input class="field" id="rcv-pq" autocomplete="off" placeholder="Search the register" ' +
+          'value="' + pcEsc(s.pickQ) + '" oninput="pcRcvPickSearch(this.value)" ' +
+          'onfocus="pcRcvPickSearch(this.value)">' +
+        '<div class="picker-results" id="rcv-pr" style="display:none"></div>' +
+      '</div>' +
+      (it ? '<div class="rcv-pick on"><b>' + pcEsc(it.name) + '</b><div class="sub">' + pcEsc(it.item_id) +
+        (it.part_number ? ' · part no ' + pcEsc(it.part_number) : '') + '</div></div>' : '') +
+      '<div class="rcv-pick' + (target === '__nostock' ? ' on' : '') +
+        '" onclick="pcRcvPick(&quot;__nostock&quot;)"><b>Received — no stock to put away</b>' +
+        '<div class="sub">Records the line as arrived against the order, and moves no stock.</div></div>' +
+      '</div>';
+  }
+
+  var itemInfo = it ? '<div class="sub" style="margin-bottom:8px">' + pcEsc(it.item_id) +
+      (it.part_number ? ' · part no ' + pcEsc(it.part_number) : '') + ' · ' +
+      (it.stock_unknown ? 'stock not counted' : pcFmtQty(it.on_hand, it.unit) + ' ' + pcEsc(it.unit) + ' on hand') +
+      ' · usually ' + pcEsc(pcLocName(pcUsualPlace(it.item_id))) + '</div>' : '';
+
+  var nostock = target === '__nostock';
+  document.getElementById('body').innerHTML = pcRcvOutboxBanner() + choose +
+    '<div class="card">' + itemInfo +
+      '<div class="rcv-total">' +
+        '<div><label class="lbl">How many are here</label>' +
+          '<input class="field" id="rcv-qty" type="number" step="any" min="0" inputmode="decimal" ' +
+          'value="' + pcEsc(s.qty) + '" oninput="pcRcvQty(this.value)"></div>' +
+        (g.to_come > 0 ? '<div style="flex:0 0 auto"><button class="icon-btn" onclick="pcRcvAll()">All of it (' +
+          pcFmtQty(g.to_come) + ')</button></div>' : '') +
+      '</div>' +
+      (nostock ? '' : '<label class="lbl" style="margin-top:12px">Put away in</label>' +
+        '<select class="field" id="rcv-loc" onchange="rcvState().loc=this.value">' + pcLocOptions(s.loc) + '</select>') +
+      '<label class="lbl"' + (nostock ? ' style="margin-top:12px"' : '') + '>Note (optional)</label>' +
+      '<input class="field" id="rcv-note" value="' + pcEsc(s.note) + '" oninput="rcvState().note=this.value" ' +
+        'placeholder="Box damaged, short two, …">' +
+    '</div>' +
+    '<div class="card" style="padding:0" id="rcv-lines">' + pcRcvLinesHtml(g) + '</div>' +
+    '<div id="rcv-over"></div>' +
+    '<div class="err" id="rcv-err"></div>' +
+    '<button class="btn sm" id="rcv-save" onclick="pcRcvSave()">Check it in</button>';
+  pcRcvOverNote(g);
+}
+
+function pcRcvLinesHtml(g) {
+  var s = rcvState();
+  return g.lines.map(function (l, i) {
+    var a = s.alloc[i] || 0;
+    var receipts = l.receipts.length ? '<div class="rcv-receipts">Already checked in here: ' +
+      l.receipts.map(function (r) {
+        return '<span class="' + (r.pending ? 'pend' : '') + '">' + pcFmtQty(r.qty) + ' on ' +
+          pcDate(r.timestamp) + ' by ' + pcEsc(r.actor || '?') +
+          (r.no_stock ? ' (no stock moved)' : r.location_id ? ' into ' + pcEsc(pcLocShort(r.location_id)) : '') +
+          (r.pending ? ' — on this phone, not sent yet' : '') + '</span>';
+      }).join('; ') + '</div>' : '';
+    return '<div class="ci-line' + (l.to_come > 0 ? '' : ' sloc-done') + '">' +
+      '<div class="ci-name"><b>' + pcEsc(l.order_no) + '</b> <span class="muted">line ' + pcEsc(l.line_no) + '</span>' +
+        '<div class="sub">' + pcEsc(l.supplier || 'no supplier') + ' · approved ' + pcEsc(l.approved || '—') +
+          ' · ' + pcEsc(l.status) + '</div>' +
+        (l.item_name && g.kind === 'item' ? '<div class="sub muted">TM: ' + pcEsc(l.item_name) +
+          (l.makers_part_no ? ' · maker\'s no ' + pcEsc(l.makers_part_no) : '') + '</div>' : '') +
+      '</div>' +
+      '<div class="ci-nums">' +
+        '<div class="ci-num"><span class="k">On order</span><span class="v">' + pcFmtQty(l.on_order) +
+          ' ' + pcEsc(l.uom) + '</span></div>' +
+        (l.recorded ? '<div class="ci-num"><span class="k">In on IDMS</span><span class="v">' +
+          pcFmtQty(l.recorded) + '</span></div>' : '') +
+        '<div class="ci-num"><span class="k">Still to come</span><span class="v"' +
+          (l.to_come > 0 ? ' style="color:var(--warning)"' : '') + '>' + pcFmtQty(l.to_come) + '</span></div>' +
+      '</div>' +
+      '<div class="rcv-alloc">' +
+        '<button class="icon-btn rcv-step" onclick="pcRcvMove(' + i + ',-1)" aria-label="One less on this line">−</button>' +
+        '<input class="field" type="number" step="any" min="0" inputmode="decimal" id="rcv-a-' + i + '" ' +
+          'value="' + (a ? a : '') + '" placeholder="0" onchange="pcRcvLineSet(' + i + ',this.value)">' +
+        '<button class="icon-btn rcv-step" onclick="pcRcvMove(' + i + ',1)" aria-label="One more on this line">+</button>' +
+      '</div>' + receipts +
+      '</div>';
+  }).join('');
+}
+
+function pcRcvCurrent() {
+  var s = rcvState(), built = pcRcvBuilt();
+  return built && s.sel ? built.byGroup[s.sel] : null;
+}
+
+function pcRcvSum(a) { return a.reduce(function (x, y) { return x + (Number(y) || 0); }, 0); }
+
+function pcRcvRedrawLines(g) {
+  var el = document.getElementById('rcv-lines');
+  if (el) el.innerHTML = pcRcvLinesHtml(g);
+  pcRcvOverNote(g);
+}
+
+function pcRcvOverNote(g) {
+  var s = rcvState(), el = document.getElementById('rcv-over');
+  if (!el) return;
+  var over = receiveLines.overBy(g.lines, s.alloc);
+  el.innerHTML = over > 0
+    ? '<div class="rcv-banner"><div class="grow"><b>' + pcFmtQty(over) + ' more than is still to come</b> on ' +
+      (g.lines.length === 1 ? 'this line' : 'these lines') + '. It is recorded as what arrived, ' +
+      'against the line it is on — check the count before going on.</div></div>'
+    : '';
+}
+
+function pcRcvQty(v) {
+  var g = pcRcvCurrent(); if (!g) return;
+  var s = rcvState();
+  s.qty = v;
+  s.alloc = receiveLines.allocate(g.lines, Number(v) || 0).alloc;
+  pcRcvRedrawLines(g);
+}
+
+function pcRcvAll() {
+  var g = pcRcvCurrent(); if (!g) return;
+  var el = document.getElementById('rcv-qty');
+  if (el) el.value = g.to_come;
+  pcRcvQty(String(g.to_come));
+}
+
+function pcRcvSetTotal() {
+  var s = rcvState(), el = document.getElementById('rcv-qty');
+  var t = Math.round(pcRcvSum(s.alloc) * 1e6) / 1e6;
+  s.qty = t ? String(t) : '';
+  if (el) el.value = s.qty;
+}
+
+function pcRcvMove(i, dir) {
+  var g = pcRcvCurrent(); if (!g) return;
+  var s = rcvState();
+  var before = s.alloc.slice();
+  var a = receiveLines.moveOne(g.lines, s.alloc, i, dir);
+  // Nothing to move between (one line, or nothing anywhere else): the tap
+  // changes this line, and the total with it.
+  if (JSON.stringify(a) === JSON.stringify(before)) {
+    a = before.slice();
+    a[i] = Math.max(0, (Number(a[i]) || 0) + dir);
+  }
+  s.alloc = a;
+  pcRcvSetTotal();
+  pcRcvRedrawLines(g);
+}
+
+function pcRcvLineSet(i, v) {
+  var g = pcRcvCurrent(); if (!g) return;
+  var s = rcvState();
+  var n = Number(v);
+  s.alloc[i] = isFinite(n) && n > 0 ? n : 0;
+  pcRcvSetTotal();
+  pcRcvRedrawLines(g);
+}
+
+function pcRcvPick(id) {
+  var g = pcRcvCurrent(); if (!g) return;
+  var s = rcvState();
+  s.pick[g.key] = id;
+  if (id !== '__nostock') s.loc = pcUsualPlace(id);
+  pcRenderAll();
+}
+
+function pcRcvPickSearch(v) {
+  rcvState().pickQ = v;
+  var box = document.getElementById('rcv-pr');
+  if (!box) return;
+  if (!String(v || '').trim()) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  var hits = pcItemSearch(v, 20);
+  box.style.display = '';
+  box.innerHTML = hits.length
+    ? hits.map(function (i) {
+        return '<div class="picker-hit" onclick="pcRcvPick(&quot;' + pcEsc(i.item_id) + '&quot;)">' +
+          pcEsc(i.name) + '<div class="ph-sub">' + pcEsc(i.item_id) +
+          (i.part_number ? ' · ' + pcEsc(i.part_number) : '') + '</div></div>';
+      }).join('')
+    : '<div class="picker-none">Nothing in the register matches. Record it as received with no ' +
+      'stock, or add the item first.</div>';
+}
+
+async function pcRcvSave() {
+  var g = pcRcvCurrent(); if (!g) return;
+  var s = rcvState();
+  var err = document.getElementById('rcv-err');
+  var target = pcRcvTarget(g);
+  var todo = [];
+  g.lines.forEach(function (l, i) { if ((Number(s.alloc[i]) || 0) > 0) todo.push({ line: l, qty: Number(s.alloc[i]) }); });
+
+  if (!todo.length) { err.textContent = 'How many are here? Nothing is on any line yet.'; return; }
+  if (!target) {
+    err.textContent = g.kind === 'ambiguous' ? 'Pick which item it is first.'
+      : 'Pick the register item, or "Received — no stock to put away".';
+    return;
+  }
+  var nostock = target === '__nostock';
+  var loc = nostock ? null : (pcVal('rcv-loc') || s.loc);
+  if (!nostock && !loc) { err.textContent = 'Where is it going?'; return; }
+
+  var over = receiveLines.overBy(g.lines, s.alloc);
+  if (over > 0 && !confirm(pcFmtQty(over) + ' more than is still to come on these lines. ' +
+      'It is recorded as what arrived. Go ahead?')) return;
+
+  var btn = document.getElementById('rcv-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  err.textContent = '';
+  var note = pcVal('rcv-note') || null;
+  var total = 0, done = 0, failed = null;
+  try {
+    for (var i = 0; i < todo.length; i++) {
+      var t = todo[i];
+      var tm = { tm_order_no: t.line.order_no, tm_order_line_no: t.line.line_no,
+                 tm_item_name: t.line.item_name || null };
+      if (nostock) {
+        await pcAppendEvent('tm_order_line_received', Object.assign({ qty: t.qty, note: note }, tm),
+          { outbox: true, defer: true });
+      } else {
+        await pcAppendEvent('stock_movement', Object.assign({
+          movement_id: pcUuid(), item_id: target, kind: 'receipt',
+          qty: t.qty, location_id: loc, note: note
+        }, tm), { outbox: true, defer: true });
+      }
+      total += t.qty; done++;
+    }
+  } catch (e) {
+    failed = e;
+  }
+  pcSaveCache(); pcReduce();
+  if (failed) {
+    // Only reachable when the phone could not hold the receipt AND OneDrive
+    // refused it. What was saved already shows on the lines, so a retry takes
+    // the remainder rather than doubling it.
+    s.alloc = null; s.qty = '';
+    pcRenderAll();
+    var e2 = document.getElementById('rcv-err');
+    if (e2) e2.textContent = done + ' of ' + todo.length + ' lines were saved before this failed: ' +
+      pcErrText(failed) + '. The lines above show what is still to come.';
+    if (done) pcOutboxFlush();
+    return;
+  }
+  var name = (PC.state.items[target] && PC.state.items[target].name) || g.name;
+  s.sel = null; s.qty = ''; s.alloc = null; s.note = '';
+  pcRenderAll();
+  pcToast(pcFmtQty(total) + ' × ' + name + ' checked in' +
+    (nostock ? '' : ' to ' + pcLocShort(loc)) + '. Saved on this phone; it sends itself when there is signal.');
+  pcOutboxFlush();
+}
+
 // ── View: Check in ──────────────────────────────────────────
 // §42.9. Built for somebody standing at a pallet with a phone in one hand.
 
@@ -4349,9 +5004,9 @@ async function pcCheckinNoPoSave() {
     await pcAppendEvent('stock_movement', {
       movement_id: pcUuid(), item_id: PC_NP_ITEM, kind: 'receipt',
       qty: qty, location_id: pcVal('np-loc'), note: pcVal('np-note') || null
-    });
+    }, { outbox: true });   // the hold has no signal either way (§42.9a)
     pcCloseOverlay();
-    pcToast('Received.');
+    pcToast(pcOutboxCount() ? 'Received — saved on this phone, sending when there is signal.' : 'Received.');
   } catch (e) {
     document.getElementById('np-err').textContent = pcErrText(e);
     btn.disabled = false; btn.textContent = 'Receive';
