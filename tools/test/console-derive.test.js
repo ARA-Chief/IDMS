@@ -63,6 +63,12 @@ check('byte-identical with the IDMS canonical copy',
   fs.readFileSync(IDMS + '/utils/procurement-reduce.js').equals(
     fs.readFileSync(CON + '/src/renderer/js/procurement-reduce.js')));
 
+// What is still to come on a TM order line, and what is still owed to TM: the
+// phone's Receive screen and the Console's receipts list must give the same
+// number, or a part reads as on its way on one and arrived on the other.
+check('the order-receipts rule is byte-identical too',
+  fs.readFileSync(IDMS + '/utils/order-receipts.js').equals(
+    fs.readFileSync(CON + '/src/renderer/js/order-receipts.js')));
 // The contact book's reducer is mirrored on the same terms and for the same
 // reason: it decides what an edit does to a TM baseline, and two copies that
 // have drifted are two answers to "did my correction survive the re-export".

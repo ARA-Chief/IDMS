@@ -464,6 +464,7 @@
 <script src="utils/stock-search.js"></script>
 <script src="utils/contacts-reduce.js"></script>
 <!-- Receive against TM Master's open order lines (§42.9a). PWA-only. -->
+<script src="utils/order-receipts.js"></script>
 <script src="utils/receive-lines.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════
@@ -4573,7 +4574,7 @@ function pcRcvLinesHtml(g) {
         return '<span class="' + (r.pending ? 'pend' : '') + '">' + pcFmtQty(r.qty) + ' on ' +
           pcDate(r.timestamp) + ' by ' + pcEsc(r.actor || '?') +
           (r.no_stock ? ' (no stock moved)' : r.location_id ? ' into ' + pcEsc(pcLocShort(r.location_id)) : '') +
-          (r.pending ? ' — on this phone, not sent yet' : '') + '</span>';
+          (r.pending ? ' — on this phone, not sent yet' : r.state === 'in_tm' ? ' — TM has it' : '') + '</span>';
       }).join('; ') + '</div>' : '';
     return '<div class="ci-line' + (l.to_come > 0 ? '' : ' sloc-done') + '">' +
       '<div class="ci-name"><b>' + pcEsc(l.order_no) + '</b> <span class="muted">line ' + pcEsc(l.line_no) + '</span>' +
@@ -4726,8 +4727,13 @@ async function pcRcvSave() {
   try {
     for (var i = 0; i < todo.length; i++) {
       var t = todo[i];
+      // What TM said this line had received, in the snapshot this phone is
+      // working from. It is how a later snapshot tells this receipt apart from
+      // goods somebody received in TM directly (utils/order-receipts.js).
       var tm = { tm_order_no: t.line.order_no, tm_order_line_no: t.line.line_no,
-                 tm_item_name: t.line.item_name || null };
+                 tm_item_name: t.line.item_name || null,
+                 tm_received_seen: t.line.received_tm,
+                 tm_lines_pulled_at: (PC.orderLinesDoc && PC.orderLinesDoc.pulled_at) || null };
       if (nostock) {
         await pcAppendEvent('tm_order_line_received', Object.assign({ qty: t.qty, note: note }, tm),
           { outbox: true, defer: true });

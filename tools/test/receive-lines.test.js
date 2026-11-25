@@ -183,4 +183,24 @@ if (!OL || !fs.existsSync(OL)) {
   check('keys are unique', Object.keys(real.byKey).length, real.lines.length);
 }
 
+// ── once TM has it, it is not taken off twice ───────────────────────────────
+// A phone receipt records what TM showed. When a later snapshot shows TM's
+// received risen by it, the snapshot's outstanding already counts it.
+{
+  const snap = (pulledAt, received) => ({ schema_version: 1, pulled_at: pulledAt, orders: [
+    { order_no: 'ARA-7', supplier: 'S', order_type: 'PurchaseOrder', approved: '10/1/2026', status: 'On Order',
+      lines: [line(1, 'Gasket', { item_id: 'ITM-7', match: 'name', on_order: 10, received, outstanding: 10 - received })] }] });
+  const rcv = { event_id: 'r1', event_type: 'stock_movement', timestamp: '2026-11-25T18:00:00Z', actor: 'wm',
+    payload: { kind: 'receipt', item_id: 'ITM-7', qty: 4, tm_order_no: 'ARA-7', tm_order_line_no: 1, tm_received_seen: 0 } };
+  const before = RL.build(snap('2026-11-25T16:00:00Z', 0), [rcv]).byKey['ARA-7#1'];
+  check('before TM has it: 10 - 4 still to come', before.to_come, 6);
+  check('and it is owed to TM', before.owed_to_tm, 4);
+  const tmHasIt = RL.build(snap('2026-11-26T08:00:00Z', 4), [rcv]).byKey['ARA-7#1'];
+  check('after TM received it and the lines were pulled again: still 6, not 2', tmHasIt.to_come, 6);
+  check('and nothing is owed to TM', tmHasIt.owed_to_tm, 0);
+  check('the receipt reads as in TM', tmHasIt.receipts[0].state, 'in_tm');
+  const direct = RL.build(snap('2026-11-26T08:00:00Z', 9), [rcv]).byKey['ARA-7#1'];
+  check('someone received 5 more in TM directly: 1 still to come', direct.to_come, 1);
+}
+
 process.exit(T.done() ? 0 : 1);
