@@ -8,6 +8,15 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.38 — 2026-11-25
+- **Receive starts from the order.** The list is TM's open and partly
+  received orders: number, name, department, and how many lines are still to
+  come. Search by any of those, the supplier, or something on the order.
+  Opening an order shows every line the way TM does (ordered, received, still
+  to come); press Check in on a line to receive it against that order, so
+  every receipt can be traced back to its requisition. Tax and freight lines
+  are listed underneath but are not checked in.
+
 ## 1.37 — 2026-11-25
 - **Inventory's Check In tile opens Receive.** It used to open a list of
   orders raised in IDMS, which is always empty; deliveries are TM orders.

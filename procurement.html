@@ -331,6 +331,12 @@
   .rcv-total { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
   .rcv-total > div { flex: 1 1 140px; }
   .rcv-total .field { margin-bottom: 0; }
+  table.rcv-orders tr.click { cursor: pointer; }
+  table.rcv-orders tr.click:hover td { background: var(--bg-2); }
+  table.rcv-orders tr.rcv-done td { color: var(--text-muted); }
+  .rcv-why { color: var(--accent); }
+  .ci-line.click { cursor: pointer; }
+  .ci-line.rcv-hl { box-shadow: inset 3px 0 0 var(--accent); }
 
   /* ── Item picker (a searchable input, not a 14,000-option select) ── */
   .picker { position: relative; flex: 3; min-width: 170px; }
@@ -4300,12 +4306,13 @@ async function pcPoClose(poId) {
 }
 
 // ── View: Receive (§42.9a) ──────────────────────────────────
-// Walking the cargo hold with the part in your hand: search for what is on the
-// box, pick it, see every TM Master order line it is still owed on — oldest
-// order first — and type how many are here. The quantity fills the oldest line
-// first and overflows to the next; a tap moves units between lines. Every
-// receipt carries tm_order_no + tm_order_line_no so it can later be booked into
-// TM against that line (receive-into-order), never as a bare stock push.
+// Requisition first. The landing list is every TM Master order with something
+// still to come — number, name, department — searchable by any of those, the
+// supplier, or an item on it. Opening an order lists every line on it the way
+// TM does (ordered, received, still to come); tapping a line checks it in
+// against that line, so every receipt is traceable to its order. Every receipt
+// carries tm_order_no + tm_order_line_no so it can later be booked into TM
+// against that line (receive-into-order), never as a bare stock push.
 //
 // TM's line grid gives the item's NAME, not its number, and 520 names in the
 // catalogue are shared. A line the Console could not tie to one item is
@@ -4318,7 +4325,7 @@ async function pcPoClose(poId) {
 var RCV_CAP = 40;   // search results drawn at once
 
 function rcvState() {
-  if (!PC.rcv) PC.rcv = { q: '', sel: null, qty: '', alloc: null, loc: null,
+  if (!PC.rcv) PC.rcv = { q: '', order: null, hl: [], sel: null, qty: '', alloc: null, loc: null,
                           pick: {}, pickQ: '', note: '', hits: [] };
   return PC.rcv;
 }
@@ -4326,14 +4333,6 @@ function rcvState() {
 function pcRcvBuilt() {
   if (!PC.orderLinesDoc) return null;
   return receiveLines.build(PC.orderLinesDoc, PC.events);
-}
-
-// The register's own name and part number for an item group, so a search for
-// what the register calls it finds a line TM spells differently.
-function pcRcvExtraHay(g) {
-  if (g.kind !== 'item') return g.candidates.join(' ');
-  var it = PC.state.items[g.item_id];
-  return it ? (it.name || '') + ' ' + (it.part_number || '') + ' ' + (it.stock_tag || '') : '';
 }
 
 // Where it normally lives: the item's own default, else wherever most of it
@@ -4383,19 +4382,22 @@ async function pcRcvSendNow() {
 function pcViewReceive() {
   var s = rcvState();
   var built = pcRcvBuilt();
-  if (built && s.sel && built.byGroup[s.sel]) return pcRcvGroup(built.byGroup[s.sel]);
+  var cur = built && s.sel ? pcRcvCurrent() : null;
+  if (cur) return pcRcvGroup(cur);
   s.sel = null;
+  if (built && s.order && built.byOrder[s.order]) return pcRcvOrder(built.byOrder[s.order]);
+  s.order = null;
 
   var noOrder = '<button class="icon-btn" onclick="pcCheckinNoPo()">Arrived without an order</button>';
   if (!built) {
-    pcHead('Receive', 'TM Master order lines', noOrder);
+    pcHead('Receive', 'TM Master orders', noOrder);
     if (PC.olStatus === 'none' || PC.olStatus === 'loading') {
       if (PC.olStatus === 'none') pcLoadOrderLines().then(pcRenderAll);
       document.getElementById('body').innerHTML = pcRcvOutboxBanner() +
-        '<div class="empty"><b>Loading the open order lines…</b></div>';
+        '<div class="empty"><b>Loading the open orders…</b></div>';
     } else {
       document.getElementById('body').innerHTML = pcRcvOutboxBanner() +
-        '<div class="empty"><b>No copy of the open order lines on this phone yet</b>' +
+        '<div class="empty"><b>No copy of the open orders on this phone yet</b>' +
         'It downloads the first time this page has signal, and then works without it. ' +
         'Stores with no order behind them can still be checked in with the button above.<br><br>' +
         '<button class="icon-btn" onclick="PC.olStatus=\'none\';pcRenderAll()">Try again</button></div>';
@@ -4403,16 +4405,14 @@ function pcViewReceive() {
     return;
   }
 
-  var toCome = built.lines.filter(function (l) { return l.to_come > 0; });
-  var orders = {};
-  toCome.forEach(function (l) { orders[l.order_no] = true; });
-  pcHead('Receive', toCome.length + ' lines to come on ' + Object.keys(orders).length +
-    ' TM orders · pulled ' + pcRcvPulled() + (PC.olStatus === 'stale' ? ' (offline copy)' : ''), noOrder);
+  var open = built.orders.filter(function (o) { return o.to_come > 0; });
+  pcHead('Receive', open.length + ' TM orders with something to come · pulled ' + pcRcvPulled() +
+    (PC.olStatus === 'stale' ? ' (offline copy)' : ''), noOrder);
 
   document.getElementById('body').innerHTML = pcRcvOutboxBanner() +
     '<div class="rcv-find" style="margin-bottom:12px">' +
       '<input class="field" id="rcv-q" type="search" autocomplete="off" ' +
-        'placeholder="What is on the box — name, part no, supplier ref, order no" ' +
+        'placeholder="Order no, order name, department, supplier, or an item on it" ' +
         'value="' + pcEsc(s.q) + '" oninput="pcRcvSearch(this.value)">' +
     '</div>' +
     '<div id="rcv-results">' + pcRcvResultsHtml(built, s.q) + '</div>';
@@ -4428,60 +4428,130 @@ function pcRcvSearch(v) {
   }, 120);
 }
 
+// The register's own name and part number for a line's item, so a search for
+// what the register calls it finds a line TM spells differently.
+function pcRcvLineHay(l) {
+  var it = l.item_id && PC.state.items[l.item_id];
+  return it ? (it.name || '') + ' ' + (it.part_number || '') + ' ' + (it.stock_tag || '') : '';
+}
+
+var RCV_STATUS_TAG = { 'On Order': '', 'Partly received': 'warn', 'Partly received by agent': 'warn',
+  'Received by agent': 'accent', 'Received at Warehouse': 'accent', 'Received by forwarder': 'accent' };
+
+// The requisition comes first: its number, name and department, then how much
+// of it is still to come. A search that found the order through one of its
+// lines says which line.
 function pcRcvResultsHtml(built, q) {
   var s = rcvState();
   if (!built) return '';
-  if (!String(q || '').trim()) {
-    s.hits = [];
-    return '<div class="empty"><b>Search for the part in front of you</b>' +
-      'Every open TM Master order line it is on comes up together, oldest order first. ' +
-      'Freight, tax, duty and service orders are left out — nothing to put on a shelf.</div>';
-  }
-  var hits = receiveLines.search(built, q, { extraHay: pcRcvExtraHay });
-  s.hits = hits.slice(0, RCV_CAP);
+  var hits = receiveLines.searchOrders(built, q, { lineHay: pcRcvLineHay });
+  var cap = String(q || '').trim() ? RCV_CAP : hits.length;
+  s.hits = hits.slice(0, cap);
   if (!hits.length) {
-    return '<div class="empty"><b>Not on any open order</b>Nothing still to come matches that. ' +
+    return '<div class="empty"><b>No open order matches</b>Nothing still to come on an order matches that. ' +
       'If it is here anyway, use <i>Arrived without an order</i>.</div>';
   }
-  return s.hits.map(function (g, i) {
-    var it = g.kind === 'item' ? PC.state.items[g.item_id] : null;
-    var unit = g.lines[0].uom || (it && it.unit) || '';
-    var nOrders = {};
-    g.lines.forEach(function (l) { nOrders[l.order_no] = true; });
-    var parts = [];
-    g.lines.forEach(function (l) {
-      if (l.makers_part_no && parts.indexOf(l.makers_part_no) === -1) parts.push(l.makers_part_no);
-    });
-    var tag = g.kind === 'ambiguous'
-      ? ' <span class="tag warn">which item? ' + g.candidates.length + ' share this name</span>'
-      : g.kind === 'none' ? ' <span class="tag">not tied to an item</span>' : '';
-    return '<div class="card click" onclick="pcRcvOpenHit(' + i + ')">' +
-      '<div class="row"><div class="grow">' +
-        '<div class="ttl">' + pcEsc(it ? it.name : g.name) + tag +
-          (g.pending ? ' <span class="tag warn">' + g.pending + ' waiting to send</span>' : '') + '</div>' +
-        '<div class="sub">' + (g.item_id ? pcEsc(g.item_id) + ' · ' : '') +
-          Object.keys(nOrders).length + ' order' + (Object.keys(nOrders).length === 1 ? '' : 's') +
-          (parts.length ? ' · maker\'s no ' + pcEsc(parts.slice(0, 3).join(', ')) : '') +
-          (it && !it.stock_unknown ? ' · ' + pcFmtQty(it.on_hand, it.unit) + ' ' + pcEsc(it.unit) + ' on hand' : '') +
-        '</div>' +
-      '</div><div style="text-align:right"><div class="qty' + (g.to_come > 0 ? '' : ' muted') + '">' +
-        pcFmtQty(g.to_come) + '</div><div class="sub nowrap">' +
-        (g.to_come > 0 ? 'to come' : 'all in') + (unit ? ' · ' + pcEsc(unit) : '') + '</div></div></div></div>';
-  }).join('') + (hits.length > RCV_CAP
-    ? '<div class="sub muted">' + (hits.length - RCV_CAP) + ' more — add a word to narrow it.</div>' : '');
+  return '<div class="card" style="padding:4px 8px"><div class="grid-wrap"><table class="grid rcv-orders"><thead><tr>' +
+    '<th>Order</th><th style="text-align:right">To come</th></tr></thead><tbody>' +
+    s.hits.map(function (h, i) {
+      var o = h.order;
+      var st = RCV_STATUS_TAG[o.status];
+      var why = h.matched.length ? '<div class="sub rcv-why">has ' + h.matched.slice(0, 3).map(function (l) {
+          return '<b>' + pcEsc(l.item_name) + '</b>' + (l.to_come > 0 ? '' : ' (all in)');
+        }).join(', ') + (h.matched.length > 3 ? ' +' + (h.matched.length - 3) + ' more' : '') + '</div>' : '';
+      return '<tr class="click' + (o.to_come > 0 ? '' : ' rcv-done') + '" onclick="pcRcvOpenOrder(' + i + ')">' +
+        '<td><b>' + pcEsc(o.order_no) + '</b> ' + pcEsc(o.name) +
+          '<div class="sub">' + pcEsc(o.department || 'no department') +
+            (o.supplier ? ' · ' + pcEsc(o.supplier) : '') +
+            (o.status ? ' · <span class="tag ' + (st || '') + '">' + pcEsc(o.status) + '</span>' : '') +
+            (o.pending ? ' <span class="tag warn">' + pcFmtQty(o.pending) + ' waiting to send</span>' : '') +
+          '</div>' + why + '</td>' +
+        '<td class="num">' + (o.to_come > 0
+          ? o.lines_open + ' of ' + o.lines.length + ' line' + (o.lines.length === 1 ? '' : 's')
+          : 'all in') + '</td></tr>';
+    }).join('') + '</tbody></table></div></div>' +
+    (hits.length > cap ? '<div class="sub muted">' + (hits.length - cap) +
+      ' more — add a word to narrow it.</div>' : '');
 }
 
-function pcRcvOpenHit(i) {
+function pcRcvOpenOrder(i) {
   var s = rcvState();
-  var g = s.hits[i];
-  if (!g) return;
-  s.sel = g.key; s.qty = ''; s.alloc = null; s.loc = null; s.note = ''; s.pickQ = '';
+  var h = s.hits[i];
+  if (!h) return;
+  s.order = h.order.order_no;
+  s.hl = h.matched.map(function (l) { return l.key; });
+  s.sel = null; s.qty = ''; s.alloc = null;
   pcRenderAll();
+  window.scrollTo(0, 0);
+}
+
+// One order, the way TM shows it: every line, what was ordered, what TM has
+// received, what has been checked in here that TM has not got yet, and what is
+// still to come. Tapping a line with something to come checks it in against
+// that line — which is how a receipt stays traceable to its requisition.
+function pcRcvOrder(o) {
+  var s = rcvState();
+  pcHead(o.order_no + ' · ' + o.name,
+    [o.department, o.supplier, o.status, o.approved ? 'approved ' + o.approved : ''].filter(Boolean).join(' · '),
+    '<button class="icon-btn" onclick="pcRcvBack()">← Orders</button>');
+  var hl = s.hl || [];
+  var rows = o.lines.map(function (l, i) {
+    var it = l.item_id && PC.state.items[l.item_id];
+    var here = Math.max(0, Math.round(((l.recorded || 0) - (l.in_tm || 0)) * 1e6) / 1e6);
+    var can = l.to_come > 0;
+    var receipts = l.receipts.length ? '<div class="rcv-receipts">Checked in here: ' +
+      l.receipts.map(function (r) {
+        return '<span class="' + (r.pending ? 'pend' : '') + '">' + pcFmtQty(r.qty) + ' on ' +
+          pcDate(r.timestamp) + ' by ' + pcEsc(r.actor || '?') +
+          (r.pending ? ' — on this phone, not sent yet' : r.state === 'in_tm' ? ' — TM has it' : '') + '</span>';
+      }).join('; ') + '</div>' : '';
+    var tag = can && !l.item_id ? (l.match === 'ambiguous' ? ' <span class="tag warn">which item?</span>'
+      : ' <span class="tag">not tied to an item</span>') : '';
+    var sub = [l.makers_part_no ? 'maker\'s no ' + pcEsc(l.makers_part_no) : '',
+      it ? pcEsc(it.item_id) + (it.name !== l.item_name ? ' ' + pcEsc(it.name) : '') : '',
+      l.component ? pcEsc(l.component) : ''].filter(Boolean).join(' · ');
+    return '<div class="ci-line' + (can ? ' click' : ' sloc-done') + (hl.indexOf(l.key) !== -1 ? ' rcv-hl' : '') + '"' +
+      (can ? ' onclick="pcRcvOpenLine(' + i + ')"' : '') + '>' +
+      '<div class="ci-name"><span class="muted">' + pcEsc(l.line_no) + '</span> <b>' + pcEsc(l.item_name) + '</b>' + tag +
+        (sub ? '<div class="sub">' + sub + '</div>' : '') +
+      '</div>' +
+      '<div class="ci-nums">' +
+        '<div class="ci-num"><span class="k">Ordered</span><span class="v">' + pcFmtQty(l.on_order) +
+          (l.uom ? ' <span class="muted">' + pcEsc(l.uom) + '</span>' : '') + '</span></div>' +
+        '<div class="ci-num"><span class="k">Received</span><span class="v">' + pcFmtQty(l.received_tm) +
+          (here ? ' <span style="color:var(--warning)">+' + pcFmtQty(here) + '</span>' : '') + '</span></div>' +
+        '<div class="ci-num"><span class="k">To come</span><span class="v"' +
+          (can ? ' style="color:var(--warning)"' : '') + '>' + pcFmtQty(l.to_come) + '</span></div>' +
+      '</div>' +
+      (can ? '<div class="ci-in"><button class="btn sm" onclick="event.stopPropagation();pcRcvOpenLine(' + i +
+        ')">Check in</button></div>' : '') +
+      receipts + '</div>';
+  }).join('');
+  var extras = o.extras.length ? '<div class="sub muted" style="margin:4px 2px 12px">Also on the order, nothing to ' +
+    'put away: ' + o.extras.map(function (x) { return pcEsc(x.item_name); }).join(', ') + '</div>' : '';
+  var anyHere = o.lines.some(function (l) { return (l.recorded || 0) > (l.in_tm || 0); });
+  document.getElementById('body').innerHTML = pcRcvOutboxBanner() +
+    '<div class="card" style="padding:0">' + (rows || '<div class="empty">No lines on this order.</div>') + '</div>' +
+    extras +
+    '<div class="sub muted">Received is what TM Master has' +
+      (anyHere ? '; <span style="color:var(--warning)">+n</span> is checked in here and not in TM yet' : '') +
+      '. Pulled ' + pcEsc(pcRcvPulled()) + '.</div>';
+}
+
+function pcRcvOpenLine(i) {
+  var s = rcvState(), built = pcRcvBuilt();
+  var o = built && built.byOrder[s.order];
+  var l = o && o.lines[i];
+  if (!l || !(l.to_come > 0)) return;
+  s.sel = 'line:' + l.key; s.qty = ''; s.alloc = null; s.loc = null; s.note = ''; s.pickQ = '';
+  pcRenderAll();
+  window.scrollTo(0, 0);
 }
 
 function pcRcvBack() {
   var s = rcvState();
-  s.sel = null; s.qty = ''; s.alloc = null;
+  if (s.sel) { s.sel = null; s.qty = ''; s.alloc = null; }
+  else { s.order = null; s.hl = []; }
   pcRenderAll();
 }
 
@@ -4499,9 +4569,11 @@ function pcRcvGroup(g) {
   var it = target && target !== '__nostock' ? PC.state.items[target] : null;
   if (!s.loc) s.loc = pcUsualPlace(it ? it.item_id : null);
 
+  var one = g.lines.length === 1 ? g.lines[0] : null;
   pcHead(it ? it.name : g.name,
-    g.lines.length + ' open line' + (g.lines.length === 1 ? '' : 's') + ', oldest order first',
-    '<button class="icon-btn" onclick="pcRcvBack()">← Search</button>');
+    one ? one.order_no + ' line ' + one.line_no + (one.order_name ? ' · ' + one.order_name : '')
+      : g.lines.length + ' open lines, oldest order first',
+    '<button class="icon-btn" onclick="pcRcvBack()">← ' + (s.order ? pcEsc(s.order) : 'Orders') + '</button>');
 
   var choose = '';
   if (g.kind === 'ambiguous') {
@@ -4603,7 +4675,12 @@ function pcRcvLinesHtml(g) {
 
 function pcRcvCurrent() {
   var s = rcvState(), built = pcRcvBuilt();
-  return built && s.sel ? built.byGroup[s.sel] : null;
+  if (!built || !s.sel) return null;
+  if (s.sel.indexOf('line:') === 0) {
+    var l = built.byKey[s.sel.slice(5)];
+    return l ? receiveLines.lineGroup(l) : null;
+  }
+  return built.byGroup[s.sel] || null;
 }
 
 function pcRcvSum(a) { return a.reduce(function (x, y) { return x + (Number(y) || 0); }, 0); }

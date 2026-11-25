@@ -203,4 +203,43 @@ if (!OL || !fs.existsSync(OL)) {
   check('someone received 5 more in TM directly: 1 still to come', direct.to_come, 1);
 }
 
+// ── order first ─────────────────────────────────────────────────────────────
+T.head('the order comes first: searched by number, name, department, or an item on it');
+{
+  const doc = JSON.parse(JSON.stringify(DOC));
+  doc.orders[0].name = 'Haul Info'; doc.orders[0].department = 'Factory';
+  doc.orders[1].name = 'Medical Order Refresh'; doc.orders[1].department = 'Hospital';
+  const b = RL.build(doc, [rcpt('ARA-1-M-2026', 7, 2)]);
+  check('service orders are left out of the order list', b.orders.map(o => o.order_no).join(','), 'ARA-2-M-2026,ARA-1-M-2026');
+  const o1 = b.byOrder['ARA-1-M-2026'];
+  check('every goods line is on the order, the one TM has in full too', o1.lines.map(l => l.line_no).join(','), '7,8,9,10');
+  check('the fully received line has nothing to come', o1.lines[3].to_come, 0);
+  check('and shows what TM received', o1.lines[3].received_tm, 10);
+  check('the invoice line is an extra, not a line to check in', o1.extras.map(x => x.line_no).join(','), '11');
+  check('freight and tax are extras on the other order', b.byOrder['ARA-2-M-2026'].extras.length, 2);
+  check('lines open counts lines with something to come', o1.lines_open, 3);
+  check('a phone receipt comes off the order total (3+20+1 less 2)', o1.to_come, 22);
+  check('the closed line is not in the open-lines list', !!b.byKey['ARA-1-M-2026#10'], false);
+
+  const find = t => RL.searchOrders(b, t).map(h => h.order.order_no).join(',');
+  check('by number', find('ara-1-m'), 'ARA-1-M-2026');
+  check('by name', find('haul'), 'ARA-2-M-2026');
+  check('by department', find('hospital'), 'ARA-1-M-2026');
+  check('by supplier', find('older'), 'ARA-1-M-2026');
+  const viaItem = RL.searchOrders(b, 'wire rope');
+  check('by an item on it', viaItem.map(h => h.order.order_no).join(','), 'ARA-1-M-2026');
+  check('and says which line', viaItem[0].matched.map(l => l.line_no).join(','), '9');
+  const mixed = RL.searchOrders(b, 'filter older');
+  check('an item word plus an order word narrows to that order', mixed.map(h => h.order.order_no).join(','), 'ARA-1-M-2026');
+  check('...and to the line', mixed[0].matched.map(l => l.line_no).join(','), '7');
+  check('the register name of a line\'s item finds it too',
+    RL.searchOrders(b, 'lube', { lineHay: l => l.item_id === 'ITM-2' ? 'Lube cartridge' : '' }).map(h => h.matched[0].line_no).join(','), '10');
+  check('no words: every order with something to come, newest approval first', find(''), 'ARA-2-M-2026,ARA-1-M-2026');
+
+  const g = RL.lineGroup(o1.lines[1]);
+  check('one line checks in as a group of one', g.lines.length, 1);
+  check('an ambiguous line keeps its candidates', g.kind + ':' + g.candidates.join(','), 'ambiguous:ITM-7,ITM-8');
+  check('the line group key names the line', g.key, 'line:ARA-1-M-2026#8');
+}
+
 process.exit(T.done() ? 0 : 1);

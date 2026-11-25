@@ -5,8 +5,10 @@
 // The Console drives TM Master's Purchasing screen and publishes every order
 // line still to come as data/procurement/open-order-lines.json (the Console's
 // docs/procurement-registry.md §14.9). This file is what the phone does with
-// it: find a part by what is written on the box, show every open line it is
-// on, and split a delivered quantity across them, oldest order first.
+// it: find the order (by number, name, department, supplier, or a line on
+// it), list every line on it as TM does, and check a line in against that
+// order. The item-first search and the split across orders (search, allocate)
+// remain for the quantity screen.
 //
 // Every receipt made this way carries `tm_order_no` + `tm_order_line_no`, so a
 // later driver can book it into TM against that line (receive-into-order, not a
@@ -108,13 +110,26 @@
 
   function build(doc, events) {
     var rc = receiptsRule().reconcile(doc, events);
-    var lines = [];
+    var lines = [], orders = [];
     ((doc && doc.orders) || []).forEach(function (o) {
       if (o.order_type === 'ServiceOrder') return;
       var appr = approvedIso(o.approved);
+      // The order as somebody would ask for it: its number, name, department
+      // and supplier, with EVERY line on it — the ones TM already has in full
+      // too, so the order reads the way it does in TM. Freight, tax and the
+      // like come along as `extras`, shown and never checked in.
+      var ord = { order_no: o.order_no, name: o.name || '', department: o.department || '',
+                  supplier: o.supplier || '', status: o.status || '', approved: o.approved || '',
+                  approved_iso: appr, our_ref: o.our_ref || '', lines: [], extras: [],
+                  to_come: 0, lines_open: 0, pending: 0, hay: '' };
+      orders.push(ord);
       (o.lines || []).forEach(function (l) {
-        if (!(num(l.outstanding) > 0)) return;
-        if (isNonGoods(l)) return;
+        if (isNonGoods(l)) {
+          ord.extras.push({ line_no: l.line_no, item_name: l.item_name || '',
+                            on_order: num(l.on_order), received_tm: num(l.received) });
+          return;
+        }
+        var open = num(l.outstanding) > 0;
         var key = tmKey(o.order_no, l.line_no);
         // Still to come is TM's outstanding less what phones filed that TM has
         // not yet taken in — not less every phone receipt, which counts a
@@ -122,7 +137,7 @@
         var rl = rc.lines[key];
         var rows = rl ? rl.receipts.map(function (x) { return Object.assign({ timestamp: x.at }, x); }) : [];
         var pend = q(rows.reduce(function (s2, x) { return s2 + (x.pending ? x.qty : 0); }, 0));
-        lines.push({
+        var row = {
           key: key,
           order_no: o.order_no, line_no: l.line_no,
           order_name: o.name || '', supplier: o.supplier || '', status: o.status || '',
@@ -138,8 +153,17 @@
           component: l.component || '', description: l.description || '',
           item_id: l.item_id || null, match: l.match || 'none',
           candidates: Array.isArray(l.candidates) ? l.candidates.slice() : []
-        });
+        };
+        if (!open) { row.to_come = 0; row.owed_to_tm = 0; }
+        ord.lines.push(row);
+        if (open) lines.push(row);
       });
+      ord.lines.sort(function (a, b) { return num(a.line_no) - num(b.line_no); });
+      ord.extras.sort(function (a, b) { return num(a.line_no) - num(b.line_no); });
+      ord.to_come = q(ord.lines.reduce(function (s2, x) { return s2 + x.to_come; }, 0));
+      ord.lines_open = ord.lines.filter(function (x) { return x.to_come > 0; }).length;
+      ord.pending = q(ord.lines.reduce(function (s2, x) { return s2 + x.pending; }, 0));
+      ord.hay = norm([ord.order_no, ord.name, ord.department, ord.supplier, ord.our_ref].join(' '));
     });
 
     var groups = {}, order = [];
@@ -168,7 +192,10 @@
     });
     var byKey = {};
     lines.forEach(function (l) { byKey[l.key] = l; });
-    return { lines: lines, groups: list, byGroup: groups, byKey: byKey };
+    var byOrder = {};
+    orders.forEach(function (o) { byOrder[o.order_no] = o; });
+    return { lines: lines, groups: list, byGroup: groups, byKey: byKey,
+             orders: orders, byOrder: byOrder };
   }
 
   function oldestFirst(a, b) {
@@ -199,6 +226,66 @@
       return String(a.name).localeCompare(String(b.name));
     });
     return opts.limit ? hits.slice(0, opts.limit) : hits;
+  }
+
+  // Orders, found the way somebody holding a box would look for one: by the
+  // order number or name on the paperwork, the department, the supplier, or
+  // something that is on it. Every word must be found in the order's own
+  // fields or in one of its lines; the lines a word was found in come back as
+  // `matched`, so the list can say why an order came up. With no words, every
+  // order with something still to come, newest approval first.
+  // `lineHay(line)` lets the page add the register's own name for a line's item.
+  function searchOrders(built, text, opts) {
+    opts = opts || {};
+    var terms = norm(text).split(' ').filter(Boolean);
+    var extra = opts.lineHay || function () { return ''; };
+    var out = [];
+    built.orders.forEach(function (o) {
+      if (!terms.length) {
+        if (o.to_come > 0 || opts.all) out.push({ order: o, matched: [], direct: true });
+        return;
+      }
+      var lh = o.lines.map(function (l) {
+        return norm([l.item_name, l.makers_part_no, l.suppliers_ref, l.item_id || '', l.component, extra(l)].join(' '));
+      });
+      var direct = true, matched = [];
+      for (var i = 0; i < terms.length; i++) {
+        if (o.hay.indexOf(terms[i]) !== -1) continue;
+        direct = false;
+        break;
+      }
+      if (!direct) {
+        // Words not in the order's own fields must all be found on one line
+        // (with the order's fields to help): "gasket allweiler" finds the
+        // gasket line on the Allweiler order.
+        o.lines.forEach(function (l, j) {
+          for (var k = 0; k < terms.length; k++) {
+            if (o.hay.indexOf(terms[k]) === -1 && lh[j].indexOf(terms[k]) === -1) return;
+          }
+          matched.push(l);
+        });
+        if (!matched.length) return;
+      }
+      out.push({ order: o, matched: matched, direct: direct });
+    });
+    out.sort(function (a, b) {
+      var ao = a.order.to_come > 0 ? 0 : 1, bo = b.order.to_come > 0 ? 0 : 1;
+      if (ao !== bo) return ao - bo;
+      if (terms.length && a.direct !== b.direct) return a.direct ? -1 : 1;
+      var ad = a.order.approved_iso || '', bd = b.order.approved_iso || '';
+      if (ad !== bd) return ad < bd ? 1 : -1;
+      return String(b.order.order_no).localeCompare(String(a.order.order_no));
+    });
+    return opts.limit ? out.slice(0, opts.limit) : out;
+  }
+
+  // One line on its own, shaped like an item group, so the check-in screen
+  // that splits a quantity across lines can take a single line of an order.
+  function lineGroup(line) {
+    var kind = line.item_id ? 'item' : (line.match === 'ambiguous' ? 'ambiguous' : 'none');
+    return { key: 'line:' + line.key, kind: kind, item_id: line.item_id, name: line.item_name,
+             candidates: line.candidates.slice(), lines: [line], to_come: line.to_come,
+             pending: line.pending, order_no: line.order_no };
   }
 
   // One quantity, poured into the lines oldest first. What is left once every
@@ -248,6 +335,7 @@
   return {
     isNonGoods: isNonGoods, approvedIso: approvedIso, tmKey: tmKey,
     recorded: recorded, build: build, search: search,
+    searchOrders: searchOrders, lineGroup: lineGroup,
     allocate: allocate, moveOne: moveOne, overBy: overBy
   };
 }));
