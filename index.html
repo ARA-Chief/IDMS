@@ -1330,7 +1330,10 @@
         <div class="er-hub-tile-label">Stock</div>
         <div class="er-hub-tile-sub">Find it, count it, walk a space</div>
       </button>
-      <button class="er-hub-tile" onclick="openProcurement('checkin')">
+      <!-- Receive, not Check in (1.37): Check in lists only orders raised in
+           IDMS, and there are none — deliveries are TM Master orders, which
+           Receive checks in against. Arrived without an order is on Receive too. -->
+      <button class="er-hub-tile" onclick="openProcurement('receive')">
         <div class="er-hub-tile-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 4v13"/><path d="M9 12l5 5 5-5"/><path d="M5 21h18"/>
@@ -11821,7 +11824,7 @@ async function addOilCommit() {
 // history of a system they have never used.
 // ════════════════════════════════════════
 
-var PWA_VERSION  = '1.36';
+var PWA_VERSION  = '1.37';
 var PWA_SEEN_KEY = 'fw_seen_version';
 
 function pwaCmpVersions(a, b) {

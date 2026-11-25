@@ -8,6 +8,12 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.37 — 2026-11-25
+- **Inventory's Check In tile opens Receive.** It used to open a list of
+  orders raised in IDMS, which is always empty; deliveries are TM orders.
+  Receive finds the part, shows the orders it is on, and still has Arrived
+  without an order for anything else.
+
 ## 1.36 — 2026-11-25
 - **Receive knows when TM has caught up.** Each check-in now notes what TM
   said that line had received, so once TM has the goods — booked from the
