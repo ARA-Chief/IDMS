@@ -8,6 +8,13 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.36 — 2026-11-25
+- **Receive knows when TM has caught up.** Each check-in now notes what TM
+  said that line had received, so once TM has the goods — booked from the
+  Console's list, or received by somebody in TM directly — the next order
+  list does not take them off a second time. A line shows "TM has it" beside
+  a receipt TM has taken in.
+
 ## 1.35 — 2026-11-25
 - **Inventory: Receive — check a delivery in by the part, not the order.**
   Search for what is in front of you by name, part number or order number;

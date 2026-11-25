@@ -97,8 +97,17 @@
   // Every receivable line, with "still to come" worked out, gathered into the
   // things somebody would search for: one group per catalogue item, and one per
   // name for lines TM could not tie to a single item (ambiguous, or none).
+  // The shared rule for what is still to come, given what TM showed and what
+  // phones have filed since: utils/order-receipts.js, mirrored with the Console
+  // so both say the same number. Read lazily — in the page it is a sibling
+  // script; under Node it is required.
+  function receiptsRule() {
+    if (typeof module !== 'undefined' && module.exports && typeof require === 'function') return require('./order-receipts');
+    return (typeof self !== 'undefined' ? self : this).orderReceipts;
+  }
+
   function build(doc, events) {
-    var rec = recorded(events);
+    var rc = receiptsRule().reconcile(doc, events);
     var lines = [];
     ((doc && doc.orders) || []).forEach(function (o) {
       if (o.order_type === 'ServiceOrder') return;
@@ -107,7 +116,12 @@
         if (!(num(l.outstanding) > 0)) return;
         if (isNonGoods(l)) return;
         var key = tmKey(o.order_no, l.line_no);
-        var r = rec[key] || { qty: 0, pending: 0, rows: [] };
+        // Still to come is TM's outstanding less what phones filed that TM has
+        // not yet taken in — not less every phone receipt, which counts a
+        // receipt twice once TM has it. order-receipts.js says how.
+        var rl = rc.lines[key];
+        var rows = rl ? rl.receipts.map(function (x) { return Object.assign({ timestamp: x.at }, x); }) : [];
+        var pend = q(rows.reduce(function (s2, x) { return s2 + (x.pending ? x.qty : 0); }, 0));
         lines.push({
           key: key,
           order_no: o.order_no, line_no: l.line_no,
@@ -116,8 +130,9 @@
           approved: o.approved || '', approved_iso: appr,
           item_name: l.item_name || '', uom: l.uom || '',
           on_order: num(l.on_order), received_tm: num(l.received), outstanding: num(l.outstanding),
-          recorded: r.qty, pending: r.pending, receipts: r.rows,
-          to_come: q(Math.max(0, num(l.outstanding) - r.qty)),
+          recorded: rl ? rl.phone_qty : 0, pending: pend, receipts: rows,
+          in_tm: rl ? rl.in_tm : 0, owed_to_tm: rl ? rl.owed_to_tm : 0,
+          to_come: rl ? rl.still_to_come : q(Math.max(0, num(l.outstanding))),
           makers_part_no: l.makers_part_no || '', suppliers_ref: l.suppliers_ref || '',
           unit_price: (l.unit_price === null || l.unit_price === undefined) ? null : l.unit_price,
           component: l.component || '', description: l.description || '',
