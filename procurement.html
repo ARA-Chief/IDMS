@@ -4497,6 +4497,7 @@ function pcRcvOrder(o) {
   var s = rcvState();
   pcHead(o.order_no + ' · ' + o.name,
     [o.department, o.supplier, o.status, o.approved ? 'approved ' + o.approved : ''].filter(Boolean).join(' · '),
+    (o.lines_open ? '<button class="icon-btn" onclick="pcRcvAllOpen()">Receive all</button> ' : '') +
     '<button class="icon-btn" onclick="pcRcvBack()">← Orders</button>');
   var hl = s.hl || [];
   var rows = o.lines.map(function (l, i) {
@@ -4547,6 +4548,98 @@ function pcRcvOrder(o) {
     '<div class="sub muted">' + (rows ? 'Received is what TM Master has' +
       (anyHere ? '; <span style="color:var(--warning)">+n</span> is checked in here and not in TM yet' : '') + '. ' : '') +
       'Pulled ' + pcEsc(pcRcvPulled()) + '.</div>';
+}
+
+// ── Receive all ─────────────────────────────────────────────
+// The whole order has arrived: every line still to come is checked in, in
+// full, in one go, against its own order line. Freight, tax and the like are
+// not lines here (receive-lines.js leaves them out), and the Console's Receive
+// in TM books them with the order. A line tied to a register item goes on its
+// shelf — the one chosen for the lot, or each item's usual place; a line with
+// no single register item is recorded as received with no stock put away,
+// because guessing the item would put stock on the wrong shelf.
+
+function pcRcvAllLines(o) {
+  return o.lines.filter(function (l) { return l.to_come > 0; });
+}
+
+function pcRcvAllOpen() {
+  var s = rcvState(), built = pcRcvBuilt();
+  var o = built && built.byOrder[s.order];
+  if (!o) return;
+  var todo = pcRcvAllLines(o);
+  if (!todo.length) { pcToast('Nothing on this order is still to come.'); return; }
+  var untied = todo.filter(function (l) { return !l.item_id; }).length;
+  pcOverlay('<div class="sheet"><h3>Receive all of ' + pcEsc(o.order_no) + '</h3>' +
+    '<div class="sheet-sub" style="margin:0 0 10px">' + pcEsc(o.name) + '. Every line still to come is checked in, ' +
+      'in full, against its own line on the order.</div>' +
+    '<div class="card" style="padding:0;margin-bottom:12px">' + todo.map(function (l) {
+      var it = l.item_id && PC.state.items[l.item_id];
+      return '<div class="ci-line"><div class="ci-name"><span class="muted">' + pcEsc(l.line_no) + '</span> <b>' +
+        pcEsc(l.item_name) + '</b><div class="sub">' + (it ? pcEsc(it.item_id) + ' · usually ' + pcEsc(pcLocName(pcUsualPlace(it.item_id)))
+          : l.match === 'ambiguous' ? 'several register items share this name — recorded with no stock put away'
+          : 'not tied to a register item — recorded with no stock put away') + '</div></div>' +
+        '<div class="ci-nums"><div class="ci-num"><span class="k">Receiving</span><span class="v">' + pcFmtQty(l.to_come) +
+        (l.uom ? ' <span class="muted">' + pcEsc(l.uom) + '</span>' : '') + '</span></div></div></div>';
+    }).join('') + '</div>' +
+    (untied ? '<div class="sub" style="margin:0 0 10px;color:var(--warning)">' + untied + ' line' + (untied === 1 ? '' : 's') +
+      ' with no single register item: received against the order, no stock moved. To put one on a shelf, ' +
+      'check that line in on its own instead.</div>' : '') +
+    '<label class="lbl">Put away in</label><select class="field" id="rall-loc">' +
+      '<option value="">Each item\'s usual place</option>' + pcLocOptions(null) + '</select>' +
+    '<label class="lbl">Note (optional)</label><input class="field" id="rall-note" placeholder="Box damaged, short two, …">' +
+    '<div class="err" id="rall-err"></div>' +
+    '<div class="sheet-actions">' +
+      '<button class="btn ghost" onclick="pcCloseOverlay()">Cancel</button>' +
+      '<button class="btn" id="rall-save" onclick="pcRcvAllSave()">Check in all ' + todo.length + ' line' + (todo.length === 1 ? '' : 's') + '</button>' +
+    '</div></div>');
+}
+
+async function pcRcvAllSave() {
+  var s = rcvState(), built = pcRcvBuilt();
+  var o = built && built.byOrder[s.order];
+  if (!o) return;
+  var todo = pcRcvAllLines(o);
+  var err = document.getElementById('rall-err');
+  if (!todo.length) { pcCloseOverlay(); return; }
+  var chosen = pcVal('rall-loc') || null;
+  var note = pcVal('rall-note') || null;
+  var btn = document.getElementById('rall-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  var done = 0, failed = null;
+  try {
+    for (var i = 0; i < todo.length; i++) {
+      var l = todo[i];
+      var tm = { tm_order_no: l.order_no, tm_order_line_no: l.line_no, tm_item_name: l.item_name || null,
+                 tm_received_seen: l.received_tm,
+                 tm_lines_pulled_at: (PC.orderLinesDoc && PC.orderLinesDoc.pulled_at) || null,
+                 received_all: true };
+      if (l.item_id && PC.state.items[l.item_id]) {
+        await pcAppendEvent('stock_movement', Object.assign({
+          movement_id: pcUuid(), item_id: l.item_id, kind: 'receipt', qty: l.to_come,
+          location_id: chosen || pcUsualPlace(l.item_id), note: note
+        }, tm), { outbox: true, defer: true });
+      } else {
+        await pcAppendEvent('tm_order_line_received', Object.assign({ qty: l.to_come, note: note }, tm),
+          { outbox: true, defer: true });
+      }
+      done++;
+    }
+  } catch (e) { failed = e; }
+  pcSaveCache(); pcReduce();
+  if (failed) {
+    // What was saved already counts on the lines, so a retry takes the rest.
+    if (err) err.textContent = done + ' of ' + todo.length + ' lines were saved before this failed: ' + pcErrText(failed) +
+      '. Close this and press Receive all again for the rest.';
+    btn.disabled = false; btn.textContent = 'Close';
+    btn.onclick = function () { pcCloseOverlay(); pcRenderAll(); };
+    if (done) pcOutboxFlush();
+    return;
+  }
+  pcCloseOverlay();
+  pcRenderAll();
+  pcToast('All ' + done + ' line' + (done === 1 ? '' : 's') + ' of ' + o.order_no + ' checked in. Saved on this phone; it sends itself when there is signal.');
+  pcOutboxFlush();
 }
 
 function pcRcvOpenLine(i) {

@@ -8,6 +8,14 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.40 — 2026-11-25
+- **Receive all.** When a whole order has arrived, open it in Receive and
+  press Receive all. Every line still to come is checked in, in full,
+  against its own line on the order, each item on its usual shelf (or one
+  place you pick for the lot). A line with no single register item is
+  recorded as received with nothing put on a shelf, and the sheet says which
+  lines those are.
+
 ## 1.39 — 2026-11-25
 - **Receive knows finished orders too.** Orders TM has already received in
   full are now on the phone. Search for one and it shows as complete in TM;
