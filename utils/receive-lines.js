@@ -121,6 +121,9 @@
       var ord = { order_no: o.order_no, name: o.name || '', department: o.department || '',
                   supplier: o.supplier || '', status: o.status || '', approved: o.approved || '',
                   approved_iso: appr, our_ref: o.our_ref || '', lines: [], extras: [],
+                  // TM already has it in full (Received / Finished). The Console
+                  // copies those orders' list only, so most carry no lines.
+                  complete: !!o.complete,
                   to_come: 0, lines_open: 0, pending: 0, hay: '' };
       orders.push(ord);
       (o.lines || []).forEach(function (l) {

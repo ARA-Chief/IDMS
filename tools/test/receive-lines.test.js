@@ -236,6 +236,19 @@ T.head('the order comes first: searched by number, name, department, or an item 
     RL.searchOrders(b, 'lube', { lineHay: l => l.item_id === 'ITM-2' ? 'Lube cartridge' : '' }).map(h => h.matched[0].line_no).join(','), '10');
   check('no words: every order with something to come, newest approval first', find(''), 'ARA-2-M-2026,ARA-1-M-2026');
 
+  // An order TM has in full, copied as its list row only (no lines key).
+  const withDone = JSON.parse(JSON.stringify(doc));
+  withDone.orders.push({ order_no: 'ARA-255-M-2026', name: 'Change Room Benches', status: 'Finished',
+                         order_type: 'PurchaseOrder', supplier: 'Amazon', department: 'Machine', approved: '8/28/2026', complete: true });
+  const bd = RL.build(withDone, []);
+  const done = bd.byOrder['ARA-255-M-2026'];
+  check('a completed order with no lines is in the order list', !!done, true);
+  check('...marked complete', done.complete, true);
+  check('...with nothing to come', done.to_come, 0);
+  check('it is found by its number', RL.searchOrders(bd, '255').map(h => h.order.order_no).join(','), 'ARA-255-M-2026');
+  check('but is not in the default list of orders with something to come',
+    RL.searchOrders(bd, '').some(h => h.order.order_no === 'ARA-255-M-2026'), false);
+
   const g = RL.lineGroup(o1.lines[1]);
   check('one line checks in as a group of one', g.lines.length, 1);
   check('an ambiguous line keeps its candidates', g.kind + ':' + g.candidates.join(','), 'ambiguous:ITM-7,ITM-8');

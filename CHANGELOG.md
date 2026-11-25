@@ -8,6 +8,12 @@ Format matters — the parser expects `## <version> — <date>` and `- ` bullets
 the same shape `IDMS-Console/CHANGELOG.md` uses. Newest version at the top, and
 `PWA_VERSION` in `index.html` must match the newest heading here.
 
+## 1.39 — 2026-11-25
+- **Receive knows finished orders too.** Orders TM has already received in
+  full are now on the phone. Search for one and it shows as complete in TM;
+  open it and it says there is nothing left to check in. Only the order is
+  there for these, not its lines.
+
 ## 1.38 — 2026-11-25
 - **Receive starts from the order.** The list is TM's open and partly
   received orders: number, name, department, and how many lines are still to
